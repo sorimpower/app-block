@@ -1,0 +1,19 @@
+# Gradle and Kotlin caches
+.gradle/
+.kotlin/
+build/
+**/build/
+
+# Local Android configuration
+local.properties
+.idea/
+*.iml
+
+# Generated packages and temporary tooling
+outputs/
+work/
+*.apk
+*.aab
+
+# macOS
+.DS_Store
