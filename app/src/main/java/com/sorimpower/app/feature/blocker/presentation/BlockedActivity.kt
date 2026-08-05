@@ -46,6 +46,7 @@ import com.sorimpower.app.feature.blocker.data.BlockerRepository
 import com.sorimpower.app.feature.blocker.service.BlockedLaunchSession
 import com.sorimpower.app.core.ui.SorimPowerTheme
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 private val WarningRed = Color(0xFFFF3B30)
@@ -58,6 +59,13 @@ class BlockedActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         blockDetails = intent.toBlockDetails()
+        lifecycleScope.launch {
+            BlockedLaunchSession.countUpdates.collect { update ->
+                if (update?.packageName == blockDetails.packageName) {
+                    blockDetails = blockDetails.copy(todayCount = update.count)
+                }
+            }
+        }
         setContent {
             SorimPowerTheme {
                 val details = blockDetails
