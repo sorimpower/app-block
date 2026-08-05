@@ -398,9 +398,15 @@ private fun BlockerScreen(
             }
         }
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                SectionTitle("차단 조건", "조건 중 하나라도 맞으면 차단", Modifier.weight(1f))
-                Button(onClick = onAddSchedule) { Text("+ 추가") }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                shape = RoundedCornerShape(24.dp),
+            ) {
+                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FeatureSectionTitle("01", "차단 조건", "조건은 앱별 화면에서 적용하거나 해제해요", Modifier.weight(1f))
+                    Button(onClick = onAddSchedule) { Text("+ 추가") }
+                }
             }
         }
         if (state.schedules.isEmpty()) {
@@ -410,39 +416,52 @@ private fun BlockerScreen(
                 ScheduleCard(
                     schedule = schedule,
                     onClick = { onEditSchedule(schedule) },
-                    onToggle = { enabled ->
-                        requestProtectedAction { viewModel.upsertSchedule(schedule.copy(enabled = enabled)) }
-                    },
                     onDelete = { requestProtectedAction { viewModel.deleteSchedule(schedule.id) } },
                 )
             }
         }
         item {
-            SectionTitle("차단 메시지", "집중을 다시 떠올릴 한 문장")
-            OutlinedTextField(
-                value = message,
-                onValueChange = { message = it.take(120) },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                minLines = 2,
-                supportingText = { Text("${message.length}/120") },
-            )
-            Button(
-                onClick = { viewModel.setBlockMessage(message) },
+            Card(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = message.isNotBlank() && message.trim() != state.blockMessage,
-            ) { Text("메시지 저장") }
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                shape = RoundedCornerShape(24.dp),
+            ) {
+                Column(Modifier.padding(20.dp)) {
+                    FeatureSectionTitle("02", "차단 메시지", "차단 화면에서 가장 크게 보여줄 중요한 문장")
+                    OutlinedTextField(
+                        value = message,
+                        onValueChange = { message = it.take(120) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        minLines = 3,
+                        supportingText = { Text("${message.length}/120") },
+                    )
+                    Button(
+                        onClick = { viewModel.setBlockMessage(message) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = message.isNotBlank() && message.trim() != state.blockMessage,
+                    ) { Text("메시지 저장") }
+                }
+            }
         }
         item {
-            SectionTitle("차단할 앱", "이름이나 패키지명으로 검색하세요")
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                label = { Text("앱 검색") },
-                placeholder = { Text("예: YouTube") },
-                singleLine = true,
-            )
-            Text("검색 결과 ${filteredApps.size}개", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                shape = RoundedCornerShape(24.dp),
+            ) {
+                Column(Modifier.padding(20.dp)) {
+                    FeatureSectionTitle("03", "차단할 앱", "앱을 켠 뒤, 탭해서 적용할 조건을 선택하세요")
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        label = { Text("앱 검색") },
+                        placeholder = { Text("예: YouTube") },
+                        singleLine = true,
+                    )
+                    Text("검색 결과 ${filteredApps.size}개", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
         items(filteredApps, key = { it.packageName }) { app ->
             Card(
@@ -481,13 +500,12 @@ private fun BlockerScreen(
 private fun ScheduleCard(
     schedule: BlockSchedule,
     onClick: () -> Unit,
-    onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
     Card(
         Modifier.fillMaxWidth().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = if (schedule.enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+            containerColor = MaterialTheme.colorScheme.surface,
         ),
     ) {
         Column(Modifier.padding(18.dp)) {
@@ -502,13 +520,31 @@ private fun ScheduleCard(
                     )
                     Text(scheduleSummary(schedule), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                 }
-                Switch(checked = schedule.enabled, onCheckedChange = onToggle)
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 OutlinedButton(onClick = onDelete) { Text("삭제") }
                 Spacer(Modifier.size(8.dp))
                 Button(onClick = onClick) { Text("편집") }
             }
+        }
+    }
+}
+
+@Composable
+private fun FeatureSectionTitle(
+    number: String,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier, verticalAlignment = Alignment.Top) {
+        Box(
+            Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(AppNavy),
+            contentAlignment = Alignment.Center,
+        ) { Text(number, color = Color.White, fontWeight = FontWeight.Black) }
+        Column(Modifier.padding(start = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

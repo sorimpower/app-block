@@ -79,6 +79,7 @@ class BlockerRepository(private val context: Context) {
             blockMessage = preferences[blockMessageKey] ?: DEFAULT_BLOCK_MESSAGE,
             startDestination = StartDestination.from(preferences[startDestinationKey]),
             hasPassword = !preferences[passwordHashKey].isNullOrBlank(),
+            oneTimeBypassPackage = preferences[legacyBypassPackageKey],
         )
     }
 
@@ -129,7 +130,7 @@ class BlockerRepository(private val context: Context) {
         val current = currentSchedules(preferences)
         materializeAssignments(preferences, current)
         val schedules = current.associateBy(BlockSchedule::id).toMutableMap()
-        schedules[schedule.id] = schedule.normalized()
+        schedules[schedule.id] = schedule.normalized().copy(enabled = true)
         preferences[schedulesKey] = schedules.values.map(::encodeSchedule).toSet()
     }
 
@@ -170,8 +171,6 @@ class BlockerRepository(private val context: Context) {
         context.blockerDataStore.edit {
             it[passwordSaltKey] = Base64.encodeToString(salt, Base64.NO_WRAP)
             it[passwordHashKey] = Base64.encodeToString(hash, Base64.NO_WRAP)
-            it.remove(legacyBypassPackageKey)
-            it.remove(legacyBypassUntilKey)
         }
     }
 
@@ -188,6 +187,22 @@ class BlockerRepository(private val context: Context) {
         val salt = preferences[passwordSaltKey]?.let(::decodeBase64) ?: return false
         val actual = withContext(Dispatchers.Default) { derivePassword(password, salt) }
         return MessageDigest.isEqual(expected, actual)
+    }
+
+    suspend fun allowNextLaunch(packageName: String) {
+        context.blockerDataStore.edit {
+            it[legacyBypassPackageKey] = packageName
+            it.remove(legacyBypassUntilKey)
+        }
+    }
+
+    suspend fun consumeNextLaunch(packageName: String) {
+        context.blockerDataStore.edit {
+            if (it[legacyBypassPackageKey] == packageName) {
+                it.remove(legacyBypassPackageKey)
+                it.remove(legacyBypassUntilKey)
+            }
+        }
     }
 
     suspend fun recordBlockedLaunch(packageName: String, now: Long = System.currentTimeMillis()): Int {
@@ -341,13 +356,14 @@ data class BlockerState(
     val blockMessage: String = BlockerRepository.DEFAULT_BLOCK_MESSAGE,
     val startDestination: StartDestination = StartDestination.HOME,
     val hasPassword: Boolean = false,
+    val oneTimeBypassPackage: String? = null,
 ) {
-    val activeScheduleCount get() = schedules.count(BlockSchedule::enabled)
+    val activeScheduleCount get() = schedules.size
 
     fun shouldBlock(packageName: String, now: Long = System.currentTimeMillis()): Boolean {
         if (!enabled || packageName !in blockedPackages) return false
         val assignedIds = appScheduleIds[packageName].orEmpty()
-        val applicable = schedules.filter { it.id in assignedIds && it.appliesAt(now) }
+        val applicable = schedules.filter { it.id in assignedIds && it.copy(enabled = true).appliesAt(now) }
         if (applicable.any { it.action == ScheduleAction.ALLOW }) return false
         return applicable.any { it.action == ScheduleAction.BLOCK }
     }
