@@ -1,0 +1,593 @@
+package com.sorimpower.app.feature.bodylog.presentation
+
+import android.net.Uri
+import android.app.DatePickerDialog
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.MonitorWeight
+import androidx.compose.material.icons.rounded.Restaurant
+import coil.compose.AsyncImage
+import com.sorimpower.app.feature.bodylog.data.MealItemInput
+import com.sorimpower.app.feature.bodylog.data.MealWithDetails
+import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
+import com.sorimpower.app.feature.bodylog.domain.BodyLogState
+import com.sorimpower.app.feature.bodylog.domain.ChartPeriod
+import com.sorimpower.app.feature.bodylog.domain.ChartPoint
+import com.sorimpower.app.feature.bodylog.domain.MealType
+import com.sorimpower.app.feature.bodylog.domain.dailyRepresentatives
+import com.sorimpower.app.feature.bodylog.domain.groupsByDate
+import com.sorimpower.app.feature.bodylog.domain.localDate
+import com.sorimpower.app.core.ui.AppCobalt
+import com.sorimpower.app.core.ui.AppNavy
+import com.sorimpower.app.core.ui.AppOrange
+import java.io.File
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
+import java.time.temporal.WeekFields
+import java.util.Locale
+import kotlin.math.abs
+import kotlinx.coroutines.launch
+
+@Composable
+fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    var period by remember { mutableStateOf(ChartPeriod.WEEK) }
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    var mealFilterDate by remember { mutableStateOf<LocalDate?>(null) }
+    var showWeightInput by remember { mutableStateOf(false) }
+    var showMealInput by remember { mutableStateOf(false) }
+    var showGoalInput by remember { mutableStateOf(false) }
+    var editingMeal by remember { mutableStateOf<MealWithDetails?>(null) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val points = remember(state.weights, period, selectedDate) { chartPoints(state.weights, period, selectedDate) }
+    val mealsByDate = remember(state.meals, mealFilterDate) {
+        state.meals.groupsByDate(mealFilterDate)
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize().padding(padding),
+        state = listState,
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        item { BodySummaryCard(state, onWeight = { showWeightInput = true }, onGoal = { showGoalInput = true }) }
+        item {
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(1.dp),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ChartPeriod.entries.forEach { option ->
+                        Box(
+                            Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
+                                .background(if (period == option) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+                                .clickable {
+                                    period = option
+                                    if (option != ChartPeriod.MONTH) mealFilterDate = null
+                                }.padding(vertical = 11.dp),
+                            contentAlignment = Alignment.Center,
+                        ) { Text(option.label, color = if (period == option) AppCobalt else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (period == option) FontWeight.Bold else FontWeight.Normal) }
+                    }
+                }
+            }
+        }
+        item {
+            PeriodNavigation(period, selectedDate, onDateChange = {
+                selectedDate = it
+                if (period == ChartPeriod.MONTH) mealFilterDate = null
+            })
+            WeightChart(points)
+        }
+        if (period == ChartPeriod.MONTH) {
+            item { MonthCalendar(selectedDate, state, onSelect = {
+                selectedDate = it
+                mealFilterDate = it
+                scope.launch { listState.animateScrollToItem(4) }
+            }) }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                SectionHeading("식사 기록", "오늘과 이전 식사를 날짜별로 확인하세요", Modifier.weight(1f))
+                Button(onClick = { showMealInput = true }) {
+                    Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
+                    Text("기록", Modifier.padding(start = 4.dp))
+                }
+            }
+        }
+        mealFilterDate?.let { date ->
+            item {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF2E7FC)),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.CalendarMonth, contentDescription = null, tint = AppCobalt)
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            Text(date.format(DateTimeFormatter.ofPattern("M월 d일 EEEE", Locale.KOREAN)), fontWeight = FontWeight.Bold)
+                            Text("선택한 날짜의 식사만 표시 중", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedButton(onClick = { mealFilterDate = null }) { Text("전체 보기") }
+                    }
+                }
+            }
+        }
+        if (mealsByDate.isEmpty()) {
+            item { EmptyBodyCard(if (mealFilterDate == null) "아직 식사 기록이 없어요." else "선택한 날짜의 식사 기록이 없어요.") }
+        } else mealsByDate.forEach { (date, meals) ->
+            item(key = "meal-date-$date") { MealDateHeader(date, meals.size) }
+            items(meals, key = { it.meal.id }) { meal ->
+                MealCard(meal, onEdit = { editingMeal = meal }, onDelete = { viewModel.deleteMeal(meal) })
+            }
+        }
+    }
+
+    if (showWeightInput) WeightInputDialog(
+        initial = null,
+        fallbackWeight = state.latestWeight?.weightKg,
+        selectedDate = selectedDate,
+        onDismiss = { showWeightInput = false },
+        onSave = { weight, bodyFat, condition, note, measuredAt ->
+            viewModel.saveWeight(weightKg = weight, measuredAt = measuredAt, bodyFatPercent = bodyFat, condition = condition, note = note)
+            showWeightInput = false
+        },
+    )
+    if (showMealInput) MealInputDialog(viewModel, existing = null, selectedDate = selectedDate, onDismiss = { showMealInput = false }) { showMealInput = false }
+    editingMeal?.let { meal -> MealInputDialog(viewModel, existing = meal, selectedDate = meal.meal.localDate(), onDismiss = { editingMeal = null }) { editingMeal = null } }
+    if (showGoalInput) GoalInputDialog(
+        start = state.latestWeight?.weightKg,
+        currentTarget = state.activeGoal?.targetWeightKg,
+        currentTargetDate = state.activeGoal?.targetDateEpochDay?.let(LocalDate::ofEpochDay),
+        onDismiss = { showGoalInput = false },
+        onSave = { start, target, targetDate -> viewModel.saveGoal(start, target, targetDate); showGoalInput = false },
+    )
+}
+
+@Composable
+private fun BodySummaryCard(state: BodyLogState, onWeight: () -> Unit, onGoal: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(26.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(2.dp),
+    ) {
+        Column(Modifier.padding(10.dp)) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFF7C2AE8), Color(0xFFB623E6), Color(0xFFE72A99))))
+                    .padding(24.dp),
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("CURRENT WEIGHT", color = Color.White.copy(alpha = .78f), fontWeight = FontWeight.SemiBold)
+                    Text("BODY LOG", color = Color.White.copy(alpha = .7f), style = MaterialTheme.typography.labelMedium)
+                }
+                Spacer(Modifier.height(22.dp))
+                Text(
+                    state.latestWeight?.let { "${formatWeight(it.weightKg)} kg" } ?: "첫 기록을 시작하세요",
+                    color = Color.White,
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Black,
+                )
+                state.activeGoal?.let { Text("목표 ${formatWeight(it.targetWeightKg)} kg", color = Color.White.copy(alpha = .82f), modifier = Modifier.padding(top = 8.dp)) }
+            }
+            if (state.latestWeight != null) {
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BodyMetric("${signed(state.startChange)} kg", "시작 대비", Modifier.weight(1f))
+                    BodyMetric(state.goalRemaining?.let { "${formatWeight(it)} kg" } ?: "—", "목표까지", Modifier.weight(1f))
+                    BodyMetric(state.sevenDayAverage?.let { formatWeight(it) } ?: "—", "7일 평균", Modifier.weight(1f))
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onWeight, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Rounded.MonitorWeight, null, Modifier.size(18.dp))
+                    Text("체중 기록", Modifier.padding(start = 5.dp))
+                }
+                OutlinedButton(onClick = onGoal, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Rounded.Flag, null, Modifier.size(18.dp))
+                    Text("목표 설정", Modifier.padding(start = 5.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BodyMetric(value: String, label: String, modifier: Modifier) {
+    Column(modifier.background(Color(0xFFF5F4F6), RoundedCornerShape(16.dp)).padding(10.dp)) {
+        Text(value, color = AppNavy, fontWeight = FontWeight.Black)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun PeriodNavigation(period: ChartPeriod, date: LocalDate, onDateChange: (LocalDate) -> Unit) {
+    val title = when (period) {
+        ChartPeriod.DAY -> date.format(DateTimeFormatter.ofPattern("M월 d일"))
+        ChartPeriod.WEEK -> "${date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).format(DateTimeFormatter.ofPattern("M.d"))} 주"
+        ChartPeriod.MONTH -> date.format(DateTimeFormatter.ofPattern("yyyy년 M월"))
+        ChartPeriod.YEAR -> "${date.year}년"
+    }
+    val move: (Long) -> Unit = { direction ->
+        onDateChange(when (period) {
+            ChartPeriod.DAY -> date.plusDays(direction)
+            ChartPeriod.WEEK -> date.plusWeeks(direction)
+            ChartPeriod.MONTH -> date.plusMonths(direction)
+            ChartPeriod.YEAR -> date.plusYears(direction)
+        })
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        OutlinedButton(onClick = { move(-1) }) { Text("‹") }
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+        OutlinedButton(onClick = { move(1) }, enabled = date.isBefore(LocalDate.now())) { Text("›") }
+    }
+}
+
+@Composable
+private fun WeightChart(points: List<ChartPoint>) {
+    Card(Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            if (points.isEmpty()) {
+                Box(Modifier.fillMaxWidth().height(190.dp), contentAlignment = Alignment.Center) { Text("이 기간에는 체중 기록이 없어요.") }
+            } else {
+                val min = points.minOf(ChartPoint::value)
+                val max = points.maxOf(ChartPoint::value)
+                val range = maxOf(max - min, 1.0)
+                Canvas(Modifier.fillMaxWidth().height(190.dp)) {
+                    val left = 12.dp.toPx(); val top = 16.dp.toPx(); val bottom = size.height - 24.dp.toPx()
+                    val usableWidth = size.width - left * 2
+                    val path = Path()
+                    points.forEachIndexed { index, point ->
+                        val x = if (points.size == 1) size.width / 2 else left + usableWidth * index / (points.size - 1)
+                        val y = bottom - ((point.value - min) / range).toFloat() * (bottom - top)
+                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    }
+                    drawPath(path, AppCobalt, style = Stroke(4.dp.toPx(), cap = StrokeCap.Round))
+                    points.forEachIndexed { index, point ->
+                        val x = if (points.size == 1) size.width / 2 else left + usableWidth * index / (points.size - 1)
+                        val y = bottom - ((point.value - min) / range).toFloat() * (bottom - top)
+                        drawCircle(AppOrange, 5.dp.toPx(), Offset(x, y))
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(points.first().label, style = MaterialTheme.typography.labelSmall)
+                    Text("${formatWeight(min)}~${formatWeight(max)} kg", fontWeight = FontWeight.Bold)
+                    Text(points.last().label, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (LocalDate) -> Unit) {
+    val first = date.withDayOfMonth(1)
+    val start = first.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val weights = state.weights.dailyRepresentatives()
+    val mealDates = state.meals.map { it.meal.localDate() }.toSet()
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.padding(12.dp)) {
+            Row(Modifier.fillMaxWidth()) { listOf("월", "화", "수", "목", "금", "토", "일").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center) } }
+            repeat(6) { week ->
+                Row(Modifier.fillMaxWidth()) {
+                    repeat(7) { day ->
+                        val current = start.plusDays((week * 7 + day).toLong())
+                        val weight = weights[current]
+                        Column(
+                            Modifier.weight(1f).aspectRatio(.82f).padding(2.dp).clickable { onSelect(current) }
+                                .background(if (current == date) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
+                                .padding(3.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text("${current.dayOfMonth}", color = if (current.month == date.month) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
+                            weight?.let { Text(formatWeight(it.weightKg), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                            if (current in mealDates) Box(Modifier.size(5.dp).background(AppOrange, CircleShape))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MealCard(meal: MealWithDetails, onEdit: () -> Unit, onDelete: () -> Unit) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            val photo = meal.photos.minByOrNull { it.sortOrder }
+            if (photo != null) {
+                AsyncImage(model = File(photo.thumbnailPath), contentDescription = "식사 사진", modifier = Modifier.size(56.dp).clip(RoundedCornerShape(15.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
+            } else {
+                Box(Modifier.size(56.dp).background(Color(0xFFF2E7FC), CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Restaurant, null, tint = AppCobalt)
+                }
+            }
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(MealType.from(meal.meal.mealType).label, color = AppCobalt, fontWeight = FontWeight.Black)
+                Text(meal.items.sortedBy { it.sortOrder }.joinToString(" · ") { it.name }, fontWeight = FontWeight.Bold)
+                meal.meal.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+            Row {
+                IconButton(onClick = onEdit) { Icon(Icons.Rounded.Edit, "수정", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                IconButton(onClick = onDelete) { Icon(Icons.Rounded.DeleteOutline, "삭제", tint = MaterialTheme.colorScheme.error) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MealDateHeader(date: LocalDate, count: Int) {
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(36.dp).background(Color(0xFFF2E7FC), CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.CalendarMonth, null, tint = AppCobalt, modifier = Modifier.size(19.dp))
+        }
+        Column(Modifier.padding(start = 10.dp)) {
+            Text(
+                if (date == LocalDate.now()) "오늘 · ${date.format(DateTimeFormatter.ofPattern("M월 d일 EEEE", Locale.KOREAN))}"
+                else date.format(DateTimeFormatter.ofPattern("yyyy년 M월 d일 EEEE", Locale.KOREAN)),
+                fontWeight = FontWeight.Bold,
+            )
+            Text("식사 ${count}개", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun WeightInputDialog(
+    initial: WeightEntryEntity?,
+    fallbackWeight: Double?,
+    selectedDate: LocalDate,
+    onDismiss: () -> Unit,
+    onSave: (Double, Double?, String?, String?, Long) -> Unit,
+) {
+    var weight by remember(initial?.id) { mutableStateOf((initial?.weightKg ?: fallbackWeight)?.let(::formatWeight).orEmpty()) }
+    var bodyFat by remember(initial?.id) { mutableStateOf(initial?.bodyFatPercent?.let(::formatWeight).orEmpty()) }
+    var note by remember(initial?.id) { mutableStateOf(initial?.note.orEmpty()) }
+    var condition by remember(initial?.id) { mutableStateOf(initial?.condition) }
+    var recordDate by remember(initial?.id, selectedDate) { mutableStateOf(initial?.localDate() ?: selectedDate) }
+    val value = weight.toDoubleOrNull()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("체중 기록", fontWeight = FontWeight.Black) },
+        text = {
+            Column {
+                RecordDateButton(recordDate, onDateChange = { recordDate = it })
+                OutlinedTextField(weight, { weight = decimalInput(it) }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("체중 (kg)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                OutlinedTextField(bodyFat, { bodyFat = decimalInput(it) }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("체지방률 (선택)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                LazyRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(listOf("기상 직후", "식전", "식후", "운동 전", "운동 후")) { item -> FilterChip(selected = condition == item, onClick = { condition = item }, label = { Text(item) }) }
+                }
+                OutlinedTextField(note, { note = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("메모") })
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = value != null && value in 20.0..400.0,
+                onClick = {
+                    val time = timestampForDate(recordDate, initial?.measuredAt)
+                    onSave(value!!, bodyFat.toDoubleOrNull(), condition, note, time)
+                },
+            ) { Text("저장") }
+        },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+@Composable
+private fun GoalInputDialog(start: Double?, currentTarget: Double?, currentTargetDate: LocalDate?, onDismiss: () -> Unit, onSave: (Double, Double, LocalDate?) -> Unit) {
+    var startText by remember { mutableStateOf(start?.let(::formatWeight).orEmpty()) }
+    var targetText by remember { mutableStateOf(currentTarget?.let(::formatWeight).orEmpty()) }
+    var targetDateText by remember { mutableStateOf(currentTargetDate?.toString().orEmpty()) }
+    val startValue = startText.toDoubleOrNull(); val targetValue = targetText.toDoubleOrNull()
+    val targetDate = targetDateText.takeIf(String::isNotBlank)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("체중 목표", fontWeight = FontWeight.Black) },
+        text = { Column {
+            OutlinedTextField(startText, { startText = decimalInput(it) }, Modifier.fillMaxWidth(), label = { Text("시작 체중 (kg)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+            OutlinedTextField(targetText, { targetText = decimalInput(it) }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("목표 체중 (kg)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+            OutlinedTextField(targetDateText, { targetDateText = it.filter { char -> char.isDigit() || char == '-' }.take(10) }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("목표일 (선택, YYYY-MM-DD)") }, singleLine = true)
+        } },
+        confirmButton = { Button(enabled = startValue != null && startValue in 20.0..400.0 && targetValue != null && targetValue in 20.0..400.0 && (targetDateText.isBlank() || targetDate != null), onClick = { onSave(startValue!!, targetValue!!, targetDate) }) { Text("저장") } },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+@Composable
+private fun MealInputDialog(viewModel: BodyLogViewModel, existing: MealWithDetails?, selectedDate: LocalDate, onDismiss: () -> Unit, onSaved: () -> Unit) {
+    var type by remember(existing?.meal?.id) { mutableStateOf(existing?.meal?.mealType?.let(MealType::from) ?: MealType.LUNCH) }
+    var foods by remember(existing?.meal?.id) { mutableStateOf(existing?.items?.sortedBy { it.sortOrder }?.joinToString("\n") { it.name }.orEmpty()) }
+    var note by remember(existing?.meal?.id) { mutableStateOf(existing?.meal?.note.orEmpty()) }
+    var tags by remember(existing?.meal?.id) { mutableStateOf(existing?.meal?.tags?.split('|')?.filter(String::isNotBlank)?.toSet().orEmpty()) }
+    var photos by remember { mutableStateOf(emptyList<Uri>()) }
+    var retainedPhotos by remember(existing?.meal?.id) { mutableStateOf(existing?.photos.orEmpty().sortedBy { it.sortOrder }) }
+    var cameraFiles by remember { mutableStateOf(emptyList<File>()) }
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var recordDate by remember(existing?.meal?.id, selectedDate) { mutableStateOf(existing?.meal?.localDate() ?: selectedDate) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(3)) { selected -> photos = (photos + selected).distinct().take((3 - retainedPhotos.size).coerceAtLeast(0)) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success -> if (success) pendingCameraUri?.let { photos = (photos + it).take((3 - retainedPhotos.size).coerceAtLeast(0)) } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("식사 기록", fontWeight = FontWeight.Black) },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { RecordDateButton(recordDate, onDateChange = { recordDate = it }) }
+                item { LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(MealType.entries) { item -> FilterChip(selected = type == item, onClick = { type = item }, label = { Text(item.label) }) } } }
+                item { OutlinedTextField(foods, { foods = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("먹은 음식 (한 줄에 하나)") }, minLines = 3) }
+                item { OutlinedTextField(note, { note = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("메모 (선택)") }) }
+                item { LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(listOf("배고픔", "적당함", "과식", "외식", "야식")) { tag -> FilterChip(selected = tag in tags, onClick = { tags = if (tag in tags) tags - tag else tags + tag }, label = { Text(tag) }) } } }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = photos.size + retainedPhotos.size < 3) { Text("사진 선택") }
+                        OutlinedButton(onClick = {
+                            val (uri, file) = viewModel.createCameraUri()
+                            pendingCameraUri = uri
+                            cameraFiles = cameraFiles + file
+                            camera.launch(uri)
+                        }, enabled = photos.size + retainedPhotos.size < 3) { Text("촬영") }
+                    }
+                }
+                if (retainedPhotos.isNotEmpty()) item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(retainedPhotos, key = { it.id }) { photo ->
+                            Box {
+                                AsyncImage(File(photo.thumbnailPath), "저장된 식사 사진", Modifier.size(82.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)))
+                                Text("×", Modifier.align(Alignment.TopEnd).background(Color.Black.copy(alpha = .65f), CircleShape).clickable { retainedPhotos = retainedPhotos - photo }.padding(horizontal = 6.dp), color = Color.White)
+                            }
+                        }
+                    }
+                }
+                if (photos.isNotEmpty()) item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(photos, key = Uri::toString) { uri ->
+                            Box {
+                                AsyncImage(uri, "선택한 식사 사진", Modifier.size(82.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)))
+                                Text("×", Modifier.align(Alignment.TopEnd).background(Color.Black.copy(alpha = .65f), CircleShape).clickable { photos = photos - uri }.padding(horizontal = 6.dp), color = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(enabled = foods.lineSequence().any { it.isNotBlank() }, onClick = {
+                val items = foods.lineSequence().flatMap { it.split(',').asSequence() }.filter { it.isNotBlank() }.map { MealItemInput(it.trim()) }.toList()
+                val eatenAt = timestampForDate(recordDate, existing?.meal?.eatenAt)
+                viewModel.saveMeal(existing, eatenAt, type.name, items, note, tags, photos, retainedPhotos.map { it.id }.toSet()) {
+                    cameraFiles.forEach(File::delete)
+                    onSaved()
+                }
+            }) { Text("저장") }
+        },
+        dismissButton = { OutlinedButton(onClick = { cameraFiles.forEach(File::delete); onDismiss() }) { Text("취소") } },
+    )
+}
+
+@Composable
+private fun RecordDateButton(date: LocalDate, onDateChange: (LocalDate) -> Unit) {
+    val context = LocalContext.current
+    OutlinedButton(
+        onClick = {
+            DatePickerDialog(
+                context,
+                { _, year, month, day -> onDateChange(LocalDate.of(year, month + 1, day)) },
+                date.year,
+                date.monthValue - 1,
+                date.dayOfMonth,
+            ).apply { datePicker.maxDate = System.currentTimeMillis() }.show()
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(19.dp))
+        Text(date.format(DateTimeFormatter.ofPattern("yyyy년 M월 d일 EEEE", Locale.KOREAN)), Modifier.padding(start = 8.dp))
+    }
+}
+
+@Composable private fun SectionHeading(title: String, subtitle: String, modifier: Modifier = Modifier) = Column(modifier) {
+    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable private fun EmptyBodyCard(message: String) = Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+    Text(message, Modifier.fillMaxWidth().padding(18.dp))
+}
+
+private fun chartPoints(weights: List<WeightEntryEntity>, period: ChartPeriod, anchor: LocalDate): List<ChartPoint> {
+    val zone = ZoneId.systemDefault()
+    return when (period) {
+        ChartPeriod.DAY -> weights.filter { it.localDate() == anchor }.sortedBy { it.measuredAt }.map {
+            ChartPoint(Instant.ofEpochMilli(it.measuredAt).atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm")), it.weightKg, it.measuredAt)
+        }
+        ChartPeriod.WEEK -> {
+            val start = anchor.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)); val end = start.plusDays(6)
+            weights.dailyRepresentatives().filterKeys { !it.isBefore(start) && !it.isAfter(end) }.toSortedMap().map { (date, entry) -> ChartPoint(date.dayOfWeek.name.take(3), entry.weightKg, entry.measuredAt) }
+        }
+        ChartPeriod.MONTH -> weights.dailyRepresentatives().filterKeys { it.year == anchor.year && it.month == anchor.month }.toSortedMap().map { (date, entry) -> ChartPoint("${date.dayOfMonth}일", entry.weightKg, entry.measuredAt) }
+        ChartPeriod.YEAR -> {
+            val fields = WeekFields.of(Locale.getDefault())
+            weights.dailyRepresentatives().filterKeys { it.year == anchor.year }.values
+                .groupBy { it.localDate().get(fields.weekOfWeekBasedYear()) }.toSortedMap()
+                .map { (week, entries) -> ChartPoint("${week}주", entries.map(WeightEntryEntity::weightKg).average(), entries.maxOf(WeightEntryEntity::measuredAt)) }
+        }
+    }
+}
+
+private fun formatWeight(value: Double) = "%.1f".format(value)
+private fun timestampForDate(date: LocalDate, existingTimestamp: Long?): Long {
+    val zone = ZoneId.systemDefault()
+    val time = existingTimestamp?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalTime() }
+        ?: if (date == LocalDate.now()) java.time.LocalTime.now() else java.time.LocalTime.NOON
+    return date.atTime(time).atZone(zone).toInstant().toEpochMilli()
+}
+private fun signed(value: Double?) = value?.let { (if (it > 0) "+" else "") + formatWeight(it) } ?: "—"
+private fun decimalInput(value: String): String = value.filter { it.isDigit() || it == '.' }.let { filtered ->
+    val firstDot = filtered.indexOf('.')
+    if (firstDot < 0) filtered.take(3) else filtered.substring(0, firstDot).take(3) + "." + filtered.substring(firstDot + 1).filter(Char::isDigit).take(1)
+}

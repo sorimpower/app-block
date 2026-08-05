@@ -1,4 +1,4 @@
-package com.sorimpower.app.data
+package com.sorimpower.app.feature.blocker.data
 
 import android.content.Context
 import android.util.Base64
@@ -340,7 +340,8 @@ private data class DailyLaunchCount(val packageName: String, val epochDay: Long,
 
 enum class StartDestination {
     HOME,
-    APP_BLOCKER;
+    APP_BLOCKER,
+    BODY_LOG;
 
     companion object {
         fun from(value: String?) = entries.firstOrNull { it.name == value } ?: HOME

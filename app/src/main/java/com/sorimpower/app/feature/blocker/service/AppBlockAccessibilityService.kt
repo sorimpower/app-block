@@ -3,7 +3,7 @@ package com.sorimpower.app.feature.blocker.service
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
-import com.sorimpower.app.data.BlockerRepository
+import com.sorimpower.app.feature.blocker.data.BlockerRepository
 import com.sorimpower.app.feature.blocker.presentation.BlockedActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

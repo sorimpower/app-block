@@ -1,17 +1,18 @@
 package com.sorimpower.app.feature.blocker.presentation
 
 import android.app.Application
+import android.graphics.drawable.Drawable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.sorimpower.app.data.BlockerRepository
-import com.sorimpower.app.data.BlockerState
-import com.sorimpower.app.data.StartDestination
+import com.sorimpower.app.feature.blocker.data.BlockerRepository
+import com.sorimpower.app.feature.blocker.data.BlockerState
+import com.sorimpower.app.feature.blocker.data.StartDestination
 import com.sorimpower.app.feature.blocker.domain.BlockSchedule
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-data class InstalledApp(val label: String, val packageName: String)
+data class InstalledApp(val label: String, val packageName: String, val icon: Drawable)
 
 class BlockerViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = BlockerRepository(application)
@@ -20,7 +21,13 @@ class BlockerViewModel(application: Application) : AndroidViewModel(application)
     val apps: List<InstalledApp> = application.packageManager.getInstalledApplications(0)
         .asSequence()
         .filter { it.packageName != application.packageName && application.packageManager.getLaunchIntentForPackage(it.packageName) != null }
-        .map { InstalledApp(application.packageManager.getApplicationLabel(it).toString(), it.packageName) }
+        .map {
+            InstalledApp(
+                label = application.packageManager.getApplicationLabel(it).toString(),
+                packageName = it.packageName,
+                icon = application.packageManager.getApplicationIcon(it),
+            )
+        }
         .sortedBy { it.label.lowercase() }
         .toList()
 

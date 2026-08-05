@@ -42,9 +42,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.sorimpower.app.data.BlockerRepository
+import com.sorimpower.app.feature.blocker.data.BlockerRepository
 import com.sorimpower.app.feature.blocker.service.BlockedLaunchSession
-import com.sorimpower.app.ui.SorimPowerTheme
+import com.sorimpower.app.core.ui.SorimPowerTheme
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
@@ -73,6 +73,11 @@ class BlockedActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         blockDetails = intent.toBlockDetails()
+    }
+
+    override fun onDestroy() {
+        BlockedLaunchSession.finish(blockDetails.packageName)
+        super.onDestroy()
     }
 
     private fun Intent.toBlockDetails() = BlockDetails(
