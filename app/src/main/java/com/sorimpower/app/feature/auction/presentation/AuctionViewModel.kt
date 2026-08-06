@@ -24,6 +24,9 @@ data class AuctionUiState(
     val isRefreshing: Boolean = false,
     val refreshCompleted: Boolean = false,
     val errorMessage: String? = null,
+    val favoriteKeys: Set<String> = emptySet(),
+    val favoriteCount: Int = 0,
+    val favoritesOnly: Boolean = false,
     val filter: AuctionListFilter = AuctionListFilter(),
     val sortField: AuctionSortField = AuctionSortField.AUCTION_DATE,
     val sortDirection: AuctionSortDirection = AuctionSortDirection.ASCENDING,
@@ -35,15 +38,19 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
     private val refreshing = MutableStateFlow(false)
     private val refreshCompleted = MutableStateFlow(false)
     private val errorMessage = MutableStateFlow<String?>(null)
+    private val favoritesOnly = MutableStateFlow(false)
     private val filter = MutableStateFlow(AuctionListFilter())
     private val sortField = MutableStateFlow(AuctionSortField.AUCTION_DATE)
     private val sortDirection = MutableStateFlow(AuctionSortDirection.ASCENDING)
     private val searchQuery = MutableStateFlow("")
 
     private val displayData = combine(repository.data, filter, sortField, sortDirection, searchQuery) { data, filter, field, direction, query ->
+        val filteredItems = filterAndSortAuctions(data.items, filter, field, direction, query)
         AuctionUiState(
-            items = filterAndSortAuctions(data.items, filter, field, direction, query),
+            items = filteredItems,
             totalCount = data.items.size,
+            favoriteKeys = data.favoriteKeys,
+            favoriteCount = data.items.count { it.itemKey in data.favoriteKeys },
             lastUpdatedAt = data.lastUpdatedAt,
             lastSuccessfulSyncAt = data.lastSuccessfulSyncAt,
             hasCache = data.hasCache,
@@ -51,6 +58,11 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
             sortField = field,
             sortDirection = direction,
             searchQuery = query,
+        )
+    }.combine(favoritesOnly) { display, savedOnly ->
+        display.copy(
+            items = if (savedOnly) display.items.filter { it.itemKey in display.favoriteKeys } else display.items,
+            favoritesOnly = savedOnly,
         )
     }
 
@@ -95,4 +107,10 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
     fun setSortDirection(direction: AuctionSortDirection) { sortDirection.value = direction }
 
     fun setSearchQuery(query: String) { searchQuery.value = query.take(60) }
+
+    fun setFavoritesOnly(value: Boolean) { favoritesOnly.value = value }
+
+    fun setFavorite(itemKey: String, favorite: Boolean) {
+        viewModelScope.launch { repository.setFavorite(itemKey, favorite) }
+    }
 }

@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Map
@@ -101,6 +103,7 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
                     onSort = viewModel::setSort,
                     onSortDirection = viewModel::setSortDirection,
                     onSearchQueryChange = viewModel::setSearchQuery,
+                    onFavoritesOnlyChange = viewModel::setFavoritesOnly,
                 )
             }
 
@@ -110,7 +113,11 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
 
             when {
                 state.items.isNotEmpty() -> items(state.items, key = AuctionItem::itemKey) { item ->
-                    AuctionItemCard(item)
+                    AuctionItemCard(
+                        item = item,
+                        isFavorite = item.itemKey in state.favoriteKeys,
+                        onFavoriteChange = { favorite -> viewModel.setFavorite(item.itemKey, favorite) },
+                    )
                 }
                 state.isRefreshing && !state.hasCache -> item {
                     Box(Modifier.fillMaxWidth().padding(vertical = 64.dp), contentAlignment = Alignment.Center) {
@@ -118,7 +125,10 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
                     }
                 }
                 state.refreshCompleted && state.errorMessage == null -> item {
-                    EmptyAuctionCard(isSearchResult = state.searchQuery.isNotBlank())
+                    EmptyAuctionCard(
+                        isSearchResult = state.searchQuery.isNotBlank() || state.filter.isActive,
+                        favoritesOnly = state.favoritesOnly,
+                    )
                 }
             }
 
@@ -189,6 +199,7 @@ private fun AuctionHeader(
     onSort: (AuctionSortField) -> Unit,
     onSortDirection: (AuctionSortDirection) -> Unit,
     onSearchQueryChange: (String) -> Unit,
+    onFavoritesOnlyChange: (Boolean) -> Unit,
 ) {
     Card(
         Modifier.fillMaxWidth(),
@@ -204,7 +215,11 @@ private fun AuctionHeader(
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text("경매 검색 및 정렬", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        if (state.filter.isActive || state.searchQuery.isNotBlank()) "${state.items.size}건 / 전체 ${state.totalCount}건" else "총 ${state.totalCount}건",
+                        when {
+                            state.favoritesOnly -> "${state.items.size}건 / 관심 ${state.favoriteCount}건"
+                            state.filter.isActive || state.searchQuery.isNotBlank() -> "${state.items.size}건 / 전체 ${state.totalCount}건"
+                            else -> "총 ${state.totalCount}건"
+                        },
                         color = AppCobalt,
                         fontWeight = FontWeight.Bold,
                     )
@@ -213,10 +228,29 @@ private fun AuctionHeader(
                     Text(if (state.filter.isActive) "필터 적용됨" else "필터")
                 }
             }
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = !state.favoritesOnly,
+                    onClick = { onFavoritesOnlyChange(false) },
+                    label = { Text("전체") },
+                )
+                FilterChip(
+                    selected = state.favoritesOnly,
+                    onClick = { onFavoritesOnlyChange(true) },
+                    label = { Text("관심 사건 ${state.favoriteCount}") },
+                    leadingIcon = {
+                        Icon(
+                            if (state.favoritesOnly) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp),
+                        )
+                    },
+                )
+            }
             OutlinedTextField(
                 value = state.searchQuery,
                 onValueChange = onSearchQueryChange,
-                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 label = { Text("아파트명 검색") },
                 placeholder = { Text("예: 헬리오시티") },
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
@@ -337,7 +371,7 @@ private fun AuctionFilterDialog(initial: AuctionListFilter, onDismiss: () -> Uni
 }
 
 @Composable
-private fun AuctionItemCard(item: AuctionItem) {
+private fun AuctionItemCard(item: AuctionItem, isFavorite: Boolean, onFavoriteChange: (Boolean) -> Unit) {
     val context = LocalContext.current
     val mapQuery = item.mapSearchQuery()
     Card(
@@ -350,7 +384,14 @@ private fun AuctionItemCard(item: AuctionItem) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.CalendarMonth, contentDescription = null, tint = AppCobalt, modifier = Modifier.size(19.dp))
-                    Text(auctionDateLabel(item), Modifier.padding(start = 6.dp), color = AppCobalt, fontWeight = FontWeight.Black)
+                    Text(
+                        auctionDateLabel(item),
+                        Modifier.padding(start = 6.dp).weight(1f),
+                        color = AppCobalt,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(
                         auctionDdayLabel(item),
                         Modifier.padding(start = 8.dp).background(AppOrange.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
@@ -367,6 +408,17 @@ private fun AuctionItemCard(item: AuctionItem) {
                             fontWeight = FontWeight.Bold,
                         )
                     }
+                }
+                IconButton(
+                    onClick = { onFavoriteChange(!isFavorite) },
+                    modifier = Modifier.padding(start = 6.dp).size(38.dp)
+                        .background(if (isFavorite) AppCobalt.copy(alpha = .13f) else Color.Transparent, CircleShape),
+                ) {
+                    Icon(
+                        if (isFavorite) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder,
+                        contentDescription = if (isFavorite) "관심 사건 저장 해제" else "관심 사건 저장",
+                        tint = if (isFavorite) AppCobalt else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 OutlinedButton(
                     onClick = { openNaverMap(context, mapQuery) },
@@ -457,12 +509,17 @@ private fun AuctionErrorCard(message: String, hasCache: Boolean, onRetry: () -> 
 }
 
 @Composable
-private fun EmptyAuctionCard(isSearchResult: Boolean) {
+private fun EmptyAuctionCard(isSearchResult: Boolean, favoritesOnly: Boolean) {
     Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Rounded.Gavel, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
             Text(
-                if (isSearchResult) "검색한 아파트명이 목록에 없어요." else "현재 조건에 맞는 진행 중 경매가 없어요.",
+                when {
+                    favoritesOnly && isSearchResult -> "현재 검색·필터 조건에 맞는 관심 사건이 없어요."
+                    favoritesOnly -> "아직 저장한 관심 사건이 없어요."
+                    isSearchResult -> "현재 검색·필터 조건에 맞는 경매가 없어요."
+                    else -> "현재 조건에 맞는 진행 중 경매가 없어요."
+                },
                 Modifier.padding(top = 10.dp),
                 fontWeight = FontWeight.Bold,
             )

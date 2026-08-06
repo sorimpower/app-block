@@ -16,7 +16,7 @@
 - 마운자로 투여일·용량·부작용 기록, 월 달력의 주사 배지, 최신 기록에서 바꿀 수 있는 알림 ON/OFF 및 1~4주 반복 주기 설정
 - 식사·마운자로 기록의 수정·삭제와 사진까지 함께 삭제됨을 알리는 삭제 확인 창
 - 매일 갱신되는 서울·감정가 10억 이상·진행 중·아파트 경매를 공통 보라·핑크 요약 카드, 조건 재검증, 신규 배지, 오프라인 캐시와 함께 보여주는 경매 목록
-- 부동산 경매의 아파트명 검색, 감정가·매각기일·유찰 횟수 범위 필터, 감정가·최저가·매각기일·유찰 횟수 정렬과 주소 기반 네이버지도 위치 확인
+- 부동산 경매의 아파트명 검색, 감정가·매각기일·유찰 횟수 범위 필터, 감정가·최저가·매각기일·유찰 횟수 정렬, 로컬 관심 사건 저장과 주소 기반 네이버지도 위치 확인
 - 하단 메뉴는 자주 쓰는 네 기능과 `더보기`로 고정하고, 설정 및 미래 기능은 더보기·기능 홈에서 확장하는 구조
 - 차단 조건·차단 메시지·차단 앱을 번호와 색상으로 구분한 설정 UI
 - 요일, 시간대, 매주·2주마다·매월 반복, 매월 특정 날짜를 조합한 여러 차단·해제 조건
@@ -63,7 +63,7 @@
 - `feature/bodylog/presentation/BodyLogScreen.kt`: 대시보드·그래프·달력·체중·식사·사진 UI
 - `feature/bodylog/presentation/BodyLogViewModel.kt`: 건강 기록 상태와 사용자 동작 연결
 - `feature/bodylog/reminder/MounjaroReminder.kt`: 마운자로 기록 알림의 반복 예약·표시 및 재부팅 후 복원
-- `feature/auction/data`: Google Apps Script 경매 API 전체 페이지 조회와 Room 오프라인 캐시
+- `feature/auction/data`: Google Apps Script 경매 API 전체 페이지 조회, Room 오프라인 캐시와 관심 사건 저장
 - `feature/auction/domain/AuctionModels.kt`: 경매 조건·가격·기일·매각시간 정규화
 - `feature/auction/presentation`: 경매 목록 상태, 새로고침과 Compose 카드 UI
 - `app/src/main/AndroidManifest.xml`: 접근성 서비스, 전체 설치 앱 조회, 알림 및 부팅 완료 권한 선언

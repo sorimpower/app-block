@@ -14,6 +14,7 @@ import org.json.JSONObject
 
 data class AuctionRepositoryData(
     val items: List<AuctionItem> = emptyList(),
+    val favoriteKeys: Set<String> = emptySet(),
     val lastUpdatedAt: String? = null,
     val lastSuccessfulSyncAt: Long? = null,
     val hasCache: Boolean = false,
@@ -34,13 +35,23 @@ class AuctionRepository(context: Context) {
     val data: Flow<AuctionRepositoryData> = combine(
         dao.observeItems(),
         dao.observeMetadata(),
-    ) { items, metadata ->
+        dao.observeFavoriteKeys(),
+    ) { items, metadata, favoriteKeys ->
         AuctionRepositoryData(
             items = items.map(AuctionItemEntity::toDomain),
+            favoriteKeys = favoriteKeys.toSet(),
             lastUpdatedAt = metadata?.lastUpdatedAt,
             lastSuccessfulSyncAt = metadata?.lastSuccessfulSyncAt,
             hasCache = metadata?.baselineEstablished == true,
         )
+    }
+
+    suspend fun setFavorite(itemKey: String, favorite: Boolean) = withContext(Dispatchers.IO) {
+        if (favorite) {
+            dao.upsertFavorite(AuctionFavoriteEntity(itemKey = itemKey, savedAt = System.currentTimeMillis()))
+        } else {
+            dao.deleteFavorite(itemKey)
+        }
     }
 
     suspend fun refresh() = withContext(Dispatchers.IO) {
@@ -188,4 +199,3 @@ private fun AuctionItem.toEntity(firstSeenAt: Long, lastSeenAt: Long, isNew: Boo
     auctionPlace, address, sido, sigungu, dong, buildingName, courtDepartment, courtTel, note,
     interestCount, isInProgress, objectCount, collectedAt, firstSeenAt, lastSeenAt, isNew,
 )
-

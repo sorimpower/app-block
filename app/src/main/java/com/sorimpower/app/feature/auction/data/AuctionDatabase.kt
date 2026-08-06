@@ -11,6 +11,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "auction_items")
@@ -56,6 +58,12 @@ data class AuctionSyncMetadataEntity(
     companion object { const val ID = "auction" }
 }
 
+@Entity(tableName = "auction_favorites")
+data class AuctionFavoriteEntity(
+    @PrimaryKey val itemKey: String,
+    val savedAt: Long,
+)
+
 @Dao
 interface AuctionDao {
     @Query("SELECT * FROM auction_items ORDER BY CASE WHEN auctionDate = '' THEN 1 ELSE 0 END, auctionDate ASC, auctionTime ASC")
@@ -63,6 +71,9 @@ interface AuctionDao {
 
     @Query("SELECT * FROM auction_sync_metadata WHERE id = 'auction' LIMIT 1")
     fun observeMetadata(): Flow<AuctionSyncMetadataEntity?>
+
+    @Query("SELECT itemKey FROM auction_favorites ORDER BY savedAt DESC")
+    fun observeFavoriteKeys(): Flow<List<String>>
 
     @Query("SELECT * FROM auction_items")
     suspend fun getItems(): List<AuctionItemEntity>
@@ -79,6 +90,12 @@ interface AuctionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMetadata(metadata: AuctionSyncMetadataEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertFavorite(favorite: AuctionFavoriteEntity)
+
+    @Query("DELETE FROM auction_favorites WHERE itemKey = :itemKey")
+    suspend fun deleteFavorite(itemKey: String)
+
     @Transaction
     suspend fun replaceSnapshot(items: List<AuctionItemEntity>, metadata: AuctionSyncMetadataEntity) {
         deleteAllItems()
@@ -88,8 +105,8 @@ interface AuctionDao {
 }
 
 @Database(
-    entities = [AuctionItemEntity::class, AuctionSyncMetadataEntity::class],
-    version = 1,
+    entities = [AuctionItemEntity::class, AuctionSyncMetadataEntity::class, AuctionFavoriteEntity::class],
+    version = 2,
     exportSchema = false,
 )
 abstract class AuctionDatabase : RoomDatabase() {
@@ -103,8 +120,15 @@ abstract class AuctionDatabase : RoomDatabase() {
                 context.applicationContext,
                 AuctionDatabase::class.java,
                 "auction.db",
-            ).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+        }
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `auction_favorites` (`itemKey` TEXT NOT NULL, `savedAt` INTEGER NOT NULL, PRIMARY KEY(`itemKey`))",
+                )
+            }
         }
     }
 }
-
