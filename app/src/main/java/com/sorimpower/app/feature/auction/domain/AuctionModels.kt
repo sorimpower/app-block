@@ -39,6 +39,9 @@ data class AuctionItem(
     val firstSeenAt: Long = 0L,
     val lastSeenAt: Long = 0L,
     val isNew: Boolean = false,
+    val historyCreatedAt: String = "",
+    val historyStatus: String = "",
+    val historyReason: String = "",
 )
 
 enum class AuctionSortField(val label: String) {
@@ -46,6 +49,7 @@ enum class AuctionSortField(val label: String) {
     MINIMUM_PRICE("최저가"),
     AUCTION_DATE("매각기일"),
     FAILED_COUNT("유찰 횟수"),
+    REMOVED_AT("종료 감지일"),
 }
 
 enum class AuctionSortDirection(val label: String) {
@@ -90,6 +94,7 @@ fun filterAndSortAuctions(
         AuctionSortField.MINIMUM_PRICE -> compareBy<AuctionItem> { it.minimumPrice }
         AuctionSortField.AUCTION_DATE -> compareBy<AuctionItem> { parseAuctionDate(it.auctionDate) ?: LocalDate.MAX }
         AuctionSortField.FAILED_COUNT -> compareBy<AuctionItem> { it.failedCount }
+        AuctionSortField.REMOVED_AT -> compareBy<AuctionItem> { it.historyCreatedAt }
     }.thenBy(AuctionItem::itemKey)
     val normalizedQuery = apartmentNameQuery.trim()
     return items.asSequence()
@@ -107,6 +112,14 @@ fun AuctionItem.matchesAuctionCriteria(): Boolean =
         usageName.trim() == "아파트"
 
 fun AuctionItem.mapSearchQuery(): String = address.trim().ifBlank { buildingName.trim() }
+
+fun favoriteAuctionItems(
+    activeItems: List<AuctionItem>,
+    historyItems: List<AuctionItem>,
+    favoriteKeys: Set<String>,
+): List<AuctionItem> = (activeItems + historyItems)
+    .distinctBy(AuctionItem::itemKey)
+    .filter { it.itemKey in favoriteKeys }
 
 fun normalizeAuctionTime(value: String): String? {
     val trimmed = value.trim()
@@ -156,6 +169,10 @@ fun formatAuctionUpdatedAt(value: String?): String? = value?.let {
         OffsetDateTime.parse(it).format(DateTimeFormatter.ofPattern("M월 d일 HH:mm", Locale.KOREAN))
     }.getOrNull()
 }
+
+fun AuctionItem.removedAtLabel(): String? = formatAuctionUpdatedAt(historyCreatedAt.ifBlank { null })
+
+val AuctionItem.isRemoved: Boolean get() = historyStatus == "REMOVED"
 
 fun isAuctionDataStale(value: String?, now: OffsetDateTime = OffsetDateTime.now()): Boolean {
     val updatedAt = value?.let { runCatching { OffsetDateTime.parse(it) }.getOrNull() } ?: return false

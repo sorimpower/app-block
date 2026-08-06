@@ -14,8 +14,10 @@ import org.json.JSONObject
 
 data class AuctionRepositoryData(
     val items: List<AuctionItem> = emptyList(),
+    val historyItems: List<AuctionItem> = emptyList(),
     val favoriteKeys: Set<String> = emptySet(),
     val lastUpdatedAt: String? = null,
+    val historyLastUpdatedAt: String? = null,
     val lastSuccessfulSyncAt: Long? = null,
     val hasCache: Boolean = false,
 )
@@ -34,16 +36,20 @@ class AuctionRepository(context: Context) {
 
     val data: Flow<AuctionRepositoryData> = combine(
         dao.observeItems(),
+        dao.observeHistoryItems(),
         dao.observeMetadata(),
         dao.observeFavoriteKeys(),
-    ) { items, metadata, favoriteKeys ->
+    ) { items, historyItems, metadata, favoriteKeys ->
         AuctionRepositoryData(
             items = items.map(AuctionItemEntity::toDomain),
+            historyItems = historyItems.map(AuctionHistoryItemEntity::toDomain),
             favoriteKeys = favoriteKeys.toSet(),
             lastUpdatedAt = metadata?.lastUpdatedAt,
             lastSuccessfulSyncAt = metadata?.lastSuccessfulSyncAt,
             hasCache = metadata?.baselineEstablished == true,
         )
+    }.combine(dao.observeHistoryMetadata()) { repositoryData, historyMetadata ->
+        repositoryData.copy(historyLastUpdatedAt = historyMetadata?.lastUpdatedAt)
     }
 
     suspend fun setFavorite(itemKey: String, favorite: Boolean) = withContext(Dispatchers.IO) {
@@ -55,13 +61,13 @@ class AuctionRepository(context: Context) {
     }
 
     suspend fun refresh() = withContext(Dispatchers.IO) {
-        val firstPage = loadPage(1)
+        val firstPage = loadPage(1, TYPE_ACTIVE)
         require(firstPage.page == 1) { "첫 페이지 번호가 올바르지 않습니다." }
         require(firstPage.totalPages in 0..MAX_TOTAL_PAGES) { "전체 페이지 수가 허용 범위를 벗어났습니다." }
 
         val allItems = firstPage.items.toMutableList()
         for (page in 2..firstPage.totalPages) {
-            val next = loadPage(page)
+            val next = loadPage(page, TYPE_ACTIVE)
             require(next.page == page) { "요청한 페이지와 응답 페이지가 다릅니다." }
             require(next.totalPages == firstPage.totalPages) { "동기화 중 전체 페이지 수가 변경되었습니다." }
             allItems += next.items
@@ -101,10 +107,43 @@ class AuctionRepository(context: Context) {
                 baselineEstablished = true,
             ),
         )
+
+        refreshHistory(now)
     }
 
-    private fun loadPage(page: Int): AuctionApiPage {
-        val connection = (URL("$API_URL?page=$page&pageSize=$PAGE_SIZE").openConnection() as HttpURLConnection).apply {
+    private suspend fun refreshHistory(now: Long) {
+        val firstPage = loadPage(1, TYPE_HISTORY)
+        require(firstPage.page == 1) { "이력 첫 페이지 번호가 올바르지 않습니다." }
+        require(firstPage.totalPages in 0..MAX_TOTAL_PAGES) { "이력 전체 페이지 수가 허용 범위를 벗어났습니다." }
+        val allItems = firstPage.items.toMutableList()
+        for (page in 2..firstPage.totalPages) {
+            val next = loadPage(page, TYPE_HISTORY)
+            require(next.page == page) { "요청한 이력 페이지와 응답 페이지가 다릅니다." }
+            require(next.totalPages == firstPage.totalPages) { "이력 동기화 중 전체 페이지 수가 변경되었습니다." }
+            allItems += next.items
+        }
+        val historyItems = allItems
+            .asSequence()
+            .filter { it.itemKey.isNotBlank() && it.historyStatus == HISTORY_STATUS_REMOVED }
+            .groupBy(AuctionItem::itemKey)
+            .map { (_, duplicates) -> duplicates.maxByOrNull(AuctionItem::historyCreatedAt)!! }
+            .sortedByDescending(AuctionItem::historyCreatedAt)
+            .map(AuctionItem::toHistoryEntity)
+        dao.replaceHistorySnapshot(
+            historyItems,
+            AuctionSyncMetadataEntity(
+                id = AuctionSyncMetadataEntity.HISTORY_ID,
+                lastUpdatedAt = allItems.map(AuctionItem::historyCreatedAt).filter(String::isNotBlank).maxOrNull()
+                    ?: firstPage.lastUpdatedAt,
+                lastSuccessfulSyncAt = now,
+                baselineEstablished = true,
+            ),
+        )
+    }
+
+    private fun loadPage(page: Int, type: String): AuctionApiPage {
+        val historyQuery = if (type == TYPE_HISTORY) "&historyStatus=$HISTORY_STATUS_REMOVED" else ""
+        val connection = (URL("$API_URL?type=$type&page=$page&pageSize=$PAGE_SIZE$historyQuery").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = CONNECT_TIMEOUT_MILLIS
             readTimeout = READ_TIMEOUT_MILLIS
@@ -172,6 +211,9 @@ class AuctionRepository(context: Context) {
         isInProgress = optBoolean("isInProgress", false),
         objectCount = optInt("objectCount", 0),
         collectedAt = stringOrEmpty("collectedAt"),
+        historyCreatedAt = stringOrEmpty("historyCreatedAt"),
+        historyStatus = stringOrEmpty("historyStatus"),
+        historyReason = stringOrEmpty("historyReason"),
     )
 
     private fun JSONObject.stringOrEmpty(key: String): String = if (isNull(key)) "" else optString(key, "")
@@ -183,6 +225,9 @@ class AuctionRepository(context: Context) {
         private const val MAX_TOTAL_PAGES = 50
         private const val CONNECT_TIMEOUT_MILLIS = 15_000
         private const val READ_TIMEOUT_MILLIS = 20_000
+        private const val TYPE_ACTIVE = "active"
+        private const val TYPE_HISTORY = "history"
+        private const val HISTORY_STATUS_REMOVED = "REMOVED"
     }
 }
 
@@ -198,4 +243,61 @@ private fun AuctionItem.toEntity(firstSeenAt: Long, lastSeenAt: Long, isNew: Boo
     appraisalPrice, minimumPrice, minimumPriceRate, failedCount, auctionDate, auctionTime,
     auctionPlace, address, sido, sigungu, dong, buildingName, courtDepartment, courtTel, note,
     interestCount, isInProgress, objectCount, collectedAt, firstSeenAt, lastSeenAt, isNew,
+)
+
+private fun AuctionHistoryItemEntity.toDomain() = AuctionItem(
+    itemKey = itemKey,
+    courtCode = "",
+    courtName = courtName,
+    internalCaseNumber = "",
+    caseNumber = caseNumber,
+    auctionItemNumber = auctionItemNumber,
+    usageName = "아파트",
+    appraisalPrice = appraisalPrice,
+    minimumPrice = minimumPrice,
+    minimumPriceRate = minimumPriceRate,
+    failedCount = failedCount,
+    auctionDate = auctionDate,
+    auctionTime = auctionTime,
+    auctionPlace = "",
+    address = address,
+    sido = sido,
+    sigungu = sigungu,
+    dong = dong,
+    buildingName = buildingName,
+    courtDepartment = courtDepartment,
+    courtTel = "",
+    note = note,
+    interestCount = 0,
+    isInProgress = false,
+    objectCount = objectCount,
+    collectedAt = collectedAt,
+    historyCreatedAt = historyCreatedAt,
+    historyStatus = historyStatus,
+    historyReason = historyReason,
+)
+
+private fun AuctionItem.toHistoryEntity() = AuctionHistoryItemEntity(
+    itemKey = itemKey,
+    courtName = courtName,
+    caseNumber = caseNumber,
+    auctionItemNumber = auctionItemNumber,
+    appraisalPrice = appraisalPrice,
+    minimumPrice = minimumPrice,
+    minimumPriceRate = minimumPriceRate,
+    failedCount = failedCount,
+    auctionDate = auctionDate,
+    auctionTime = auctionTime,
+    address = address,
+    sido = sido,
+    sigungu = sigungu,
+    dong = dong,
+    buildingName = buildingName,
+    courtDepartment = courtDepartment,
+    note = note,
+    objectCount = objectCount,
+    collectedAt = collectedAt,
+    historyCreatedAt = historyCreatedAt,
+    historyStatus = historyStatus,
+    historyReason = historyReason,
 )

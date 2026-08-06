@@ -16,6 +16,35 @@ class AuctionModelsTest {
     }
 
     @Test
+    fun `종료 사건은 감지 시각 최신순으로 정렬하고 시각을 표시한다`() {
+        val older = item().copy(itemKey = "older", historyCreatedAt = "2026-08-05T09:00:00+09:00", historyStatus = "REMOVED")
+        val newer = item().copy(itemKey = "newer", historyCreatedAt = "2026-08-06T09:00:00+09:00", historyStatus = "REMOVED")
+
+        assertEquals(
+            listOf("newer", "older"),
+            filterAndSortAuctions(
+                listOf(older, newer),
+                AuctionListFilter(),
+                AuctionSortField.REMOVED_AT,
+                AuctionSortDirection.DESCENDING,
+            ).map(AuctionItem::itemKey),
+        )
+        assertTrue(newer.isRemoved)
+        assertEquals("8월 6일 09:00", newer.removedAtLabel())
+    }
+
+    @Test
+    fun `진행 중에 저장한 관심 키는 종료 사건에서도 유지한다`() {
+        val endedFavorite = item().copy(itemKey = "favorite", historyStatus = "REMOVED")
+        val endedNormal = item().copy(itemKey = "normal", historyStatus = "REMOVED")
+
+        assertEquals(
+            listOf(endedFavorite),
+            favoriteAuctionItems(emptyList(), listOf(endedFavorite, endedNormal), setOf("favorite")),
+        )
+    }
+
+    @Test
     fun `10억원 경계값을 포함한 서울 진행중 아파트만 허용한다`() {
         assertTrue(item().matchesAuctionCriteria())
         assertFalse(item(appraisalPrice = 999_999_999L).matchesAuctionCriteria())

@@ -9,11 +9,22 @@ import com.sorimpower.app.feature.auction.domain.AuctionListFilter
 import com.sorimpower.app.feature.auction.domain.AuctionSortDirection
 import com.sorimpower.app.feature.auction.domain.AuctionSortField
 import com.sorimpower.app.feature.auction.domain.filterAndSortAuctions
+import com.sorimpower.app.feature.auction.domain.favoriteAuctionItems
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+enum class AuctionListMode { ACTIVE, FAVORITES, REMOVED }
+
+private data class AuctionDisplayOptions(
+    val filter: AuctionListFilter,
+    val sortField: AuctionSortField,
+    val sortDirection: AuctionSortDirection,
+    val searchQuery: String,
+    val listMode: AuctionListMode,
+)
 
 data class AuctionUiState(
     val items: List<AuctionItem> = emptyList(),
@@ -26,7 +37,8 @@ data class AuctionUiState(
     val errorMessage: String? = null,
     val favoriteKeys: Set<String> = emptySet(),
     val favoriteCount: Int = 0,
-    val favoritesOnly: Boolean = false,
+    val removedCount: Int = 0,
+    val listMode: AuctionListMode = AuctionListMode.ACTIVE,
     val filter: AuctionListFilter = AuctionListFilter(),
     val sortField: AuctionSortField = AuctionSortField.AUCTION_DATE,
     val sortDirection: AuctionSortDirection = AuctionSortDirection.ASCENDING,
@@ -38,31 +50,44 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
     private val refreshing = MutableStateFlow(false)
     private val refreshCompleted = MutableStateFlow(false)
     private val errorMessage = MutableStateFlow<String?>(null)
-    private val favoritesOnly = MutableStateFlow(false)
+    private val listMode = MutableStateFlow(AuctionListMode.ACTIVE)
     private val filter = MutableStateFlow(AuctionListFilter())
     private val sortField = MutableStateFlow(AuctionSortField.AUCTION_DATE)
     private val sortDirection = MutableStateFlow(AuctionSortDirection.ASCENDING)
     private val searchQuery = MutableStateFlow("")
 
-    private val displayData = combine(repository.data, filter, sortField, sortDirection, searchQuery) { data, filter, field, direction, query ->
-        val filteredItems = filterAndSortAuctions(data.items, filter, field, direction, query)
+    private val displayOptions = combine(filter, sortField, sortDirection, searchQuery, listMode) { currentFilter, field, direction, query, mode ->
+        AuctionDisplayOptions(currentFilter, field, direction, query, mode)
+    }
+
+    private val displayData = combine(repository.data, displayOptions) { data, options ->
+        val favoriteItems = favoriteAuctionItems(data.items, data.historyItems, data.favoriteKeys)
+        val sourceItems = when (options.listMode) {
+            AuctionListMode.ACTIVE -> data.items
+            AuctionListMode.FAVORITES -> favoriteItems
+            AuctionListMode.REMOVED -> data.historyItems
+        }
+        val filteredItems = filterAndSortAuctions(
+            sourceItems,
+            options.filter,
+            options.sortField,
+            options.sortDirection,
+            options.searchQuery,
+        )
         AuctionUiState(
             items = filteredItems,
             totalCount = data.items.size,
             favoriteKeys = data.favoriteKeys,
-            favoriteCount = data.items.count { it.itemKey in data.favoriteKeys },
-            lastUpdatedAt = data.lastUpdatedAt,
+            favoriteCount = favoriteItems.size,
+            removedCount = data.historyItems.size,
+            listMode = options.listMode,
+            lastUpdatedAt = if (options.listMode == AuctionListMode.REMOVED) data.historyLastUpdatedAt else data.lastUpdatedAt,
             lastSuccessfulSyncAt = data.lastSuccessfulSyncAt,
             hasCache = data.hasCache,
-            filter = filter,
-            sortField = field,
-            sortDirection = direction,
-            searchQuery = query,
-        )
-    }.combine(favoritesOnly) { display, savedOnly ->
-        display.copy(
-            items = if (savedOnly) display.items.filter { it.itemKey in display.favoriteKeys } else display.items,
-            favoritesOnly = savedOnly,
+            filter = options.filter,
+            sortField = options.sortField,
+            sortDirection = options.sortDirection,
+            searchQuery = options.searchQuery,
         )
     }
 
@@ -108,7 +133,16 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
 
     fun setSearchQuery(query: String) { searchQuery.value = query.take(60) }
 
-    fun setFavoritesOnly(value: Boolean) { favoritesOnly.value = value }
+    fun setListMode(value: AuctionListMode) {
+        listMode.value = value
+        if (value == AuctionListMode.REMOVED) {
+            sortField.value = AuctionSortField.REMOVED_AT
+            sortDirection.value = AuctionSortDirection.DESCENDING
+        } else if (sortField.value == AuctionSortField.REMOVED_AT) {
+            sortField.value = AuctionSortField.AUCTION_DATE
+            sortDirection.value = AuctionSortDirection.ASCENDING
+        }
+    }
 
     fun setFavorite(itemKey: String, favorite: Boolean) {
         viewModelScope.launch { repository.setFavorite(itemKey, favorite) }

@@ -73,7 +73,9 @@ import com.sorimpower.app.feature.auction.domain.auctionDdayLabel
 import com.sorimpower.app.feature.auction.domain.formatAuctionPrice
 import com.sorimpower.app.feature.auction.domain.formatAuctionUpdatedAt
 import com.sorimpower.app.feature.auction.domain.isAuctionDataStale
+import com.sorimpower.app.feature.auction.domain.isRemoved
 import com.sorimpower.app.feature.auction.domain.mapSearchQuery
+import com.sorimpower.app.feature.auction.domain.removedAtLabel
 import java.util.Locale
 import java.time.LocalDate
 
@@ -103,12 +105,16 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
                     onSort = viewModel::setSort,
                     onSortDirection = viewModel::setSortDirection,
                     onSearchQueryChange = viewModel::setSearchQuery,
-                    onFavoritesOnlyChange = viewModel::setFavoritesOnly,
+                    onListModeChange = viewModel::setListMode,
                 )
             }
 
             state.errorMessage?.let { message ->
                 item { AuctionErrorCard(message, hasCache = state.hasCache, onRetry = viewModel::refresh) }
+            }
+
+            if (state.listMode == AuctionListMode.REMOVED) {
+                item { EndedAuctionNotice() }
             }
 
             when {
@@ -127,7 +133,7 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
                 state.refreshCompleted && state.errorMessage == null -> item {
                     EmptyAuctionCard(
                         isSearchResult = state.searchQuery.isNotBlank() || state.filter.isActive,
-                        favoritesOnly = state.favoritesOnly,
+                        listMode = state.listMode,
                     )
                 }
             }
@@ -199,7 +205,7 @@ private fun AuctionHeader(
     onSort: (AuctionSortField) -> Unit,
     onSortDirection: (AuctionSortDirection) -> Unit,
     onSearchQueryChange: (String) -> Unit,
-    onFavoritesOnlyChange: (Boolean) -> Unit,
+    onListModeChange: (AuctionListMode) -> Unit,
 ) {
     Card(
         Modifier.fillMaxWidth(),
@@ -216,7 +222,8 @@ private fun AuctionHeader(
                     Text("경매 검색 및 정렬", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
                     Text(
                         when {
-                            state.favoritesOnly -> "${state.items.size}건 / 관심 ${state.favoriteCount}건"
+                            state.listMode == AuctionListMode.FAVORITES -> "${state.items.size}건 / 관심 ${state.favoriteCount}건"
+                            state.listMode == AuctionListMode.REMOVED -> "${state.items.size}건 / 종료 ${state.removedCount}건"
                             state.filter.isActive || state.searchQuery.isNotBlank() -> "${state.items.size}건 / 전체 ${state.totalCount}건"
                             else -> "총 ${state.totalCount}건"
                         },
@@ -228,24 +235,35 @@ private fun AuctionHeader(
                     Text(if (state.filter.isActive) "필터 적용됨" else "필터")
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyRow(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
                 FilterChip(
-                    selected = !state.favoritesOnly,
-                    onClick = { onFavoritesOnlyChange(false) },
-                    label = { Text("전체") },
+                    selected = state.listMode == AuctionListMode.ACTIVE,
+                    onClick = { onListModeChange(AuctionListMode.ACTIVE) },
+                    label = { Text("진행 중 ${state.totalCount}") },
                 )
+                }
+                item {
                 FilterChip(
-                    selected = state.favoritesOnly,
-                    onClick = { onFavoritesOnlyChange(true) },
+                    selected = state.listMode == AuctionListMode.FAVORITES,
+                    onClick = { onListModeChange(AuctionListMode.FAVORITES) },
                     label = { Text("관심 사건 ${state.favoriteCount}") },
                     leadingIcon = {
                         Icon(
-                            if (state.favoritesOnly) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder,
+                            if (state.listMode == AuctionListMode.FAVORITES) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder,
                             contentDescription = null,
                             modifier = Modifier.size(17.dp),
                         )
                     },
                 )
+                }
+                item {
+                    FilterChip(
+                        selected = state.listMode == AuctionListMode.REMOVED,
+                        onClick = { onListModeChange(AuctionListMode.REMOVED) },
+                        label = { Text("종료 사건 ${state.removedCount}") },
+                    )
+                }
             }
             OutlinedTextField(
                 value = state.searchQuery,
@@ -268,7 +286,12 @@ private fun AuctionHeader(
             }
             Text("정렬", Modifier.padding(top = 14.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             LazyRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(AuctionSortField.entries) { field ->
+                val fields = if (state.listMode == AuctionListMode.REMOVED) {
+                    AuctionSortField.entries
+                } else {
+                    AuctionSortField.entries.filterNot { it == AuctionSortField.REMOVED_AT }
+                }
+                items(fields) { field ->
                     val selected = state.sortField == field
                     FilterChip(
                         selected = selected,
@@ -294,7 +317,7 @@ private fun AuctionHeader(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (isAuctionDataStale(state.lastUpdatedAt)) {
+                if (state.listMode != AuctionListMode.REMOVED && isAuctionDataStale(state.lastUpdatedAt)) {
                     Text(
                         "데이터가 오래되었어요",
                         Modifier.background(AppOrange.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
@@ -381,38 +404,45 @@ private fun AuctionItemCard(item: AuctionItem, isFavorite: Boolean, onFavoriteCh
         elevation = CardDefaults.cardElevation(1.dp),
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.CalendarMonth, contentDescription = null, tint = AppCobalt, modifier = Modifier.size(19.dp))
-                    Text(
-                        auctionDateLabel(item),
-                        Modifier.padding(start = 6.dp).weight(1f),
-                        color = AppCobalt,
-                        fontWeight = FontWeight.Black,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        auctionDdayLabel(item),
-                        Modifier.padding(start = 8.dp).background(AppOrange.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
-                        color = AppOrange,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    if (item.isNew) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                        Icon(
+                            Icons.Rounded.CalendarMonth,
+                            contentDescription = null,
+                            tint = AppCobalt,
+                            modifier = Modifier.padding(top = 2.dp).size(19.dp),
+                        )
                         Text(
-                            "신규",
-                            Modifier.padding(start = 6.dp).background(AppGreen.copy(alpha = .13f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
-                            color = AppGreen,
+                            if (item.isRemoved) item.removedAtLabel()?.let { "종료 감지 $it" } ?: "종료 감지 시각 미상" else auctionDateLabel(item),
+                            Modifier.padding(start = 6.dp).weight(1f),
+                            color = AppCobalt,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                        )
+                    }
+                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (item.isRemoved) "상태 미확인" else auctionDdayLabel(item),
+                            Modifier.background(AppOrange.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+                            color = AppOrange,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                         )
+                        if (item.isNew && !item.isRemoved) {
+                            Text(
+                                "신규",
+                                Modifier.padding(start = 6.dp).background(AppGreen.copy(alpha = .13f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+                                color = AppGreen,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
                     }
                 }
                 IconButton(
                     onClick = { onFavoriteChange(!isFavorite) },
-                    modifier = Modifier.padding(start = 6.dp).size(38.dp)
-                        .background(if (isFavorite) AppCobalt.copy(alpha = .13f) else Color.Transparent, CircleShape),
+                    modifier = Modifier.padding(start = 6.dp).size(38.dp),
                 ) {
                     Icon(
                         if (isFavorite) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder,
@@ -446,6 +476,16 @@ private fun AuctionItemCard(item: AuctionItem, isFavorite: Boolean, onFavoriteCh
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (item.isRemoved) {
+                Text(
+                    "진행 중 목록에서 제외됨 · 낙찰/취하 여부는 확인되지 않음",
+                    Modifier.padding(top = 9.dp).background(AppOrange.copy(alpha = .1f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    color = AppOrange,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
             HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
             Text("감정가 ${formatAuctionPrice(item.appraisalPrice)}", fontWeight = FontWeight.Bold)
             Text(
@@ -474,6 +514,24 @@ private fun AuctionItemCard(item: AuctionItem, isFavorite: Boolean, onFavoriteCh
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun EndedAuctionNotice() {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = AppOrange.copy(alpha = .1f)),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(15.dp)) {
+            Text("종료 사건 안내", color = AppOrange, fontWeight = FontWeight.Black)
+            Text(
+                "전날 진행 중 목록에는 있었지만 오늘 목록에서 제외되어 종료 사건으로 분류했습니다. 낙찰, 취하, 변경 등 정확한 사유는 이 데이터만으로 확인할 수 없습니다.",
+                Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -509,14 +567,16 @@ private fun AuctionErrorCard(message: String, hasCache: Boolean, onRetry: () -> 
 }
 
 @Composable
-private fun EmptyAuctionCard(isSearchResult: Boolean, favoritesOnly: Boolean) {
+private fun EmptyAuctionCard(isSearchResult: Boolean, listMode: AuctionListMode) {
     Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Rounded.Gavel, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
             Text(
                 when {
-                    favoritesOnly && isSearchResult -> "현재 검색·필터 조건에 맞는 관심 사건이 없어요."
-                    favoritesOnly -> "아직 저장한 관심 사건이 없어요."
+                    listMode == AuctionListMode.FAVORITES && isSearchResult -> "현재 검색·필터 조건에 맞는 관심 사건이 없어요."
+                    listMode == AuctionListMode.FAVORITES -> "아직 저장한 관심 사건이 없어요."
+                    listMode == AuctionListMode.REMOVED && isSearchResult -> "현재 검색·필터 조건에 맞는 종료 사건이 없어요."
+                    listMode == AuctionListMode.REMOVED -> "아직 감지된 종료 사건이 없어요."
                     isSearchResult -> "현재 검색·필터 조건에 맞는 경매가 없어요."
                     else -> "현재 조건에 맞는 진행 중 경매가 없어요."
                 },

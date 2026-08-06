@@ -55,13 +55,42 @@ data class AuctionSyncMetadataEntity(
     val lastSuccessfulSyncAt: Long,
     val baselineEstablished: Boolean,
 ) {
-    companion object { const val ID = "auction" }
+    companion object {
+        const val ID = "auction"
+        const val HISTORY_ID = "history"
+    }
 }
 
 @Entity(tableName = "auction_favorites")
 data class AuctionFavoriteEntity(
     @PrimaryKey val itemKey: String,
     val savedAt: Long,
+)
+
+@Entity(tableName = "auction_history_items")
+data class AuctionHistoryItemEntity(
+    @PrimaryKey val itemKey: String,
+    val courtName: String,
+    val caseNumber: String,
+    val auctionItemNumber: String,
+    val appraisalPrice: Long,
+    val minimumPrice: Long,
+    val minimumPriceRate: Double,
+    val failedCount: Int,
+    val auctionDate: String,
+    val auctionTime: String,
+    val address: String,
+    val sido: String,
+    val sigungu: String,
+    val dong: String,
+    val buildingName: String,
+    val courtDepartment: String,
+    val note: String,
+    val objectCount: Int,
+    val collectedAt: String,
+    val historyCreatedAt: String,
+    val historyStatus: String,
+    val historyReason: String,
 )
 
 @Dao
@@ -74,6 +103,12 @@ interface AuctionDao {
 
     @Query("SELECT itemKey FROM auction_favorites ORDER BY savedAt DESC")
     fun observeFavoriteKeys(): Flow<List<String>>
+
+    @Query("SELECT * FROM auction_history_items ORDER BY historyCreatedAt DESC")
+    fun observeHistoryItems(): Flow<List<AuctionHistoryItemEntity>>
+
+    @Query("SELECT * FROM auction_sync_metadata WHERE id = 'history' LIMIT 1")
+    fun observeHistoryMetadata(): Flow<AuctionSyncMetadataEntity?>
 
     @Query("SELECT * FROM auction_items")
     suspend fun getItems(): List<AuctionItemEntity>
@@ -96,17 +131,30 @@ interface AuctionDao {
     @Query("DELETE FROM auction_favorites WHERE itemKey = :itemKey")
     suspend fun deleteFavorite(itemKey: String)
 
+    @Query("DELETE FROM auction_history_items")
+    suspend fun deleteAllHistoryItems()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHistoryItems(items: List<AuctionHistoryItemEntity>)
+
     @Transaction
     suspend fun replaceSnapshot(items: List<AuctionItemEntity>, metadata: AuctionSyncMetadataEntity) {
         deleteAllItems()
         insertItems(items)
         upsertMetadata(metadata)
     }
+
+    @Transaction
+    suspend fun replaceHistorySnapshot(items: List<AuctionHistoryItemEntity>, metadata: AuctionSyncMetadataEntity) {
+        deleteAllHistoryItems()
+        insertHistoryItems(items)
+        upsertMetadata(metadata)
+    }
 }
 
 @Database(
-    entities = [AuctionItemEntity::class, AuctionSyncMetadataEntity::class, AuctionFavoriteEntity::class],
-    version = 2,
+    entities = [AuctionItemEntity::class, AuctionSyncMetadataEntity::class, AuctionFavoriteEntity::class, AuctionHistoryItemEntity::class],
+    version = 3,
     exportSchema = false,
 )
 abstract class AuctionDatabase : RoomDatabase() {
@@ -120,13 +168,47 @@ abstract class AuctionDatabase : RoomDatabase() {
                 context.applicationContext,
                 AuctionDatabase::class.java,
                 "auction.db",
-            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
         }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `auction_favorites` (`itemKey` TEXT NOT NULL, `savedAt` INTEGER NOT NULL, PRIMARY KEY(`itemKey`))",
+                )
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `auction_history_items` (
+                        `itemKey` TEXT NOT NULL,
+                        `courtName` TEXT NOT NULL,
+                        `caseNumber` TEXT NOT NULL,
+                        `auctionItemNumber` TEXT NOT NULL,
+                        `appraisalPrice` INTEGER NOT NULL,
+                        `minimumPrice` INTEGER NOT NULL,
+                        `minimumPriceRate` REAL NOT NULL,
+                        `failedCount` INTEGER NOT NULL,
+                        `auctionDate` TEXT NOT NULL,
+                        `auctionTime` TEXT NOT NULL,
+                        `address` TEXT NOT NULL,
+                        `sido` TEXT NOT NULL,
+                        `sigungu` TEXT NOT NULL,
+                        `dong` TEXT NOT NULL,
+                        `buildingName` TEXT NOT NULL,
+                        `courtDepartment` TEXT NOT NULL,
+                        `note` TEXT NOT NULL,
+                        `objectCount` INTEGER NOT NULL,
+                        `collectedAt` TEXT NOT NULL,
+                        `historyCreatedAt` TEXT NOT NULL,
+                        `historyStatus` TEXT NOT NULL,
+                        `historyReason` TEXT NOT NULL,
+                        PRIMARY KEY(`itemKey`)
+                    )
+                    """.trimIndent(),
                 )
             }
         }
