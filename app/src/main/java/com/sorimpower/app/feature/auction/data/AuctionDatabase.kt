@@ -116,6 +116,9 @@ interface AuctionDao {
     @Query("SELECT * FROM auction_sync_metadata WHERE id = 'auction' LIMIT 1")
     suspend fun getMetadata(): AuctionSyncMetadataEntity?
 
+    @Query("SELECT * FROM auction_sync_metadata WHERE id = 'history' LIMIT 1")
+    suspend fun getHistoryMetadata(): AuctionSyncMetadataEntity?
+
     @Query("DELETE FROM auction_items")
     suspend fun deleteAllItems()
 

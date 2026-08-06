@@ -45,6 +45,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +85,7 @@ import java.time.LocalDate
 fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showFilterDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(viewModel) { viewModel.refresh() }
 
     PullToRefreshBox(
         isRefreshing = state.isRefreshing,

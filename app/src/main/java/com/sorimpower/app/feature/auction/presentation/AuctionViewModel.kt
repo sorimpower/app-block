@@ -104,8 +104,6 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AuctionUiState())
 
-    init { refresh() }
-
     fun refresh() {
         if (refreshing.value) return
         viewModelScope.launch {

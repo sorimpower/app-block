@@ -122,6 +122,14 @@ class AuctionRepository(context: Context) {
             require(next.totalPages == firstPage.totalPages) { "이력 동기화 중 전체 페이지 수가 변경되었습니다." }
             allItems += next.items
         }
+        val historyUpdatedAt = allItems
+            .map(AuctionItem::historyCreatedAt)
+            .filter(String::isNotBlank)
+            .maxOrNull()
+            ?: firstPage.lastUpdatedAt
+        val previousMetadata = dao.getHistoryMetadata()
+        if (previousMetadata?.baselineEstablished == true && previousMetadata.lastUpdatedAt == historyUpdatedAt) return
+
         val historyItems = allItems
             .asSequence()
             .filter { it.itemKey.isNotBlank() && it.historyStatus == HISTORY_STATUS_REMOVED }
@@ -133,8 +141,7 @@ class AuctionRepository(context: Context) {
             historyItems,
             AuctionSyncMetadataEntity(
                 id = AuctionSyncMetadataEntity.HISTORY_ID,
-                lastUpdatedAt = allItems.map(AuctionItem::historyCreatedAt).filter(String::isNotBlank).maxOrNull()
-                    ?: firstPage.lastUpdatedAt,
+                lastUpdatedAt = historyUpdatedAt,
                 lastSuccessfulSyncAt = now,
                 baselineEstablished = true,
             ),
@@ -142,8 +149,9 @@ class AuctionRepository(context: Context) {
     }
 
     private fun loadPage(page: Int, type: String): AuctionApiPage {
+        val pageSize = if (type == TYPE_HISTORY) HISTORY_PAGE_SIZE else ACTIVE_PAGE_SIZE
         val historyQuery = if (type == TYPE_HISTORY) "&historyStatus=$HISTORY_STATUS_REMOVED" else ""
-        val connection = (URL("$API_URL?type=$type&page=$page&pageSize=$PAGE_SIZE$historyQuery").openConnection() as HttpURLConnection).apply {
+        val connection = (URL("$API_URL?type=$type&page=$page&pageSize=$pageSize$historyQuery").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = CONNECT_TIMEOUT_MILLIS
             readTimeout = READ_TIMEOUT_MILLIS
@@ -156,13 +164,13 @@ class AuctionRepository(context: Context) {
             val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             if (status !in 200..299) throw IOException("경매 API HTTP 오류: $status")
             if (!body.trimStart().startsWith("{")) throw IOException("경매 API가 JSON이 아닌 응답을 반환했습니다.")
-            parsePage(body)
+            parsePage(body, pageSize)
         } finally {
             connection.disconnect()
         }
     }
 
-    private fun parsePage(body: String): AuctionApiPage {
+    private fun parsePage(body: String, requestedPageSize: Int): AuctionApiPage {
         val root = JSONObject(body)
         if (!root.optBoolean("success", false)) {
             throw IOException(root.stringOrEmpty("message").ifBlank { "경매 API 요청에 실패했습니다." })
@@ -176,7 +184,7 @@ class AuctionRepository(context: Context) {
         }
         return AuctionApiPage(
             page = root.optInt("page", 1),
-            pageSize = root.optInt("pageSize", PAGE_SIZE),
+            pageSize = root.optInt("pageSize", requestedPageSize),
             totalCount = root.optInt("totalCount", items.size),
             totalPages = root.optInt("totalPages", if (items.isEmpty()) 0 else 1),
             lastUpdatedAt = root.nullableString("lastUpdatedAt"),
@@ -221,7 +229,8 @@ class AuctionRepository(context: Context) {
 
     companion object {
         private const val API_URL = "https://script.google.com/macros/s/AKfycbw-ryPQ_7E9lOOtxxO4dl0FxoQYf0B5iivY5i4vA1IbYmuP57NYH1dNvWmlxooPVPT70A/exec"
-        private const val PAGE_SIZE = 20
+        private const val ACTIVE_PAGE_SIZE = 20
+        private const val HISTORY_PAGE_SIZE = 100
         private const val MAX_TOTAL_PAGES = 50
         private const val CONNECT_TIMEOUT_MILLIS = 15_000
         private const val READ_TIMEOUT_MILLIS = 20_000

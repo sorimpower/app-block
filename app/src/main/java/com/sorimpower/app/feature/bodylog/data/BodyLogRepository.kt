@@ -186,15 +186,9 @@ class BodyLogRepository(private val context: Context) {
     }
 
     private fun importPhoto(uri: Uri, mealId: String, index: Int): MealPhotoEntity? = runCatching {
-        val bitmap = if (Build.VERSION.SDK_INT >= 28) {
-            ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, _, _ ->
-                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-            }
-        } else {
-            context.contentResolver.openInputStream(uri).use(BitmapFactory::decodeStream)
-        } ?: return null
-        val scaled = bitmap.scaledTo(2048)
-        val thumb = scaled.scaledTo(360)
+        val bitmap = decodeMealPhoto(uri) ?: return null
+        val scaled = bitmap.scaledTo(MAX_PHOTO_SIDE)
+        val thumb = scaled.scaledTo(THUMBNAIL_SIDE)
         val directory = File(context.filesDir, "meal_photos").apply { mkdirs() }
         val id = UUID.randomUUID().toString()
         val imageFile = File(directory, "$id.jpg")
@@ -208,6 +202,39 @@ class BodyLogRepository(private val context: Context) {
         bitmap.recycle()
         MealPhotoEntity(id, mealId, imageFile.absolutePath, thumbFile.absolutePath, outputWidth, outputHeight, index, System.currentTimeMillis())
     }.getOrNull()
+
+    private fun decodeMealPhoto(uri: Uri): Bitmap? {
+        return if (Build.VERSION.SDK_INT >= 28) {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
+                val (targetWidth, targetHeight) = targetPhotoSize(info.size.width, info.size.height)
+                decoder.setTargetSize(targetWidth, targetHeight)
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            }
+        } else {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = photoSampleSize(bounds.outWidth, bounds.outHeight)
+            }
+            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+        }
+    }
+
+    private fun targetPhotoSize(width: Int, height: Int): Pair<Int, Int> {
+        val halfWidth = (width / 2).coerceAtLeast(1)
+        val halfHeight = (height / 2).coerceAtLeast(1)
+        val largest = maxOf(halfWidth, halfHeight)
+        if (largest <= MAX_PHOTO_SIDE) return halfWidth to halfHeight
+        val ratio = MAX_PHOTO_SIDE.toFloat() / largest
+        return (halfWidth * ratio).toInt().coerceAtLeast(1) to (halfHeight * ratio).toInt().coerceAtLeast(1)
+    }
+
+    private fun photoSampleSize(width: Int, height: Int): Int {
+        var sampleSize = 2
+        while (maxOf(width / sampleSize, height / sampleSize) > MAX_PHOTO_SIDE) sampleSize *= 2
+        return sampleSize
+    }
 
     private fun deletePhotoFiles(photo: MealPhotoEntity) {
         File(photo.localPath).delete()
@@ -228,5 +255,10 @@ class BodyLogRepository(private val context: Context) {
         if (largest <= maxSide) return this
         val ratio = maxSide.toFloat() / largest
         return Bitmap.createScaledBitmap(this, (width * ratio).toInt(), (height * ratio).toInt(), true)
+    }
+
+    private companion object {
+        const val MAX_PHOTO_SIDE = 2048
+        const val THUMBNAIL_SIDE = 360
     }
 }

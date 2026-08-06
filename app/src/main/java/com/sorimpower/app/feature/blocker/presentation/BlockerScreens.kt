@@ -105,11 +105,14 @@ internal fun BlockerScreen(
     requestProtectedAction: (() -> Unit) -> Unit,
     onOpenApp: (InstalledApp) -> Unit,
 ) {
+    val apps by viewModel.apps.collectAsStateWithLifecycle()
+    val appsLoading by viewModel.appsLoading.collectAsStateWithLifecycle()
+    LaunchedEffect(viewModel) { viewModel.loadApps() }
     var message by remember(state.blockMessage) { mutableStateOf(state.blockMessage) }
     var query by remember { mutableStateOf("") }
-    val filteredApps = remember(query, viewModel.apps, state.blockedPackages) {
+    val filteredApps = remember(query, apps, state.blockedPackages) {
         val keyword = query.trim().lowercase()
-        val matches = if (keyword.isBlank()) viewModel.apps else viewModel.apps.filter {
+        val matches = if (keyword.isBlank()) apps else apps.filter {
             it.label.lowercase().contains(keyword) || it.packageName.lowercase().contains(keyword)
         }
         matches.sortedWith(
@@ -213,7 +216,11 @@ internal fun BlockerScreen(
                         leadingIcon = { Icon(Icons.Rounded.Search, null) },
                         singleLine = true,
                     )
-                    Text("검색 결과 ${filteredApps.size}개", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        if (appsLoading) "앱 목록 불러오는 중..." else "검색 결과 ${filteredApps.size}개",
+                        Modifier.padding(top = 6.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         }
