@@ -12,10 +12,12 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
 import java.time.LocalDate
@@ -49,6 +51,10 @@ class BodyLogRepository(private val context: Context) {
         weightsHidden,
         ::BodyLogData,
     )
+
+    init {
+        CoroutineScope(Dispatchers.IO).launch { cleanupOrphanedMealPhotos() }
+    }
 
     suspend fun setWeightsHidden(hidden: Boolean) {
         context.bodyLogDataStore.edit { preferences -> preferences[weightsHiddenKey] = hidden }
@@ -146,22 +152,24 @@ class BodyLogRepository(private val context: Context) {
             MealItemEntity(UUID.randomUUID().toString(), mealId, item.name.trim().take(60), item.amount.trim().take(30).ifBlank { null }, index)
         }
         val retainedPhotos = existing?.photos.orEmpty().filter { it.id in retainedPhotoIds }
-        existing?.photos.orEmpty().filterNot { it.id in retainedPhotoIds }.forEach { photo ->
-            File(photo.localPath).delete()
-            File(photo.thumbnailPath).delete()
-        }
+        val removedPhotos = existing?.photos.orEmpty().filterNot { it.id in retainedPhotoIds }
         val available = (3 - retainedPhotos.size).coerceAtLeast(0)
         val imported = photoUris.take(available).mapIndexedNotNull { index, uri -> importPhoto(uri, mealId, retainedPhotos.size + index) }
         val photos = retainedPhotos.mapIndexed { index, photo -> photo.copy(sortOrder = index) } + imported
-        dao.replaceMeal(meal, entities, photos)
+        try {
+            dao.replaceMeal(meal, entities, photos)
+            removedPhotos.forEach(::deletePhotoFiles)
+        } finally {
+            cleanupOrphanedMealPhotos()
+        }
     }
 
     suspend fun deleteMeal(meal: MealWithDetails) = withContext(Dispatchers.IO) {
-        meal.photos.forEach { photo ->
-            File(photo.localPath).delete()
-            File(photo.thumbnailPath).delete()
-        }
         dao.deleteMealById(meal.meal.id)
+        meal.photos.forEach { photo ->
+            deletePhotoFiles(photo)
+        }
+        cleanupOrphanedMealPhotos()
     }
 
     fun createCameraUri(): Pair<Uri, File> {
@@ -193,6 +201,20 @@ class BodyLogRepository(private val context: Context) {
         bitmap.recycle()
         MealPhotoEntity(id, mealId, imageFile.absolutePath, thumbFile.absolutePath, outputWidth, outputHeight, index, System.currentTimeMillis())
     }.getOrNull()
+
+    private fun deletePhotoFiles(photo: MealPhotoEntity) {
+        File(photo.localPath).delete()
+        File(photo.thumbnailPath).delete()
+    }
+
+    private suspend fun cleanupOrphanedMealPhotos() {
+        val referencedPaths = dao.allMealPhotoPaths()
+            .flatMap { listOf(it.localPath, it.thumbnailPath) }
+            .toSet()
+        File(context.filesDir, "meal_photos").listFiles()
+            ?.filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) && it.absolutePath !in referencedPaths }
+            ?.forEach(File::delete)
+    }
 
     private fun Bitmap.scaledTo(maxSide: Int): Bitmap {
         val largest = maxOf(width, height)

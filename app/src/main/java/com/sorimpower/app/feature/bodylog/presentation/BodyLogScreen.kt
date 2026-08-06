@@ -189,13 +189,14 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 scope.launch { listState.animateScrollToItem(4) }
             }, weightsHidden = state.weightsHidden) }
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.fillMaxWidth()) {
+                Text("일일 기록", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
                     OutlinedButton(onClick = { showMounjaroInput = true }) {
                         Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
                         Text("주사 기록", Modifier.padding(start = 3.dp))
                     }
-                    Button(onClick = { showMealInput = true }) {
+                    OutlinedButton(onClick = { showMealInput = true }) {
                         Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
                         Text("식사 기록", Modifier.padding(start = 3.dp))
                     }
@@ -336,7 +337,7 @@ private fun BodySummaryCard(
                 }
             }
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onWeight, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = onWeight, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Rounded.MonitorWeight, null, Modifier.size(18.dp))
                     Text("체중 기록", Modifier.padding(start = 5.dp))
                 }
@@ -497,27 +498,31 @@ private fun WeightChart(points: List<ChartPoint>, weightsHidden: Boolean) {
 @Composable
 private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (LocalDate) -> Unit, weightsHidden: Boolean) {
     val first = date.withDayOfMonth(1)
-    val start = first.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val start = first.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
     val weights = state.weights.dailyRepresentatives()
     val mealDates = state.meals.map { it.meal.localDate() }.toSet()
     val injectionDates = state.mounjaroInjections.map { it.localDate() }.toSet()
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(12.dp)) {
-            Row(Modifier.fillMaxWidth()) { listOf("월", "화", "수", "목", "금", "토", "일").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center) } }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(date.format(DateTimeFormatter.ofPattern("yyyy년 M월", Locale.KOREAN)), Modifier.weight(1f), fontWeight = FontWeight.Black)
+                OutlinedButton(onClick = { onSelect(LocalDate.now()) }) { Text("오늘") }
+            }
+            Row(Modifier.fillMaxWidth()) { listOf("일", "월", "화", "수", "목", "금", "토").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center) } }
             repeat(6) { week ->
                 Row(Modifier.fillMaxWidth()) {
                     repeat(7) { day ->
                         val current = start.plusDays((week * 7 + day).toLong())
                         val weight = weights[current]
                         Column(
-                            Modifier.weight(1f).aspectRatio(.82f).padding(2.dp).clickable { onSelect(current) }
+                            Modifier.weight(1f).aspectRatio(.68f).padding(2.dp).clickable { onSelect(current) }
                                 .background(if (current == date) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
                                 .padding(3.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text("${current.dayOfMonth}", color = if (current.month == date.month) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
                             weight?.let { Text(if (weightsHidden) "•••" else formatWeight(it.weightKg), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Row(Modifier.height(13.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                                 if (current in mealDates) Box(Modifier.size(5.dp).background(AppOrange, CircleShape))
                                 if (current in injectionDates) {
                                     Box(Modifier.size(13.dp).background(AppCobalt, CircleShape), contentAlignment = Alignment.Center) {
@@ -553,7 +558,7 @@ private fun MealCard(meal: MealWithDetails, onPhotoClick: (String) -> Unit, onEd
                 }
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text(MealType.from(meal.meal.mealType).label, color = AppCobalt, fontWeight = FontWeight.Black)
+                Text("${MealType.from(meal.meal.mealType).label} · ${formatRecordTime(meal.meal.eatenAt)}", color = AppCobalt, fontWeight = FontWeight.Black)
                 Text(meal.items.sortedBy { it.sortOrder }.joinToString(" · ") { it.name }, fontWeight = FontWeight.Bold)
                 meal.meal.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
@@ -597,7 +602,7 @@ private fun MounjaroInjectionCard(injection: MounjaroInjectionEntity, isLatest: 
                 Icon(Icons.Rounded.Medication, contentDescription = null, tint = AppCobalt)
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text("마운자로 · ${formatWeight(injection.doseMg)} mg", color = AppCobalt, fontWeight = FontWeight.Black)
+                Text("마운자로 · ${formatWeight(injection.doseMg)} mg · ${formatRecordTime(injection.injectedAt)}", color = AppCobalt, fontWeight = FontWeight.Black)
                 injection.sideEffects.takeIf(String::isNotBlank)?.let {
                     Text("부작용: ${it.replace("|", " · ")}", style = MaterialTheme.typography.bodySmall)
                 }
@@ -938,6 +943,7 @@ private fun chartPoints(weights: List<WeightEntryEntity>, period: ChartPeriod, a
 }
 
 private fun formatWeight(value: Double) = "%.1f".format(value)
+private fun formatRecordTime(timestamp: Long) = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
 private const val HIDDEN_WEIGHT = "••• kg"
 private fun timestampForDate(date: LocalDate, existingTimestamp: Long?): Long {
     val zone = ZoneId.systemDefault()

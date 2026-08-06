@@ -12,6 +12,7 @@
 - 현재·목표 체중과 변화량을 가리는 Body Log 프라이버시 표시 모드
 - 오늘 또는 과거 날짜를 직접 선택하는 체중·식사 기록
 - 주사·식사를 날짜별 통합 목록으로 모두 보여주고, 사진을 탭하면 확대해 볼 수 있는 일일 기록
+- 식사 삭제·사진 수정 후 참조되지 않는 원본·썸네일 파일을 즉시와 다음 실행 시 정리하는 로컬 사진 저장소 관리
 - 마운자로 투여일·용량·부작용 기록, 월 달력의 주사 배지, 최신 기록에서 바꿀 수 있는 알림 ON/OFF 및 1~4주 반복 주기 설정
 - 차단 조건·차단 메시지·차단 앱을 번호와 색상으로 구분한 설정 UI
 - 요일, 시간대, 매주·2주마다·매월 반복, 매월 특정 날짜를 조합한 여러 차단·해제 조건
@@ -53,7 +54,7 @@
 - `feature/blocker/service/AppBlockAccessibilityService.kt`: 다른 앱의 화면 전환을 감지하여 차단 처리
 - `feature/blocker/presentation/BlockedActivity.kt`: 강조된 차단 문구·앱 이름·오늘 실행 시도 횟수와 100자 긴급 사용 절차 표시
 - `feature/bodylog/data/BodyLogDatabase.kt`: 체중·목표·마운자로 투여·식사·음식·사진 Room 스키마와 DAO
-- `feature/bodylog/data/BodyLogRepository.kt`: Body Log 저장 및 사진 가져오기·압축·삭제
+- `feature/bodylog/data/BodyLogRepository.kt`: Body Log 저장, 사진 가져오기·압축·삭제 및 참조되지 않는 사진 파일 정리
 - `feature/bodylog/domain/BodyLogModels.kt`: 기간 집계와 일일 대표 체중 계산
 - `feature/bodylog/presentation/BodyLogScreen.kt`: 대시보드·그래프·달력·체중·식사·사진 UI
 - `feature/bodylog/presentation/BodyLogViewModel.kt`: Body Log 상태와 사용자 동작 연결

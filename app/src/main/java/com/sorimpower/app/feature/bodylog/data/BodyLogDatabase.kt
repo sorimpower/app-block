@@ -113,6 +113,8 @@ data class MealWithDetails(
     @Relation(parentColumn = "id", entityColumn = "mealEntryId") val photos: List<MealPhotoEntity>,
 )
 
+data class MealPhotoPaths(val localPath: String, val thumbnailPath: String)
+
 @Dao
 interface BodyLogDao {
     @Query("SELECT * FROM weight_entries ORDER BY measuredAt ASC")
@@ -160,6 +162,9 @@ interface BodyLogDao {
 
     @Query("DELETE FROM meal_entries WHERE id = :mealId")
     suspend fun deleteMealById(mealId: String)
+
+    @Query("SELECT localPath, thumbnailPath FROM meal_photos")
+    suspend fun allMealPhotoPaths(): List<MealPhotoPaths>
 
     @Transaction
     suspend fun replaceMeal(meal: MealEntryEntity, items: List<MealItemEntity>, photos: List<MealPhotoEntity>) {
