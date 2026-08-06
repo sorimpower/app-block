@@ -85,7 +85,7 @@ import java.time.LocalDate
 fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showFilterDialog by remember { mutableStateOf(false) }
-    LaunchedEffect(viewModel) { viewModel.refresh() }
+    LaunchedEffect(viewModel) { viewModel.refreshIfNeeded() }
 
     PullToRefreshBox(
         isRefreshing = state.isRefreshing,

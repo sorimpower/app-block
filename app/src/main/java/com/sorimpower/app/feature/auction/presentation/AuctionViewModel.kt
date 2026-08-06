@@ -10,6 +10,7 @@ import com.sorimpower.app.feature.auction.domain.AuctionSortDirection
 import com.sorimpower.app.feature.auction.domain.AuctionSortField
 import com.sorimpower.app.feature.auction.domain.filterAndSortAuctions
 import com.sorimpower.app.feature.auction.domain.favoriteAuctionItems
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -55,6 +56,7 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
     private val sortField = MutableStateFlow(AuctionSortField.AUCTION_DATE)
     private val sortDirection = MutableStateFlow(AuctionSortDirection.ASCENDING)
     private val searchQuery = MutableStateFlow("")
+    private var refreshJob: Job? = null
 
     private val displayOptions = combine(filter, sortField, sortDirection, searchQuery, listMode) { currentFilter, field, direction, query, mode ->
         AuctionDisplayOptions(currentFilter, field, direction, query, mode)
@@ -104,9 +106,14 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AuctionUiState())
 
-    fun refresh() {
-        if (refreshing.value) return
-        viewModelScope.launch {
+    fun refreshIfNeeded() = launchRefresh(force = false)
+
+    fun refresh() = launchRefresh(force = true)
+
+    private fun launchRefresh(force: Boolean) {
+        if (refreshJob?.isActive == true) return
+        refreshJob = viewModelScope.launch {
+            if (!force && !repository.needsAutomaticRefresh()) return@launch
             refreshing.value = true
             errorMessage.value = null
             runCatching { repository.refresh() }

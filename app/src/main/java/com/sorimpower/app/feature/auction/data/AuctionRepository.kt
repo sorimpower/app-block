@@ -60,7 +60,28 @@ class AuctionRepository(context: Context) {
         }
     }
 
+    suspend fun needsAutomaticRefresh(now: Long = System.currentTimeMillis()): Boolean = withContext(Dispatchers.IO) {
+        val metadata = dao.getMetadata()
+        shouldAutomaticallyRefreshAuctions(
+            hasCache = metadata?.baselineEstablished == true,
+            lastSuccessfulSyncAt = metadata?.lastSuccessfulSyncAt,
+            lastAttemptAt = metadata?.lastAttemptAt,
+            now = now,
+        )
+    }
+
     suspend fun refresh() = withContext(Dispatchers.IO) {
+        val attemptAt = System.currentTimeMillis()
+        val metadataBeforeAttempt = dao.getMetadata()
+        dao.upsertMetadata(
+            metadataBeforeAttempt?.copy(lastAttemptAt = attemptAt)
+                ?: AuctionSyncMetadataEntity(
+                    lastUpdatedAt = null,
+                    lastSuccessfulSyncAt = 0L,
+                    baselineEstablished = false,
+                    lastAttemptAt = attemptAt,
+                ),
+        )
         val firstPage = loadPage(1, TYPE_ACTIVE)
         require(firstPage.page == 1) { "첫 페이지 번호가 올바르지 않습니다." }
         require(firstPage.totalPages in 0..MAX_TOTAL_PAGES) { "전체 페이지 수가 허용 범위를 벗어났습니다." }
@@ -99,16 +120,17 @@ class AuctionRepository(context: Context) {
             )
         }
 
+        refreshHistory(now)
+
         dao.replaceSnapshot(
             items = entities,
             metadata = AuctionSyncMetadataEntity(
                 lastUpdatedAt = firstPage.lastUpdatedAt,
                 lastSuccessfulSyncAt = now,
                 baselineEstablished = true,
+                lastAttemptAt = attemptAt,
             ),
         )
-
-        refreshHistory(now)
     }
 
     private suspend fun refreshHistory(now: Long) {

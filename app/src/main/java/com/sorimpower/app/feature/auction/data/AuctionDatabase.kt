@@ -54,6 +54,7 @@ data class AuctionSyncMetadataEntity(
     val lastUpdatedAt: String?,
     val lastSuccessfulSyncAt: Long,
     val baselineEstablished: Boolean,
+    val lastAttemptAt: Long? = null,
 ) {
     companion object {
         const val ID = "auction"
@@ -157,7 +158,7 @@ interface AuctionDao {
 
 @Database(
     entities = [AuctionItemEntity::class, AuctionSyncMetadataEntity::class, AuctionFavoriteEntity::class, AuctionHistoryItemEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AuctionDatabase : RoomDatabase() {
@@ -171,7 +172,7 @@ abstract class AuctionDatabase : RoomDatabase() {
                 context.applicationContext,
                 AuctionDatabase::class.java,
                 "auction.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
         }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -213,6 +214,12 @@ abstract class AuctionDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `auction_sync_metadata` ADD COLUMN `lastAttemptAt` INTEGER")
             }
         }
     }
