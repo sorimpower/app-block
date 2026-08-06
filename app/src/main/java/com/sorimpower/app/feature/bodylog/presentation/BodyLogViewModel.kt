@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.sorimpower.app.feature.bodylog.data.BodyLogRepository
 import com.sorimpower.app.feature.bodylog.data.MealItemInput
 import com.sorimpower.app.feature.bodylog.data.MealWithDetails
+import com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity
 import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
 import com.sorimpower.app.feature.bodylog.domain.BodyLogState
 import com.sorimpower.app.feature.bodylog.reminder.MounjaroReminder
@@ -44,6 +45,7 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun saveMounjaroInjection(
+        existing: MounjaroInjectionEntity? = null,
         injectedAt: Long,
         doseMg: Double,
         sideEffects: Set<String>,
@@ -52,7 +54,7 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
         reminderIntervalWeeks: Int,
         onSaved: () -> Unit,
     ) = viewModelScope.launch {
-        repository.saveMounjaroInjection(injectedAt, doseMg, sideEffects, note, reminderEnabled, reminderIntervalWeeks)
+        repository.saveMounjaroInjection(existing, injectedAt, doseMg, sideEffects, note, reminderEnabled, reminderIntervalWeeks)
         MounjaroReminder.schedule(getApplication(), injectedAt, reminderIntervalWeeks, reminderEnabled)
         onSaved()
     }
@@ -60,6 +62,14 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
     fun updateMounjaroReminder(injection: com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity, enabled: Boolean, intervalWeeks: Int) = viewModelScope.launch {
         repository.updateMounjaroReminder(injection, enabled, intervalWeeks)
         MounjaroReminder.schedule(getApplication(), injection.injectedAt, intervalWeeks, enabled)
+    }
+
+    fun deleteMounjaroInjection(injection: MounjaroInjectionEntity) = viewModelScope.launch {
+        repository.deleteMounjaroInjection(injection)
+        MounjaroReminder.schedule(getApplication(), injection.injectedAt, injection.reminderIntervalWeeks, enabled = false)
+        repository.latestMounjaroInjection()?.let { latest ->
+            MounjaroReminder.schedule(getApplication(), latest.injectedAt, latest.reminderIntervalWeeks, latest.reminderEnabled)
+        }
     }
 
     fun saveMeal(

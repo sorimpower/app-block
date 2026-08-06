@@ -1,6 +1,7 @@
 package com.sorimpower.app.feature.bodylog.presentation
 
 import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -101,6 +102,7 @@ import java.io.File
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -121,7 +123,10 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     var showGoalInput by remember { mutableStateOf(false) }
     var showMounjaroInput by remember { mutableStateOf(false) }
     var editingMeal by remember { mutableStateOf<MealWithDetails?>(null) }
+    var editingMounjaroInjection by remember { mutableStateOf<MounjaroInjectionEntity?>(null) }
     var editingMounjaroReminder by remember { mutableStateOf<MounjaroInjectionEntity?>(null) }
+    var deletingMeal by remember { mutableStateOf<MealWithDetails?>(null) }
+    var deletingMounjaroInjection by remember { mutableStateOf<MounjaroInjectionEntity?>(null) }
     var expandedPhotoPath by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -220,6 +225,8 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 MounjaroInjectionCard(
                     injection,
                     isLatest = injection.id == state.latestMounjaroInjection?.id,
+                    onEdit = { editingMounjaroInjection = injection },
+                    onDelete = { deletingMounjaroInjection = injection },
                     onEditReminder = { editingMounjaroReminder = injection },
                 )
             }
@@ -228,13 +235,29 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                     meal,
                     onPhotoClick = { expandedPhotoPath = it },
                     onEdit = { editingMeal = meal },
-                    onDelete = { viewModel.deleteMeal(meal) },
+                    onDelete = { deletingMeal = meal },
                 )
             }
         }
     }
 
     expandedPhotoPath?.let { path -> ExpandedMealPhoto(path, onDismiss = { expandedPhotoPath = null }) }
+    deletingMeal?.let { meal ->
+        DeleteRecordDialog(
+            title = "식사 기록을 삭제할까요?",
+            message = "식사 내용과 연결된 사진도 함께 삭제되며 복구할 수 없어요.",
+            onDismiss = { deletingMeal = null },
+            onConfirm = { viewModel.deleteMeal(meal); deletingMeal = null },
+        )
+    }
+    deletingMounjaroInjection?.let { injection ->
+        DeleteRecordDialog(
+            title = "주사 기록을 삭제할까요?",
+            message = "투여 기록과 해당 기록의 알림 설정이 삭제되며 복구할 수 없어요.",
+            onDismiss = { deletingMounjaroInjection = null },
+            onConfirm = { viewModel.deleteMounjaroInjection(injection); deletingMounjaroInjection = null },
+        )
+    }
 
     if (showWeightInput) WeightInputDialog(
         initial = null,
@@ -256,9 +279,10 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
         onSave = { start, target, targetDate -> viewModel.saveGoal(start, target, targetDate); showGoalInput = false },
     )
     if (showMounjaroInput) MounjaroInputDialog(
+        existing = null,
         onDismiss = { showMounjaroInput = false },
         onSave = { injectedAt, doseMg, sideEffects, note, reminderEnabled, reminderIntervalWeeks ->
-            viewModel.saveMounjaroInjection(injectedAt, doseMg, sideEffects, note, reminderEnabled, reminderIntervalWeeks) {
+            viewModel.saveMounjaroInjection(null, injectedAt, doseMg, sideEffects, note, reminderEnabled, reminderIntervalWeeks) {
                 showMounjaroInput = false
                 if (reminderEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                     ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -266,6 +290,20 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             }
         },
     )
+    editingMounjaroInjection?.let { injection ->
+        MounjaroInputDialog(
+            existing = injection,
+            onDismiss = { editingMounjaroInjection = null },
+            onSave = { injectedAt, doseMg, sideEffects, note, reminderEnabled, reminderIntervalWeeks ->
+                viewModel.saveMounjaroInjection(injection, injectedAt, doseMg, sideEffects, note, reminderEnabled, reminderIntervalWeeks) {
+                    editingMounjaroInjection = null
+                    if (reminderEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    ) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            },
+        )
+    }
     editingMounjaroReminder?.let { injection ->
         MounjaroReminderSettingsDialog(
             injection = injection,
@@ -591,7 +629,7 @@ private fun ExpandedMealPhoto(path: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun MounjaroInjectionCard(injection: MounjaroInjectionEntity, isLatest: Boolean, onEditReminder: () -> Unit) {
+private fun MounjaroInjectionCard(injection: MounjaroInjectionEntity, isLatest: Boolean, onEdit: () -> Unit, onDelete: () -> Unit, onEditReminder: () -> Unit) {
     Card(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -613,9 +651,26 @@ private fun MounjaroInjectionCard(injection: MounjaroInjectionEntity, isLatest: 
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (isLatest) OutlinedButton(onClick = onEditReminder) { Text("알림 설정") }
+            Column(horizontalAlignment = Alignment.End) {
+                Row {
+                    IconButton(onClick = onEdit) { Icon(Icons.Rounded.Edit, "수정", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    IconButton(onClick = onDelete) { Icon(Icons.Rounded.DeleteOutline, "삭제", tint = MaterialTheme.colorScheme.error) }
+                }
+                if (isLatest) OutlinedButton(onClick = onEditReminder) { Text("알림 설정") }
+            }
         }
     }
+}
+
+@Composable
+private fun DeleteRecordDialog(title: String, message: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, fontWeight = FontWeight.Black) },
+        text = { Text(message) },
+        confirmButton = { Button(onClick = onConfirm) { Text("삭제") } },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("취소") } },
+    )
 }
 
 @Composable
@@ -706,22 +761,25 @@ private fun GoalInputDialog(start: Double?, currentTarget: Double?, currentTarge
 
 @Composable
 private fun MounjaroInputDialog(
+    existing: MounjaroInjectionEntity?,
     onDismiss: () -> Unit,
     onSave: (Long, Double, Set<String>, String?, Boolean, Int) -> Unit,
 ) {
-    var doseText by remember { mutableStateOf("") }
-    var injectedDate by remember { mutableStateOf(LocalDate.now()) }
-    var sideEffects by remember { mutableStateOf(emptySet<String>()) }
-    var note by remember { mutableStateOf("") }
-    var reminderEnabled by remember { mutableStateOf(true) }
-    var reminderIntervalWeeks by remember { mutableStateOf(1) }
+    var doseText by remember(existing?.id) { mutableStateOf(existing?.doseMg?.let(::formatWeight).orEmpty()) }
+    var injectedDate by remember(existing?.id) { mutableStateOf(existing?.injectedAt?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() } ?: LocalDate.now()) }
+    var injectedTime by remember(existing?.id) { mutableStateOf(timeForTimestamp(existing?.injectedAt)) }
+    var sideEffects by remember(existing?.id) { mutableStateOf(existing?.sideEffects?.split('|')?.filter(String::isNotBlank)?.toSet().orEmpty()) }
+    var note by remember(existing?.id) { mutableStateOf(existing?.note.orEmpty()) }
+    var reminderEnabled by remember(existing?.id) { mutableStateOf(existing?.reminderEnabled ?: true) }
+    var reminderIntervalWeeks by remember(existing?.id) { mutableStateOf(existing?.reminderIntervalWeeks ?: 1) }
     val dose = doseText.toDoubleOrNull()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("마운자로 주사 기록", fontWeight = FontWeight.Black) },
+        title = { Text(if (existing == null) "마운자로 주사 기록" else "마운자로 주사 수정", fontWeight = FontWeight.Black) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 RecordDateButton(injectedDate, onDateChange = { injectedDate = it })
+                RecordTimeButton(injectedTime, onTimeChange = { injectedTime = it }, modifier = Modifier.padding(top = 8.dp))
                 OutlinedTextField(
                     doseText,
                     { doseText = decimalInput(it) },
@@ -775,7 +833,7 @@ private fun MounjaroInputDialog(
         confirmButton = {
             Button(
                 enabled = dose != null && dose in 0.1..20.0,
-                onClick = { onSave(timestampForDate(injectedDate, null), dose!!, sideEffects, note, reminderEnabled, reminderIntervalWeeks) },
+                onClick = { onSave(timestampForDate(injectedDate, injectedTime), dose!!, sideEffects, note, reminderEnabled, reminderIntervalWeeks) },
             ) { Text("저장") }
         },
         dismissButton = { OutlinedButton(onClick = onDismiss) { Text("취소") } },
@@ -832,6 +890,7 @@ private fun MealInputDialog(viewModel: BodyLogViewModel, existing: MealWithDetai
     var cameraFiles by remember { mutableStateOf(emptyList<File>()) }
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     var recordDate by remember(existing?.meal?.id, selectedDate) { mutableStateOf(existing?.meal?.localDate() ?: selectedDate) }
+    var recordTime by remember(existing?.meal?.id) { mutableStateOf(timeForTimestamp(existing?.meal?.eatenAt)) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(3)) { selected -> photos = (photos + selected).distinct().take((3 - retainedPhotos.size).coerceAtLeast(0)) }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success -> if (success) pendingCameraUri?.let { photos = (photos + it).take((3 - retainedPhotos.size).coerceAtLeast(0)) } }
     AlertDialog(
@@ -840,6 +899,7 @@ private fun MealInputDialog(viewModel: BodyLogViewModel, existing: MealWithDetai
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { RecordDateButton(recordDate, onDateChange = { recordDate = it }) }
+                item { RecordTimeButton(recordTime, onTimeChange = { recordTime = it }) }
                 item { LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(MealType.entries) { item -> FilterChip(selected = type == item, onClick = { type = item }, label = { Text(item.label) }) } } }
                 item { OutlinedTextField(foods, { foods = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("먹은 음식 (한 줄에 하나)") }, minLines = 3) }
                 item { OutlinedTextField(note, { note = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("메모 (선택)") }) }
@@ -880,7 +940,7 @@ private fun MealInputDialog(viewModel: BodyLogViewModel, existing: MealWithDetai
         confirmButton = {
             Button(enabled = foods.lineSequence().any { it.isNotBlank() }, onClick = {
                 val items = foods.lineSequence().flatMap { it.split(',').asSequence() }.filter { it.isNotBlank() }.map { MealItemInput(it.trim()) }.toList()
-                val eatenAt = timestampForDate(recordDate, existing?.meal?.eatenAt)
+                val eatenAt = timestampForDate(recordDate, recordTime)
                 viewModel.saveMeal(existing, eatenAt, type.name, items, note, tags, photos, retainedPhotos.map { it.id }.toSet()) {
                     cameraFiles.forEach(File::delete)
                     onSaved()
@@ -909,6 +969,23 @@ private fun RecordDateButton(date: LocalDate, onDateChange: (LocalDate) -> Unit)
         Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(19.dp))
         Text(date.format(DateTimeFormatter.ofPattern("yyyy년 M월 d일 EEEE", Locale.KOREAN)), Modifier.padding(start = 8.dp))
     }
+}
+
+@Composable
+private fun RecordTimeButton(time: LocalTime, onTimeChange: (LocalTime) -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    OutlinedButton(
+        onClick = {
+            TimePickerDialog(
+                context,
+                { _, hour, minute -> onTimeChange(LocalTime.of(hour, minute)) },
+                time.hour,
+                time.minute,
+                true,
+            ).show()
+        },
+        modifier = modifier.fillMaxWidth(),
+    ) { Text("시간 · %02d:%02d".format(time.hour, time.minute)) }
 }
 
 @Composable private fun SectionHeading(title: String, subtitle: String, modifier: Modifier = Modifier) = Column(modifier) {
@@ -945,12 +1022,16 @@ private fun chartPoints(weights: List<WeightEntryEntity>, period: ChartPeriod, a
 private fun formatWeight(value: Double) = "%.1f".format(value)
 private fun formatRecordTime(timestamp: Long) = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
 private const val HIDDEN_WEIGHT = "••• kg"
+private fun timeForTimestamp(timestamp: Long?): LocalTime = timestamp
+    ?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalTime().withSecond(0).withNano(0) }
+    ?: LocalTime.now().withSecond(0).withNano(0)
 private fun timestampForDate(date: LocalDate, existingTimestamp: Long?): Long {
     val zone = ZoneId.systemDefault()
     val time = existingTimestamp?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalTime() }
         ?: if (date == LocalDate.now()) java.time.LocalTime.now() else java.time.LocalTime.NOON
     return date.atTime(time).atZone(zone).toInstant().toEpochMilli()
 }
+private fun timestampForDate(date: LocalDate, time: LocalTime): Long = date.atTime(time).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
 private fun signed(value: Double?) = value?.let { (if (it > 0) "+" else "") + formatWeight(it) } ?: "—"
 private fun decimalInput(value: String): String = value.filter { it.isDigit() || it == '.' }.let { filtered ->
     val firstDot = filtered.indexOf('.')

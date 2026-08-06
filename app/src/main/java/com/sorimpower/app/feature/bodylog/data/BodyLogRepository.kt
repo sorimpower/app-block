@@ -97,6 +97,7 @@ class BodyLogRepository(private val context: Context) {
     }
 
     suspend fun saveMounjaroInjection(
+        existing: MounjaroInjectionEntity? = null,
         injectedAt: Long,
         doseMg: Double,
         sideEffects: Set<String>,
@@ -106,14 +107,14 @@ class BodyLogRepository(private val context: Context) {
     ) {
         val now = System.currentTimeMillis()
         dao.upsertMounjaroInjection(MounjaroInjectionEntity(
-            id = UUID.randomUUID().toString(),
+            id = existing?.id ?: UUID.randomUUID().toString(),
             injectedAt = injectedAt,
             doseMg = doseMg,
             sideEffects = sideEffects.joinToString("|"),
             note = note?.trim()?.take(300)?.ifBlank { null },
             reminderEnabled = reminderEnabled,
             reminderIntervalWeeks = reminderIntervalWeeks.coerceIn(1, 4),
-            createdAt = now,
+            createdAt = existing?.createdAt ?: now,
             updatedAt = now,
         ))
     }
@@ -125,6 +126,12 @@ class BodyLogRepository(private val context: Context) {
             updatedAt = System.currentTimeMillis(),
         ))
     }
+
+    suspend fun deleteMounjaroInjection(injection: MounjaroInjectionEntity) {
+        dao.deleteMounjaroInjection(injection)
+    }
+
+    suspend fun latestMounjaroInjection(): MounjaroInjectionEntity? = dao.latestMounjaroInjection()
 
     suspend fun saveMeal(
         existing: MealWithDetails? = null,
