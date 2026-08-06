@@ -43,6 +43,7 @@ data class AuctionItem(
 
 enum class AuctionSortField(val label: String) {
     APPRAISAL_PRICE("감정가"),
+    MINIMUM_PRICE("최저가"),
     AUCTION_DATE("매각기일"),
     FAILED_COUNT("유찰 횟수"),
 }
@@ -86,6 +87,7 @@ fun filterAndSortAuctions(
 ): List<AuctionItem> {
     val comparator = when (sortField) {
         AuctionSortField.APPRAISAL_PRICE -> compareBy<AuctionItem> { it.appraisalPrice }
+        AuctionSortField.MINIMUM_PRICE -> compareBy<AuctionItem> { it.minimumPrice }
         AuctionSortField.AUCTION_DATE -> compareBy<AuctionItem> { parseAuctionDate(it.auctionDate) ?: LocalDate.MAX }
         AuctionSortField.FAILED_COUNT -> compareBy<AuctionItem> { it.failedCount }
     }.thenBy(AuctionItem::itemKey)
@@ -103,6 +105,8 @@ fun AuctionItem.matchesAuctionCriteria(): Boolean =
         appraisalPrice >= MINIMUM_APPRAISAL_PRICE &&
         isInProgress &&
         usageName.trim() == "아파트"
+
+fun AuctionItem.mapSearchQuery(): String = address.trim().ifBlank { buildingName.trim() }
 
 fun normalizeAuctionTime(value: String): String? {
     val trimmed = value.trim()

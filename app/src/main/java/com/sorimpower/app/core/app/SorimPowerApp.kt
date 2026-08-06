@@ -153,7 +153,7 @@ internal fun SorimPowerApp(
                 title = {
                     Column {
                         Text(when (screen) {
-                            Screen.HOME -> "SORIMPOWER"
+                            Screen.HOME -> "소림파워"
                             Screen.BLOCKER -> "앱 차단"
                             Screen.BODY_LOG -> "건강 기록"
                             Screen.AUCTION -> "부동산 경매"

@@ -1,13 +1,19 @@
 package com.sorimpower.app.feature.auction.presentation
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,10 +25,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,7 +49,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.KeyboardOptions
@@ -61,6 +71,7 @@ import com.sorimpower.app.feature.auction.domain.auctionDdayLabel
 import com.sorimpower.app.feature.auction.domain.formatAuctionPrice
 import com.sorimpower.app.feature.auction.domain.formatAuctionUpdatedAt
 import com.sorimpower.app.feature.auction.domain.isAuctionDataStale
+import com.sorimpower.app.feature.auction.domain.mapSearchQuery
 import java.util.Locale
 import java.time.LocalDate
 
@@ -80,10 +91,11 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item { AuctionSummaryCard(state) }
+
             item {
                 AuctionHeader(
                     state = state,
-                    onRefresh = viewModel::refresh,
                     onShowFilter = { showFilterDialog = true },
                     onClearFilter = { viewModel.setFilter(AuctionListFilter()) },
                     onSort = viewModel::setSort,
@@ -131,9 +143,47 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
 }
 
 @Composable
+private fun AuctionSummaryCard(state: AuctionUiState) {
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(26.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(2.dp),
+    ) {
+        Row(
+            Modifier.padding(10.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF7C2AE8), Color(0xFFB623E6), Color(0xFFE72A99))))
+                .padding(22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("REAL ESTATE AUCTION", color = Color.White.copy(alpha = .76f), fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (state.refreshCompleted || state.hasCache) "진행 중 경매 ${state.totalCount}건" else "경매 목록 불러오는 중",
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Black,
+                )
+                Text(
+                    "서울 · 아파트 · 감정가 10억 이상",
+                    color = Color.White.copy(alpha = .8f),
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Box(
+                Modifier.size(54.dp).background(Color.White.copy(alpha = .16f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.Gavel, contentDescription = null, tint = Color.White, modifier = Modifier.size(29.dp))
+            }
+        }
+    }
+}
+
+@Composable
 private fun AuctionHeader(
     state: AuctionUiState,
-    onRefresh: () -> Unit,
     onShowFilter: () -> Unit,
     onClearFilter: () -> Unit,
     onSort: (AuctionSortField) -> Unit,
@@ -152,33 +202,21 @@ private fun AuctionHeader(
                     Icon(Icons.Rounded.Gavel, contentDescription = null, tint = AppCobalt)
                 }
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text("관심 조건 경매", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+                    Text("경매 검색 및 정렬", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
                     Text(
                         if (state.filter.isActive || state.searchQuery.isNotBlank()) "${state.items.size}건 / 전체 ${state.totalCount}건" else "총 ${state.totalCount}건",
                         color = AppCobalt,
                         fontWeight = FontWeight.Bold,
                     )
                 }
-                OutlinedButton(onClick = onRefresh, enabled = !state.isRefreshing) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = null, Modifier.size(18.dp))
-                    Text("새로고침", Modifier.padding(start = 4.dp))
-                }
-            }
-            LazyRow(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(listOf("서울", "감정가 10억 이상", "진행 중", "아파트")) { condition ->
-                    Text(
-                        condition,
-                        Modifier.background(AppCobalt.copy(alpha = .09f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
-                        color = AppCobalt,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
+                OutlinedButton(onClick = onShowFilter) {
+                    Text(if (state.filter.isActive) "필터 적용됨" else "필터")
                 }
             }
             OutlinedTextField(
                 value = state.searchQuery,
                 onValueChange = onSearchQueryChange,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
                 label = { Text("아파트명 검색") },
                 placeholder = { Text("예: 헬리오시티") },
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
@@ -189,9 +227,10 @@ private fun AuctionHeader(
                 },
                 singleLine = true,
             )
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onShowFilter) { Text(if (state.filter.isActive) "필터 적용됨" else "필터") }
-                if (state.filter.isActive) OutlinedButton(onClick = onClearFilter) { Text("초기화") }
+            if (state.filter.isActive) {
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                    OutlinedButton(onClick = onClearFilter) { Text("필터 초기화") }
+                }
             }
             Text("정렬", Modifier.padding(top = 14.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             LazyRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -299,6 +338,8 @@ private fun AuctionFilterDialog(initial: AuctionListFilter, onDismiss: () -> Uni
 
 @Composable
 private fun AuctionItemCard(item: AuctionItem) {
+    val context = LocalContext.current
+    val mapQuery = item.mapSearchQuery()
     Card(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -307,23 +348,34 @@ private fun AuctionItemCard(item: AuctionItem) {
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.CalendarMonth, contentDescription = null, tint = AppCobalt, modifier = Modifier.size(19.dp))
-                Text(auctionDateLabel(item), Modifier.padding(start = 6.dp), color = AppCobalt, fontWeight = FontWeight.Black)
-                Text(
-                    auctionDdayLabel(item),
-                    Modifier.padding(start = 8.dp).background(AppOrange.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
-                    color = AppOrange,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                if (item.isNew) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.CalendarMonth, contentDescription = null, tint = AppCobalt, modifier = Modifier.size(19.dp))
+                    Text(auctionDateLabel(item), Modifier.padding(start = 6.dp), color = AppCobalt, fontWeight = FontWeight.Black)
                     Text(
-                        "신규",
-                        Modifier.padding(start = 6.dp).background(AppGreen.copy(alpha = .13f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
-                        color = AppGreen,
+                        auctionDdayLabel(item),
+                        Modifier.padding(start = 8.dp).background(AppOrange.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+                        color = AppOrange,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                     )
+                    if (item.isNew) {
+                        Text(
+                            "신규",
+                            Modifier.padding(start = 6.dp).background(AppGreen.copy(alpha = .13f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+                            color = AppGreen,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+                OutlinedButton(
+                    onClick = { openNaverMap(context, mapQuery) },
+                    enabled = mapQuery.isNotBlank(),
+                    modifier = Modifier.padding(start = 8.dp).height(38.dp),
+                    contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                ) {
+                    Icon(Icons.Rounded.Map, contentDescription = null, modifier = Modifier.size(17.dp))
+                    Text("지도", Modifier.padding(start = 4.dp))
                 }
             }
             Text(
@@ -371,6 +423,23 @@ private fun AuctionItemCard(item: AuctionItem) {
                 )
             }
         }
+    }
+}
+
+private fun openNaverMap(context: Context, query: String) {
+    if (query.isBlank()) return
+    val appUri = Uri.Builder()
+        .scheme("nmap")
+        .authority("search")
+        .appendQueryParameter("query", query)
+        .appendQueryParameter("appname", context.packageName)
+        .build()
+    val appIntent = Intent(Intent.ACTION_VIEW, appUri).addCategory(Intent.CATEGORY_BROWSABLE)
+    try {
+        context.startActivity(appIntent)
+    } catch (_: ActivityNotFoundException) {
+        val webUri = Uri.parse("https://map.naver.com/p/search/${Uri.encode(query)}")
+        context.startActivity(Intent(Intent.ACTION_VIEW, webUri).addCategory(Intent.CATEGORY_BROWSABLE))
     }
 }
 

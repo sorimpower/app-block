@@ -10,6 +10,12 @@ import org.junit.Test
 
 class AuctionModelsTest {
     @Test
+    fun `지도 검색어는 주소를 우선하고 없으면 아파트명을 사용한다`() {
+        assertEquals("서울특별시 송파구 가락동 1", item(address = " 서울특별시 송파구 가락동 1 ").mapSearchQuery())
+        assertEquals("헬리오시티", item(address = "", buildingName = " 헬리오시티 ").mapSearchQuery())
+    }
+
+    @Test
     fun `10억원 경계값을 포함한 서울 진행중 아파트만 허용한다`() {
         assertTrue(item().matchesAuctionCriteria())
         assertFalse(item(appraisalPrice = 999_999_999L).matchesAuctionCriteria())
@@ -54,11 +60,11 @@ class AuctionModelsTest {
     }
 
     @Test
-    fun `감정가 매각기일 유찰횟수 범위를 필터링하고 선택 기준으로 정렬한다`() {
+    fun `감정가 최저가 매각기일 유찰횟수 범위를 필터링하고 선택 기준으로 정렬한다`() {
         val items = listOf(
-            item(auctionDate = "2026-08-20").copy(itemKey = "high", appraisalPrice = 2_000_000_000L, failedCount = 1),
-            item(auctionDate = "2026-08-10").copy(itemKey = "middle", appraisalPrice = 1_500_000_000L, failedCount = 3),
-            item(auctionDate = "2026-08-15").copy(itemKey = "low", appraisalPrice = 1_000_000_000L, failedCount = 0),
+            item(auctionDate = "2026-08-20").copy(itemKey = "high", appraisalPrice = 2_000_000_000L, minimumPrice = 900_000_000L, failedCount = 1),
+            item(auctionDate = "2026-08-10").copy(itemKey = "middle", appraisalPrice = 1_500_000_000L, minimumPrice = 1_300_000_000L, failedCount = 3),
+            item(auctionDate = "2026-08-15").copy(itemKey = "low", appraisalPrice = 1_000_000_000L, minimumPrice = 1_000_000_000L, failedCount = 0),
         )
         val priceAndFailureFilter = AuctionListFilter(
             minAppraisalPrice = 1_500_000_000L,
@@ -72,6 +78,10 @@ class AuctionModelsTest {
         assertEquals(
             listOf("high", "middle", "low"),
             filterAndSortAuctions(items, AuctionListFilter(), AuctionSortField.APPRAISAL_PRICE, AuctionSortDirection.DESCENDING).map { it.itemKey },
+        )
+        assertEquals(
+            listOf("middle", "low", "high"),
+            filterAndSortAuctions(items, AuctionListFilter(), AuctionSortField.MINIMUM_PRICE, AuctionSortDirection.DESCENDING).map { it.itemKey },
         )
         assertEquals(
             listOf("middle", "high", "low"),
@@ -114,6 +124,7 @@ class AuctionModelsTest {
         usageName: String = "아파트",
         isInProgress: Boolean = true,
         auctionDate: String = "2026-08-10",
+        buildingName: String = "아파트",
     ) = AuctionItem(
         itemKey = "key",
         courtCode = "court",
@@ -133,7 +144,7 @@ class AuctionModelsTest {
         sido = sido,
         sigungu = "강남구",
         dong = "도곡동",
-        buildingName = "아파트",
+        buildingName = buildingName,
         courtDepartment = "경매1계",
         courtTel = "",
         note = "",
