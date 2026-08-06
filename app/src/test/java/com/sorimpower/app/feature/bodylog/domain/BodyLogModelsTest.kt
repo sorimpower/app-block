@@ -3,12 +3,61 @@ package com.sorimpower.app.feature.bodylog.domain
 import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
 import com.sorimpower.app.feature.bodylog.data.MealEntryEntity
 import com.sorimpower.app.feature.bodylog.data.MealWithDetails
+import com.sorimpower.app.feature.bodylog.data.WeightGoalEntity
+import com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.LocalDate
 import java.time.ZoneId
 
 class BodyLogModelsTest {
+    @Test
+    fun `next mounjaro record date is seven days after the latest injection`() {
+        val injectedAt = LocalDate.of(2026, 8, 1).atTime(9, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val state = BodyLogState(mounjaroInjections = listOf(mounjaroInjection("latest", injectedAt, 5.0)))
+
+        assertEquals(injectedAt + MOUNJARO_INTERVAL_MILLIS, state.nextMounjaroInjectionAt)
+    }
+
+    @Test
+    fun `mounjaro reminder interval follows the selected number of weeks`() {
+        val injectedAt = LocalDate.of(2026, 8, 1).atTime(9, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val state = BodyLogState(mounjaroInjections = listOf(mounjaroInjection("latest", injectedAt, 5.0, intervalWeeks = 3)))
+
+        assertEquals(injectedAt + MOUNJARO_INTERVAL_MILLIS * 3, state.nextMounjaroInjectionAt)
+    }
+
+    @Test
+    fun `disabled mounjaro reminder has no next reminder date`() {
+        val injectedAt = LocalDate.of(2026, 8, 1).atTime(9, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val state = BodyLogState(mounjaroInjections = listOf(mounjaroInjection("latest", injectedAt, 5.0, reminderEnabled = false)))
+
+        assertNull(state.nextMounjaroInjectionAt)
+    }
+
+    @Test
+    fun `goal remaining is negative when weight needs to decrease`() {
+        val today = LocalDate.now()
+        val state = BodyLogState(
+            weights = listOf(weight("current", 86.1, today, 8)),
+            activeGoal = goal(start = 90.0, target = 70.0),
+        )
+
+        assertEquals(-16.1, state.goalRemaining ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun `goal remaining is positive when weight needs to increase`() {
+        val today = LocalDate.now()
+        val state = BodyLogState(
+            weights = listOf(weight("current", 70.0, today, 8)),
+            activeGoal = goal(start = 68.0, target = 75.0),
+        )
+
+        assertEquals(5.0, state.goalRemaining ?: 0.0, 0.001)
+    }
+
     @Test
     fun `daily representative is the latest measurement of each day`() {
         val day = LocalDate.of(2026, 8, 5)
@@ -68,4 +117,31 @@ class BodyLogModelsTest {
         val eatenAt = date.atTime(hour, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         return MealWithDetails(MealEntryEntity(id, "LUNCH", eatenAt, 0, null, "", eatenAt, eatenAt), emptyList(), emptyList())
     }
+
+    private fun goal(start: Double, target: Double) = WeightGoalEntity(
+        id = "goal",
+        startWeightKg = start,
+        targetWeightKg = target,
+        startedOnEpochDay = LocalDate.now().toEpochDay(),
+        targetDateEpochDay = null,
+        status = "ACTIVE",
+    )
+
+    private fun mounjaroInjection(
+        id: String,
+        injectedAt: Long,
+        doseMg: Double,
+        intervalWeeks: Int = 1,
+        reminderEnabled: Boolean = true,
+    ) = MounjaroInjectionEntity(
+        id = id,
+        injectedAt = injectedAt,
+        doseMg = doseMg,
+        sideEffects = "",
+        note = null,
+        reminderEnabled = reminderEnabled,
+        reminderIntervalWeeks = intervalWeeks,
+        createdAt = injectedAt,
+        updatedAt = injectedAt,
+    )
 }

@@ -7,26 +7,52 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.util.UUID
 
+private val Context.bodyLogDataStore by preferencesDataStore("body_log_settings")
+
 data class BodyLogData(
     val weights: List<WeightEntryEntity>,
     val meals: List<MealWithDetails>,
     val goal: WeightGoalEntity?,
+    val mounjaroInjections: List<MounjaroInjectionEntity>,
+    val weightsHidden: Boolean,
 )
 
 data class MealItemInput(val name: String, val amount: String = "")
 
 class BodyLogRepository(private val context: Context) {
     private val dao = BodyLogDatabase.get(context).dao()
-    val data = combine(dao.observeWeights(), dao.observeMeals(), dao.observeActiveGoal(), ::BodyLogData)
+    private val weightsHiddenKey = booleanPreferencesKey("weights_hidden")
+    private val weightsHidden = context.bodyLogDataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences -> preferences[weightsHiddenKey] ?: false }
+    val data = combine(
+        dao.observeWeights(),
+        dao.observeMeals(),
+        dao.observeActiveGoal(),
+        dao.observeMounjaroInjections(),
+        weightsHidden,
+        ::BodyLogData,
+    )
+
+    suspend fun setWeightsHidden(hidden: Boolean) {
+        context.bodyLogDataStore.edit { preferences -> preferences[weightsHiddenKey] = hidden }
+    }
 
     suspend fun saveWeight(
         id: String? = null,
@@ -61,6 +87,36 @@ class BodyLogRepository(private val context: Context) {
             startedOnEpochDay = LocalDate.now().toEpochDay(),
             targetDateEpochDay = targetDate?.toEpochDay(),
             status = "ACTIVE",
+        ))
+    }
+
+    suspend fun saveMounjaroInjection(
+        injectedAt: Long,
+        doseMg: Double,
+        sideEffects: Set<String>,
+        note: String?,
+        reminderEnabled: Boolean,
+        reminderIntervalWeeks: Int,
+    ) {
+        val now = System.currentTimeMillis()
+        dao.upsertMounjaroInjection(MounjaroInjectionEntity(
+            id = UUID.randomUUID().toString(),
+            injectedAt = injectedAt,
+            doseMg = doseMg,
+            sideEffects = sideEffects.joinToString("|"),
+            note = note?.trim()?.take(300)?.ifBlank { null },
+            reminderEnabled = reminderEnabled,
+            reminderIntervalWeeks = reminderIntervalWeeks.coerceIn(1, 4),
+            createdAt = now,
+            updatedAt = now,
+        ))
+    }
+
+    suspend fun updateMounjaroReminder(injection: MounjaroInjectionEntity, enabled: Boolean, intervalWeeks: Int) {
+        dao.upsertMounjaroInjection(injection.copy(
+            reminderEnabled = enabled,
+            reminderIntervalWeeks = intervalWeeks.coerceIn(1, 4),
+            updatedAt = System.currentTimeMillis(),
         ))
     }
 

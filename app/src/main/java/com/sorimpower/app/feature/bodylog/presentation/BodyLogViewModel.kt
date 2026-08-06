@@ -9,6 +9,7 @@ import com.sorimpower.app.feature.bodylog.data.MealItemInput
 import com.sorimpower.app.feature.bodylog.data.MealWithDetails
 import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
 import com.sorimpower.app.feature.bodylog.domain.BodyLogState
+import com.sorimpower.app.feature.bodylog.reminder.MounjaroReminder
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -18,8 +19,12 @@ import java.time.LocalDate
 
 class BodyLogViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = BodyLogRepository(application)
-    val state = repository.data.map { BodyLogState(it.weights, it.meals, it.goal, loaded = true) }
+    val state = repository.data.map {
+        BodyLogState(it.weights, it.meals, it.goal, it.mounjaroInjections, it.weightsHidden, loaded = true)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BodyLogState())
+
+    fun setWeightsHidden(hidden: Boolean) = viewModelScope.launch { repository.setWeightsHidden(hidden) }
 
     fun saveWeight(
         id: String? = null,
@@ -36,6 +41,25 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
 
     fun saveGoal(startWeightKg: Double, targetWeightKg: Double, targetDate: LocalDate? = null) = viewModelScope.launch {
         repository.saveGoal(startWeightKg, targetWeightKg, targetDate)
+    }
+
+    fun saveMounjaroInjection(
+        injectedAt: Long,
+        doseMg: Double,
+        sideEffects: Set<String>,
+        note: String?,
+        reminderEnabled: Boolean,
+        reminderIntervalWeeks: Int,
+        onSaved: () -> Unit,
+    ) = viewModelScope.launch {
+        repository.saveMounjaroInjection(injectedAt, doseMg, sideEffects, note, reminderEnabled, reminderIntervalWeeks)
+        MounjaroReminder.schedule(getApplication(), injectedAt, reminderIntervalWeeks, reminderEnabled)
+        onSaved()
+    }
+
+    fun updateMounjaroReminder(injection: com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity, enabled: Boolean, intervalWeeks: Int) = viewModelScope.launch {
+        repository.updateMounjaroReminder(injection, enabled, intervalWeeks)
+        MounjaroReminder.schedule(getApplication(), injection.injectedAt, intervalWeeks, enabled)
     }
 
     fun saveMeal(

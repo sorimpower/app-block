@@ -16,6 +16,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.Update
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "weight_entries", indices = [Index("measuredAt")])
@@ -39,6 +41,19 @@ data class WeightGoalEntity(
     val startedOnEpochDay: Long,
     val targetDateEpochDay: Long?,
     val status: String,
+)
+
+@Entity(tableName = "mounjaro_injections", indices = [Index("injectedAt")])
+data class MounjaroInjectionEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val injectedAt: Long,
+    val doseMg: Double,
+    val sideEffects: String,
+    val note: String?,
+    val reminderEnabled: Boolean,
+    val reminderIntervalWeeks: Int,
+    val createdAt: Long,
+    val updatedAt: Long,
 )
 
 @Entity(tableName = "meal_entries", indices = [Index("eatenAt")])
@@ -106,6 +121,12 @@ interface BodyLogDao {
     @Query("SELECT * FROM weight_goals WHERE status = 'ACTIVE' ORDER BY startedOnEpochDay DESC LIMIT 1")
     fun observeActiveGoal(): Flow<WeightGoalEntity?>
 
+    @Query("SELECT * FROM mounjaro_injections ORDER BY injectedAt DESC")
+    fun observeMounjaroInjections(): Flow<List<MounjaroInjectionEntity>>
+
+    @Query("SELECT * FROM mounjaro_injections ORDER BY injectedAt DESC LIMIT 1")
+    suspend fun latestMounjaroInjection(): MounjaroInjectionEntity?
+
     @Transaction
     @Query("SELECT * FROM meal_entries ORDER BY eatenAt ASC")
     fun observeMeals(): Flow<List<MealWithDetails>>
@@ -118,6 +139,12 @@ interface BodyLogDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertGoal(goal: WeightGoalEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMounjaroInjection(injection: MounjaroInjectionEntity)
+
+    @Delete
+    suspend fun deleteMounjaroInjection(injection: MounjaroInjectionEntity)
 
     @Query("UPDATE weight_goals SET status = 'CANCELLED' WHERE status = 'ACTIVE'")
     suspend fun cancelActiveGoals()
@@ -144,14 +171,37 @@ interface BodyLogDao {
 }
 
 @Database(
-    entities = [WeightEntryEntity::class, WeightGoalEntity::class, MealEntryEntity::class, MealItemEntity::class, MealPhotoEntity::class],
-    version = 1,
+    entities = [WeightEntryEntity::class, WeightGoalEntity::class, MounjaroInjectionEntity::class, MealEntryEntity::class, MealItemEntity::class, MealPhotoEntity::class],
+    version = 3,
     exportSchema = false,
 )
 abstract class BodyLogDatabase : RoomDatabase() {
     abstract fun dao(): BodyLogDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `mounjaro_injections` (
+                        `id` TEXT NOT NULL,
+                        `injectedAt` INTEGER NOT NULL,
+                        `doseMg` REAL NOT NULL,
+                        `sideEffects` TEXT NOT NULL,
+                        `note` TEXT,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_mounjaro_injections_injectedAt` ON `mounjaro_injections` (`injectedAt`)")
+            }
+        }
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE `mounjaro_injections` ADD COLUMN `reminderEnabled` INTEGER NOT NULL DEFAULT 1")
+                database.execSQL("ALTER TABLE `mounjaro_injections` ADD COLUMN `reminderIntervalWeeks` INTEGER NOT NULL DEFAULT 1")
+            }
+        }
         @Volatile private var instance: BodyLogDatabase? = null
 
         fun get(context: Context): BodyLogDatabase = instance ?: synchronized(this) {
@@ -159,7 +209,7 @@ abstract class BodyLogDatabase : RoomDatabase() {
                 context.applicationContext,
                 BodyLogDatabase::class.java,
                 "body_log.db",
-            ).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
         }
     }
 }

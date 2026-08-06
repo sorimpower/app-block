@@ -8,9 +8,11 @@
 - 설치 앱의 실제 아이콘을 표시하는 앱별 차단 목록과 시스템 안전 영역을 고려한 하단 메뉴 바
 - 네이비·코발트·오렌지 컬러의 적응형 런처 아이콘과 Android 13 이상 테마 아이콘
 - Room에 체중·목표·식사·음식 항목·사진을 로컬 저장하는 Body Log
-- 체중의 일·주·월·연 그래프, 7일 평균, 월 달력과 기간별 변화 확인
+- 실제 측정 시각 간격, 선택 가이드와 탭 상세를 제공하는 일·주·월·연 체중 그래프 및 모든 기간에 상시 노출되는 월 달력
+- 현재·목표 체중과 변화량을 가리는 Body Log 프라이버시 표시 모드
 - 오늘 또는 과거 날짜를 직접 선택하는 체중·식사 기록
-- 아침·점심·저녁·간식과 사진을 날짜별 목록으로 모아보는 식사 기록
+- 주사·식사를 날짜별 통합 목록으로 모두 보여주고, 사진을 탭하면 확대해 볼 수 있는 일일 기록
+- 마운자로 투여일·용량·부작용 기록, 월 달력의 주사 배지, 최신 기록에서 바꿀 수 있는 알림 ON/OFF 및 1~4주 반복 주기 설정
 - 차단 조건·차단 메시지·차단 앱을 번호와 색상으로 구분한 설정 UI
 - 요일, 시간대, 매주·2주마다·매월 반복, 매월 특정 날짜를 조합한 여러 차단·해제 조건
 - 조건의 공통 활성화 스위치 없이 조건을 추가·편집·삭제하고, 앱마다 적용할 조건을 개별 선택하는 앱별 정책
@@ -50,12 +52,13 @@
 - `feature/blocker/domain/BlockRule.kt`: 다중 조건의 요일·시간·반복·월 특정일 모델과 현재 적용 여부 계산
 - `feature/blocker/service/AppBlockAccessibilityService.kt`: 다른 앱의 화면 전환을 감지하여 차단 처리
 - `feature/blocker/presentation/BlockedActivity.kt`: 강조된 차단 문구·앱 이름·오늘 실행 시도 횟수와 100자 긴급 사용 절차 표시
-- `feature/bodylog/data/BodyLogDatabase.kt`: 체중·목표·식사·음식·사진 Room 스키마와 DAO
+- `feature/bodylog/data/BodyLogDatabase.kt`: 체중·목표·마운자로 투여·식사·음식·사진 Room 스키마와 DAO
 - `feature/bodylog/data/BodyLogRepository.kt`: Body Log 저장 및 사진 가져오기·압축·삭제
 - `feature/bodylog/domain/BodyLogModels.kt`: 기간 집계와 일일 대표 체중 계산
 - `feature/bodylog/presentation/BodyLogScreen.kt`: 대시보드·그래프·달력·체중·식사·사진 UI
 - `feature/bodylog/presentation/BodyLogViewModel.kt`: Body Log 상태와 사용자 동작 연결
-- `app/src/main/AndroidManifest.xml`: 접근성 서비스와 전체 설치 앱 조회 권한 선언
+- `feature/bodylog/reminder/MounjaroReminder.kt`: 마운자로 기록 알림의 반복 예약·표시 및 재부팅 후 복원
+- `app/src/main/AndroidManifest.xml`: 접근성 서비스, 전체 설치 앱 조회, 알림 및 부팅 완료 권한 선언
 
 향후 기능은 `feature/<기능명>` 패키지에 `domain`, `data`, `presentation`을 두고 홈 메뉴에 연결하면 됩니다. 기능이 추가되면 `StartDestination`에도 항목을 추가하여 시작 화면으로 선택할 수 있습니다.
 
@@ -63,7 +66,7 @@
 
 - [Body Log 체중·식사 기록 기능명세서](docs/weight-tracker-spec.md)
 
-현재 v0.6.0에는 Body Log의 날짜 지정 기록, 목표, 기간별 그래프, 달력과 선택 날짜별 식사·사진 목록이 구현되어 있습니다. 세부 표시 단위 설정과 Health Connect는 명세의 후속 단계로 남겨두었습니다.
+현재 v0.6.0에는 Body Log의 날짜 지정 기록, 목표, 상호작용 가능한 기간별 그래프, 상시 달력, 식사·사진 목록, 마운자로 투여·부작용 기록과 사용자 설정 반복 알림이 구현되어 있습니다. 세부 표시 단위 설정과 Health Connect는 명세의 후속 단계로 남겨두었습니다.
 
 ## 빌드와 설치
 
