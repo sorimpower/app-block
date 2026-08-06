@@ -1,0 +1,191 @@
+package com.sorimpower.app.feature.auction.data
+
+import android.content.Context
+import com.sorimpower.app.feature.auction.domain.AuctionItem
+import com.sorimpower.app.feature.auction.domain.matchesAuctionCriteria
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+
+data class AuctionRepositoryData(
+    val items: List<AuctionItem> = emptyList(),
+    val lastUpdatedAt: String? = null,
+    val lastSuccessfulSyncAt: Long? = null,
+    val hasCache: Boolean = false,
+)
+
+private data class AuctionApiPage(
+    val page: Int,
+    val pageSize: Int,
+    val totalCount: Int,
+    val totalPages: Int,
+    val lastUpdatedAt: String?,
+    val items: List<AuctionItem>,
+)
+
+class AuctionRepository(context: Context) {
+    private val dao = AuctionDatabase.get(context).dao()
+
+    val data: Flow<AuctionRepositoryData> = combine(
+        dao.observeItems(),
+        dao.observeMetadata(),
+    ) { items, metadata ->
+        AuctionRepositoryData(
+            items = items.map(AuctionItemEntity::toDomain),
+            lastUpdatedAt = metadata?.lastUpdatedAt,
+            lastSuccessfulSyncAt = metadata?.lastSuccessfulSyncAt,
+            hasCache = metadata?.baselineEstablished == true,
+        )
+    }
+
+    suspend fun refresh() = withContext(Dispatchers.IO) {
+        val firstPage = loadPage(1)
+        require(firstPage.page == 1) { "첫 페이지 번호가 올바르지 않습니다." }
+        require(firstPage.totalPages in 0..MAX_TOTAL_PAGES) { "전체 페이지 수가 허용 범위를 벗어났습니다." }
+
+        val allItems = firstPage.items.toMutableList()
+        for (page in 2..firstPage.totalPages) {
+            val next = loadPage(page)
+            require(next.page == page) { "요청한 페이지와 응답 페이지가 다릅니다." }
+            require(next.totalPages == firstPage.totalPages) { "동기화 중 전체 페이지 수가 변경되었습니다." }
+            allItems += next.items
+        }
+
+        val filtered = allItems
+            .asSequence()
+            .filter(AuctionItem::matchesAuctionCriteria)
+            .groupBy(AuctionItem::itemKey)
+            .map { (_, duplicates) -> duplicates.maxByOrNull(AuctionItem::collectedAt)!! }
+            .sortedWith(compareBy<AuctionItem> { it.auctionDate.isBlank() }.thenBy(AuctionItem::auctionDate).thenBy(AuctionItem::auctionTime))
+
+        val previousItems = dao.getItems().associateBy(AuctionItemEntity::itemKey)
+        val previousMetadata = dao.getMetadata()
+        val now = System.currentTimeMillis()
+        val baselineEstablished = previousMetadata?.baselineEstablished == true
+        val sameSnapshot = previousMetadata?.lastUpdatedAt == firstPage.lastUpdatedAt
+        val entities = filtered.map { item ->
+            val previous = previousItems[item.itemKey]
+            item.toEntity(
+                firstSeenAt = previous?.firstSeenAt ?: now,
+                lastSeenAt = now,
+                isNew = when {
+                    !baselineEstablished -> false
+                    previous == null -> true
+                    sameSnapshot -> previous.isNew
+                    else -> false
+                },
+            )
+        }
+
+        dao.replaceSnapshot(
+            items = entities,
+            metadata = AuctionSyncMetadataEntity(
+                lastUpdatedAt = firstPage.lastUpdatedAt,
+                lastSuccessfulSyncAt = now,
+                baselineEstablished = true,
+            ),
+        )
+    }
+
+    private fun loadPage(page: Int): AuctionApiPage {
+        val connection = (URL("$API_URL?page=$page&pageSize=$PAGE_SIZE").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = CONNECT_TIMEOUT_MILLIS
+            readTimeout = READ_TIMEOUT_MILLIS
+            instanceFollowRedirects = true
+            setRequestProperty("Accept", "application/json")
+        }
+        return try {
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            if (status !in 200..299) throw IOException("경매 API HTTP 오류: $status")
+            if (!body.trimStart().startsWith("{")) throw IOException("경매 API가 JSON이 아닌 응답을 반환했습니다.")
+            parsePage(body)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun parsePage(body: String): AuctionApiPage {
+        val root = JSONObject(body)
+        if (!root.optBoolean("success", false)) {
+            throw IOException(root.stringOrEmpty("message").ifBlank { "경매 API 요청에 실패했습니다." })
+        }
+        val array = root.optJSONArray("items") ?: throw IOException("경매 목록 필드가 없습니다.")
+        val items = buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                add(item.toAuctionItem())
+            }
+        }
+        return AuctionApiPage(
+            page = root.optInt("page", 1),
+            pageSize = root.optInt("pageSize", PAGE_SIZE),
+            totalCount = root.optInt("totalCount", items.size),
+            totalPages = root.optInt("totalPages", if (items.isEmpty()) 0 else 1),
+            lastUpdatedAt = root.nullableString("lastUpdatedAt"),
+            items = items,
+        )
+    }
+
+    private fun JSONObject.toAuctionItem() = AuctionItem(
+        itemKey = stringOrEmpty("itemKey"),
+        courtCode = stringOrEmpty("courtCode"),
+        courtName = stringOrEmpty("courtName"),
+        internalCaseNumber = stringOrEmpty("internalCaseNumber"),
+        caseNumber = stringOrEmpty("caseNumber"),
+        auctionItemNumber = stringOrEmpty("auctionItemNumber"),
+        usageName = stringOrEmpty("usageName"),
+        appraisalPrice = optLong("appraisalPrice", 0L),
+        minimumPrice = optLong("minimumPrice", 0L),
+        minimumPriceRate = optDouble("minimumPriceRate", 0.0),
+        failedCount = optInt("failedCount", 0),
+        auctionDate = stringOrEmpty("auctionDate"),
+        auctionTime = stringOrEmpty("auctionTime"),
+        auctionPlace = stringOrEmpty("auctionPlace"),
+        address = stringOrEmpty("address"),
+        sido = stringOrEmpty("sido"),
+        sigungu = stringOrEmpty("sigungu"),
+        dong = stringOrEmpty("dong"),
+        buildingName = stringOrEmpty("buildingName"),
+        courtDepartment = stringOrEmpty("courtDepartment"),
+        courtTel = stringOrEmpty("courtTel"),
+        note = stringOrEmpty("note"),
+        interestCount = optInt("interestCount", 0),
+        isInProgress = optBoolean("isInProgress", false),
+        objectCount = optInt("objectCount", 0),
+        collectedAt = stringOrEmpty("collectedAt"),
+    )
+
+    private fun JSONObject.stringOrEmpty(key: String): String = if (isNull(key)) "" else optString(key, "")
+    private fun JSONObject.nullableString(key: String): String? = stringOrEmpty(key).ifBlank { null }
+
+    companion object {
+        private const val API_URL = "https://script.google.com/macros/s/AKfycbw-ryPQ_7E9lOOtxxO4dl0FxoQYf0B5iivY5i4vA1IbYmuP57NYH1dNvWmlxooPVPT70A/exec"
+        private const val PAGE_SIZE = 20
+        private const val MAX_TOTAL_PAGES = 50
+        private const val CONNECT_TIMEOUT_MILLIS = 15_000
+        private const val READ_TIMEOUT_MILLIS = 20_000
+    }
+}
+
+private fun AuctionItemEntity.toDomain() = AuctionItem(
+    itemKey, courtCode, courtName, internalCaseNumber, caseNumber, auctionItemNumber, usageName,
+    appraisalPrice, minimumPrice, minimumPriceRate, failedCount, auctionDate, auctionTime,
+    auctionPlace, address, sido, sigungu, dong, buildingName, courtDepartment, courtTel, note,
+    interestCount, isInProgress, objectCount, collectedAt, firstSeenAt, lastSeenAt, isNew,
+)
+
+private fun AuctionItem.toEntity(firstSeenAt: Long, lastSeenAt: Long, isNew: Boolean) = AuctionItemEntity(
+    itemKey, courtCode, courtName, internalCaseNumber, caseNumber, auctionItemNumber, usageName,
+    appraisalPrice, minimumPrice, minimumPriceRate, failedCount, auctionDate, auctionTime,
+    auctionPlace, address, sido, sigungu, dong, buildingName, courtDepartment, courtTel, note,
+    interestCount, isInProgress, objectCount, collectedAt, firstSeenAt, lastSeenAt, isNew,
+)
+

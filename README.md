@@ -7,14 +7,17 @@
 - 밝은 회색 캔버스, 흰색 라운드 카드, 보라·핑크 그라데이션 핵심 카드와 필 형태 활성 탭을 조합한 공통 UI
 - 설치 앱의 실제 아이콘을 표시하는 앱별 차단 목록과 시스템 안전 영역을 고려한 하단 메뉴 바
 - 네이비·코발트·오렌지 컬러의 적응형 런처 아이콘과 Android 13 이상 테마 아이콘
-- Room에 체중·목표·식사·음식 항목·사진을 로컬 저장하는 Body Log
+- Room에 체중·목표·식사·음식 항목·사진을 로컬 저장하는 건강 기록
 - 실제 측정 시각 간격, 선택 가이드와 탭 상세를 제공하는 일·주·월·연 체중 그래프 및 모든 기간에 상시 노출되는 월 달력
-- 현재·목표 체중과 변화량을 가리는 Body Log 프라이버시 표시 모드
+- 현재·목표 체중과 변화량을 가리는 건강 기록 프라이버시 표시 모드
 - 오늘 또는 과거 날짜와 시·분을 직접 선택·수정하는 체중·식사·마운자로 기록
 - 주사·식사를 날짜별 통합 목록으로 모두 보여주고, 사진을 탭하면 확대해 볼 수 있는 일일 기록
 - 식사 삭제·사진 수정 후 참조되지 않는 원본·썸네일 파일을 즉시와 다음 실행 시 정리하는 로컬 사진 저장소 관리
 - 마운자로 투여일·용량·부작용 기록, 월 달력의 주사 배지, 최신 기록에서 바꿀 수 있는 알림 ON/OFF 및 1~4주 반복 주기 설정
 - 식사·마운자로 기록의 수정·삭제와 사진까지 함께 삭제됨을 알리는 삭제 확인 창
+- 매일 갱신되는 서울·감정가 10억 이상·진행 중·아파트 경매를 조건 재검증, 신규 배지, 오프라인 캐시와 함께 보여주는 경매 목록
+- 부동산 경매의 아파트명 검색, 감정가·매각기일·유찰 횟수 범위 필터와 오름·내림차순 정렬
+- 하단 메뉴는 자주 쓰는 네 기능과 `더보기`로 고정하고, 설정 및 미래 기능은 더보기·기능 홈에서 확장하는 구조
 - 차단 조건·차단 메시지·차단 앱을 번호와 색상으로 구분한 설정 UI
 - 요일, 시간대, 매주·2주마다·매월 반복, 매월 특정 날짜를 조합한 여러 차단·해제 조건
 - 조건의 공통 활성화 스위치 없이 조건을 추가·편집·삭제하고, 앱마다 적용할 조건을 개별 선택하는 앱별 정책
@@ -24,7 +27,7 @@
 - 사용자가 직접 설정한 숫자 비밀번호를 이용한 차단 설정 변경 보호
 - 꼭 앱을 사용해야 할 때 100자 확인 문구를 정확히 입력하면 해당 앱의 이번 실행만 허용하는 긴급 사용 기능
 - 이름 또는 패키지명을 이용한 설치 앱 검색
-- 앱 실행 시 기능 홈 또는 App Blocker를 시작 화면으로 선택
+- 앱 실행 시 기능 홈·앱 차단·건강 기록·부동산 경매를 시작 화면으로 선택
 - 설정한 차단 앱·조건·문구·시작 화면·비밀번호 해시·1회성 긴급 사용 상태를 DataStore에 로컬 저장
 
 한 조건 안에서 활성화한 항목은 모두 만족해야 하며(AND), 앱에 할당된 여러 차단 조건 중 하나라도 만족하면 차단됩니다(OR). 할당된 해제 조건이 같은 시점에 만족하면 차단 조건보다 우선하여 앱을 허용합니다. 시간 범위는 `22:00~07:00`처럼 자정을 넘길 수 있으며, 2주 반복은 해당 반복 옵션을 선택한 날짜를 기준으로 계산합니다. 매월 반복은 기준일과 같은 일자에 적용되고, 월 특정 날짜를 켜면 선택한 일자가 이를 대신합니다.
@@ -48,27 +51,31 @@
 - `core/ui/Theme.kt`: 공통 Material 3 색상·모양과 밝은 카드형 테마
 - `feature/home/presentation/HomeScreen.kt`: 기능 홈
 - `feature/settings/presentation/SettingsScreen.kt`: 공통 설정 화면
-- `feature/blocker/data/BlockerRepository.kt`: App Blocker 전용 DataStore 저장소
+- `feature/blocker/data/BlockerRepository.kt`: 앱 차단 전용 DataStore 저장소
 - `feature/blocker/presentation/BlockerScreens.kt`: 차단 조건·앱별 정책·비밀번호 설정 UI
 - `feature/blocker/presentation/BlockerViewModel.kt`: 설치 앱 목록과 차단 화면 상태를 제공하는 ViewModel
 - `feature/blocker/domain/BlockRule.kt`: 다중 조건의 요일·시간·반복·월 특정일 모델과 현재 적용 여부 계산
 - `feature/blocker/service/AppBlockAccessibilityService.kt`: 다른 앱의 화면 전환을 감지하여 차단 처리
 - `feature/blocker/presentation/BlockedActivity.kt`: 강조된 차단 문구·앱 이름·오늘 실행 시도 횟수와 100자 긴급 사용 절차 표시
 - `feature/bodylog/data/BodyLogDatabase.kt`: 체중·목표·마운자로 투여·식사·음식·사진 Room 스키마와 DAO
-- `feature/bodylog/data/BodyLogRepository.kt`: Body Log 저장, 사진 가져오기·압축·삭제 및 참조되지 않는 사진 파일 정리
+- `feature/bodylog/data/BodyLogRepository.kt`: 건강 기록 저장, 사진 가져오기·압축·삭제 및 참조되지 않는 사진 파일 정리
 - `feature/bodylog/domain/BodyLogModels.kt`: 기간 집계와 일일 대표 체중 계산
 - `feature/bodylog/presentation/BodyLogScreen.kt`: 대시보드·그래프·달력·체중·식사·사진 UI
-- `feature/bodylog/presentation/BodyLogViewModel.kt`: Body Log 상태와 사용자 동작 연결
+- `feature/bodylog/presentation/BodyLogViewModel.kt`: 건강 기록 상태와 사용자 동작 연결
 - `feature/bodylog/reminder/MounjaroReminder.kt`: 마운자로 기록 알림의 반복 예약·표시 및 재부팅 후 복원
+- `feature/auction/data`: Google Apps Script 경매 API 전체 페이지 조회와 Room 오프라인 캐시
+- `feature/auction/domain/AuctionModels.kt`: 경매 조건·가격·기일·매각시간 정규화
+- `feature/auction/presentation`: 경매 목록 상태, 새로고침과 Compose 카드 UI
 - `app/src/main/AndroidManifest.xml`: 접근성 서비스, 전체 설치 앱 조회, 알림 및 부팅 완료 권한 선언
 
 향후 기능은 `feature/<기능명>` 패키지에 `domain`, `data`, `presentation`을 두고 홈 메뉴에 연결하면 됩니다. 기능이 추가되면 `StartDestination`에도 항목을 추가하여 시작 화면으로 선택할 수 있습니다.
 
 ## 기획 문서
 
-- [Body Log 체중·식사 기록 기능명세서](docs/weight-tracker-spec.md)
+- [건강 기록 기능명세서](docs/weight-tracker-spec.md)
+- [부동산 경매 목록 기능명세서](docs/seoul-auction-list-spec.md)
 
-현재 v0.6.0에는 Body Log의 날짜 지정 기록, 목표, 상호작용 가능한 기간별 그래프, 상시 달력, 식사·사진 목록, 마운자로 투여·부작용 기록과 사용자 설정 반복 알림이 구현되어 있습니다. 세부 표시 단위 설정과 Health Connect는 명세의 후속 단계로 남겨두었습니다.
+현재 앱에는 앱 차단, 건강 기록과 부동산 경매 목록이 구현되어 있습니다. 하단 메뉴는 홈·차단·기록·부동산 경매·더보기의 다섯 개 탭으로 고정하며, 설정과 미래 기능은 더보기와 기능 홈에서 확장합니다. 경매 목록은 API 데이터를 필터·정렬해 보여주며 마지막 갱신 시각, 신규 사건, 네트워크 실패 시 최근 캐시를 함께 제공합니다. 건강 기록의 세부 표시 단위 설정과 Health Connect는 명세의 후속 단계로 남겨두었습니다.
 
 ## 빌드와 설치
 
@@ -76,7 +83,7 @@
 2. 터미널에서 `./gradlew assembleDebug`를 실행합니다. (처음에는 Gradle 의존성 다운로드가 필요합니다.)
 3. 생성 파일은 `app/build/outputs/apk/debug/app-debug.apk`입니다.
 4. 휴대폰에서 개발자 옵션의 USB 디버깅을 켠 뒤 `adb install -r app/build/outputs/apk/debug/app-debug.apk`를 실행하거나, APK를 휴대폰에 옮겨 설치합니다. 출처를 알 수 없는 앱 설치 허용이 필요할 수 있습니다.
-5. 앱의 설정 화면에서 **접근성 권한**을 눌러 “소림파워 앱 차단 서비스”를 활성화합니다. App Blocker를 켜고 앱을 선택하면 차단이 동작합니다.
+5. 앱의 설정 화면에서 **접근성 권한**을 눌러 “소림파워 앱 차단 서비스”를 활성화합니다. 앱 차단을 켜고 앱을 선택하면 차단이 동작합니다.
 
 ## 유의 사항
 

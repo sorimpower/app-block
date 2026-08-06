@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.Card
@@ -42,6 +43,7 @@ internal fun HomeScreen(
     serviceEnabled: Boolean,
     openBlocker: () -> Unit,
     openBodyLog: () -> Unit,
+    openAuction: () -> Unit,
     openAccessibilitySettings: () -> Unit,
 ) {
     LazyColumn(
@@ -55,12 +57,12 @@ internal fun HomeScreen(
                     Text("내 기능", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
                     Text("오늘 필요한 도구를 바로 열어보세요", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text("2개 기능", color = AppCobalt, fontWeight = FontWeight.Bold)
+                Text("3개 기능", color = AppCobalt, fontWeight = FontWeight.Bold)
             }
         }
         item {
             FeatureCard(
-                title = "App Blocker",
+                title = "앱 차단",
                 description = if (state.enabled) "집중 모드 실행 중" else "방해되는 앱을 조건에 맞게 차단",
                 badge = if (state.enabled) "ACTIVE" else "READY",
                 icon = Icons.Rounded.Lock,
@@ -70,12 +72,22 @@ internal fun HomeScreen(
         }
         item {
             FeatureCard(
-                title = "Body Log",
+                title = "건강 기록",
                 description = "체중과 오늘 먹은 음식을 한곳에 기록",
                 badge = "NEW",
                 icon = Icons.Rounded.FavoriteBorder,
                 accent = AppOrange,
                 onClick = openBodyLog,
+            )
+        }
+        item {
+            FeatureCard(
+                title = "부동산 경매",
+                description = "서울·감정가 10억 이상 진행 중 아파트",
+                badge = "DAILY",
+                icon = Icons.Rounded.Gavel,
+                accent = AppGreen,
+                onClick = openAuction,
             )
         }
         if (!serviceEnabled) {
@@ -91,7 +103,7 @@ internal fun HomeScreen(
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
                             Text("접근성 권한이 필요해요", fontWeight = FontWeight.Black)
-                            Text("연결해야 App Blocker가 동작합니다.", style = MaterialTheme.typography.bodySmall)
+                            Text("연결해야 앱 차단이 동작합니다.", style = MaterialTheme.typography.bodySmall)
                         }
                         Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, tint = AppOrange)
                     }

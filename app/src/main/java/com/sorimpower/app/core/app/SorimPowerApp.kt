@@ -56,6 +56,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Gavel
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -85,6 +87,8 @@ import com.sorimpower.app.feature.blocker.presentation.BlockerViewModel
 import com.sorimpower.app.feature.blocker.presentation.InstalledApp
 import com.sorimpower.app.feature.bodylog.presentation.BodyLogScreen
 import com.sorimpower.app.feature.bodylog.presentation.BodyLogViewModel
+import com.sorimpower.app.feature.auction.presentation.AuctionScreen
+import com.sorimpower.app.feature.auction.presentation.AuctionViewModel
 import com.sorimpower.app.core.ui.AppCobalt
 import com.sorimpower.app.core.ui.AppLilac
 import com.sorimpower.app.core.ui.AppNavy
@@ -103,7 +107,7 @@ import com.sorimpower.app.feature.blocker.presentation.ScheduleScreen
 import com.sorimpower.app.feature.settings.presentation.SettingsScreen
 
 private enum class Screen(val label: String) {
-    HOME("홈"), BLOCKER("차단"), BODY_LOG("기록"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
+    HOME("홈"), BLOCKER("차단"), BODY_LOG("기록"), AUCTION("경매"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,6 +115,7 @@ private enum class Screen(val label: String) {
 internal fun SorimPowerApp(
     viewModel: BlockerViewModel,
     bodyLogViewModel: BodyLogViewModel,
+    auctionViewModel: AuctionViewModel,
     accessibilityEnabled: () -> Boolean,
     openAccessibilitySettings: () -> Unit,
 ) {
@@ -127,6 +132,7 @@ internal fun SorimPowerApp(
                 StartDestination.HOME -> Screen.HOME
                 StartDestination.APP_BLOCKER -> Screen.BLOCKER
                 StartDestination.BODY_LOG -> Screen.BODY_LOG
+                StartDestination.REAL_ESTATE_AUCTION -> Screen.AUCTION
             }
             initialDestinationApplied = true
         }
@@ -147,9 +153,11 @@ internal fun SorimPowerApp(
                 title = {
                     Column {
                         Text(when (screen) {
-                            Screen.HOME -> "SORIM POWER"
-                            Screen.BLOCKER -> "App Blocker"
-                            Screen.BODY_LOG -> "Body Log"
+                            Screen.HOME -> "SORIMPOWER"
+                            Screen.BLOCKER -> "앱 차단"
+                            Screen.BODY_LOG -> "건강 기록"
+                            Screen.AUCTION -> "부동산 경매"
+                            Screen.MORE -> "더보기"
                             Screen.SCHEDULE -> "조건 편집"
                             Screen.APP_RULES -> "앱별 조건"
                             Screen.SETTINGS -> "설정"
@@ -177,9 +185,12 @@ internal fun SorimPowerApp(
                 accessibilityEnabled(),
                 { screen = Screen.BLOCKER },
                 { screen = Screen.BODY_LOG },
+                { screen = Screen.AUCTION },
                 openAccessibilitySettings,
             )
             Screen.BODY_LOG -> BodyLogScreen(padding, bodyLogViewModel)
+            Screen.AUCTION -> AuctionScreen(padding, auctionViewModel)
+            Screen.MORE -> MoreMenuScreen(padding, onOpenSettings = { screen = Screen.SETTINGS })
             Screen.BLOCKER -> BlockerScreen(
                 padding,
                 viewModel,
@@ -254,8 +265,8 @@ private fun FloatingNavigation(selected: Screen, onSelected: (Screen) -> Unit) {
             Modifier.fillMaxWidth().navigationBarsPadding().height(70.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            listOf(Screen.HOME, Screen.BLOCKER, Screen.BODY_LOG, Screen.SETTINGS).forEach { item ->
-                val active = selected == item
+            listOf(Screen.HOME, Screen.BLOCKER, Screen.BODY_LOG, Screen.AUCTION, Screen.MORE).forEach { item ->
+                val active = selected == item || (item == Screen.MORE && selected == Screen.SETTINGS)
                 Column(
                     Modifier.weight(1f).clickable { onSelected(item) }.padding(vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -277,11 +288,44 @@ private fun FloatingNavigation(selected: Screen, onSelected: (Screen) -> Unit) {
 }
 
 @Composable
+private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
+    LazyColumn(
+        Modifier.fillMaxSize().padding(padding),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Text("설정과 앞으로 추가될 기능을 한곳에서 관리하세요.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        item {
+            Card(
+                Modifier.fillMaxWidth().clickable(onClick = onOpenSettings),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(1.dp),
+            ) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(46.dp).background(AppCobalt.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Settings, null, tint = AppCobalt)
+                    }
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text("설정", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                        Text("시작 화면, 접근성 권한, 비밀번호를 관리하세요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun NavIcon(screen: Screen, selected: Boolean) {
     val icon = when (screen) {
         Screen.HOME -> Icons.Rounded.Home
         Screen.BLOCKER -> Icons.Rounded.Block
         Screen.BODY_LOG -> Icons.Rounded.FavoriteBorder
+        Screen.AUCTION -> Icons.Rounded.Gavel
+        Screen.MORE -> Icons.Rounded.MoreHoriz
         else -> Icons.Rounded.Settings
     }
     Box(

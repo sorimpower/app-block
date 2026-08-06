@@ -12,18 +12,20 @@ import com.sorimpower.app.core.app.SorimPowerApp
 import com.sorimpower.app.feature.blocker.presentation.BlockerViewModel
 import com.sorimpower.app.feature.blocker.service.AppBlockAccessibilityService
 import com.sorimpower.app.feature.bodylog.presentation.BodyLogViewModel
+import com.sorimpower.app.feature.auction.presentation.AuctionViewModel
 import com.sorimpower.app.core.ui.SorimPowerTheme
 
 class MainActivity : ComponentActivity() {
     private val blockerViewModel: BlockerViewModel by viewModels()
     private val bodyLogViewModel: BodyLogViewModel by viewModels()
+    private val auctionViewModel: AuctionViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             SorimPowerTheme {
-                SorimPowerApp(blockerViewModel, bodyLogViewModel, ::isAccessibilityServiceEnabled, ::openAccessibilitySettings)
+                SorimPowerApp(blockerViewModel, bodyLogViewModel, auctionViewModel, ::isAccessibilityServiceEnabled, ::openAccessibilitySettings)
             }
         }
     }

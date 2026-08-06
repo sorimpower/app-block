@@ -71,6 +71,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Security
 import com.sorimpower.app.feature.blocker.data.BlockerState
@@ -154,9 +155,10 @@ internal fun SettingsScreen(
                 Column(Modifier.padding(18.dp)) {
                     SectionTitle("시작 화면", "앱을 열었을 때 먼저 표시할 기능")
                     Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DestinationCard(Icons.Rounded.Home, "기능 홈", "전체 기능을 한눈에 보기", state.startDestination == StartDestination.HOME) { viewModel.setStartDestination(StartDestination.HOME) }
-                        DestinationCard(Icons.Rounded.Block, "App Blocker", "차단 설정으로 바로 시작", state.startDestination == StartDestination.APP_BLOCKER) { viewModel.setStartDestination(StartDestination.APP_BLOCKER) }
-                        DestinationCard(Icons.Rounded.FavoriteBorder, "Body Log", "체중과 식사 기록으로 바로 시작", state.startDestination == StartDestination.BODY_LOG) { viewModel.setStartDestination(StartDestination.BODY_LOG) }
+                        DestinationCard(Icons.Rounded.Home, "홈", "전체 기능을 한눈에 보기", state.startDestination == StartDestination.HOME) { viewModel.setStartDestination(StartDestination.HOME) }
+                        DestinationCard(Icons.Rounded.Block, "앱 차단", "차단 설정으로 바로 시작", state.startDestination == StartDestination.APP_BLOCKER) { viewModel.setStartDestination(StartDestination.APP_BLOCKER) }
+                        DestinationCard(Icons.Rounded.FavoriteBorder, "건강 기록", "체중과 식사 기록으로 바로 시작", state.startDestination == StartDestination.BODY_LOG) { viewModel.setStartDestination(StartDestination.BODY_LOG) }
+                        DestinationCard(Icons.Rounded.Gavel, "부동산 경매", "관심 조건 경매 목록으로 바로 시작", state.startDestination == StartDestination.REAL_ESTATE_AUCTION) { viewModel.setStartDestination(StartDestination.REAL_ESTATE_AUCTION) }
                     }
                 }
             }

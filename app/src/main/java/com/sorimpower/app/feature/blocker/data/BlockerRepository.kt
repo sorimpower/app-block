@@ -341,7 +341,8 @@ private data class DailyLaunchCount(val packageName: String, val epochDay: Long,
 enum class StartDestination {
     HOME,
     APP_BLOCKER,
-    BODY_LOG;
+    BODY_LOG,
+    REAL_ESTATE_AUCTION;
 
     companion object {
         fun from(value: String?) = entries.firstOrNull { it.name == value } ?: HOME
