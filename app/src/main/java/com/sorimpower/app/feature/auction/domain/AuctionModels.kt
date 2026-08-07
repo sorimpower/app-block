@@ -3,6 +3,10 @@ package com.sorimpower.app.feature.auction.domain
 import java.time.Duration
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
@@ -42,6 +46,13 @@ data class AuctionItem(
     val historyCreatedAt: String = "",
     val historyStatus: String = "",
     val historyReason: String = "",
+)
+
+data class AuctionCalendarTime(
+    val startAtMillis: Long,
+    val endAtMillis: Long,
+    val isAllDay: Boolean,
+    val timeZoneId: String,
 )
 
 enum class AuctionSortField(val label: String) {
@@ -113,6 +124,31 @@ fun AuctionItem.matchesAuctionCriteria(): Boolean =
 
 fun AuctionItem.mapSearchQuery(): String = address.trim().ifBlank { buildingName.trim() }
 
+fun auctionCaseNumberForCopy(caseNumber: String): String {
+    val markerIndex = caseNumber.lastIndexOf("타경")
+    if (markerIndex < 0) return caseNumber.trim()
+    return caseNumber.substring(markerIndex + "타경".length).filter(Char::isDigit)
+}
+
+fun AuctionItem.calendarTime(): AuctionCalendarTime? {
+    val date = parseAuctionDate(auctionDate) ?: return null
+    val time = normalizeAuctionTime(auctionTime)?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
+    return if (time != null) {
+        val zone = ZoneId.of("Asia/Seoul")
+        val start = date.atTime(time).atZone(zone).toInstant().toEpochMilli()
+        AuctionCalendarTime(
+            startAtMillis = start,
+            endAtMillis = start + 60 * 60 * 1_000L,
+            isAllDay = false,
+            timeZoneId = zone.id,
+        )
+    } else {
+        val start = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val end = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        AuctionCalendarTime(start, end, isAllDay = true, timeZoneId = "UTC")
+    }
+}
+
 fun favoriteAuctionItems(
     activeItems: List<AuctionItem>,
     historyItems: List<AuctionItem>,
@@ -173,6 +209,17 @@ fun formatAuctionUpdatedAt(value: String?): String? = value?.let {
 fun AuctionItem.removedAtLabel(): String? = formatAuctionUpdatedAt(historyCreatedAt.ifBlank { null })
 
 val AuctionItem.isRemoved: Boolean get() = historyStatus == "REMOVED"
+
+fun isAuctionNewToday(
+    isNew: Boolean,
+    firstSeenAt: Long,
+    now: Long = System.currentTimeMillis(),
+): Boolean {
+    if (!isNew || firstSeenAt <= 0L) return false
+    val zone = ZoneId.of("Asia/Seoul")
+    return Instant.ofEpochMilli(firstSeenAt).atZone(zone).toLocalDate() ==
+        Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+}
 
 fun isAuctionDataStale(value: String?, now: OffsetDateTime = OffsetDateTime.now()): Boolean {
     val updatedAt = value?.let { runCatching { OffsetDateTime.parse(it) }.getOrNull() } ?: return false

@@ -1,10 +1,15 @@
 package com.sorimpower.app.feature.auction.presentation
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.CalendarContract
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +32,9 @@ import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Card
@@ -50,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,12 +77,15 @@ import com.sorimpower.app.core.ui.AppOrange
 import com.sorimpower.app.feature.auction.domain.AuctionItem
 import com.sorimpower.app.feature.auction.domain.AuctionListFilter
 import com.sorimpower.app.feature.auction.domain.AuctionSortField
+import com.sorimpower.app.feature.auction.domain.auctionCaseNumberForCopy
 import com.sorimpower.app.feature.auction.domain.AuctionSortDirection
 import com.sorimpower.app.feature.auction.domain.auctionDateLabel
 import com.sorimpower.app.feature.auction.domain.auctionDdayLabel
+import com.sorimpower.app.feature.auction.domain.calendarTime
 import com.sorimpower.app.feature.auction.domain.formatAuctionPrice
 import com.sorimpower.app.feature.auction.domain.formatAuctionUpdatedAt
 import com.sorimpower.app.feature.auction.domain.isAuctionDataStale
+import com.sorimpower.app.feature.auction.domain.isAuctionNewToday
 import com.sorimpower.app.feature.auction.domain.isRemoved
 import com.sorimpower.app.feature.auction.domain.mapSearchQuery
 import com.sorimpower.app.feature.auction.domain.removedAtLabel
@@ -84,7 +96,9 @@ import java.time.LocalDate
 @Composable
 fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var showFilterDialog by remember { mutableStateOf(false) }
+    var historyItemToDelete by remember { mutableStateOf<AuctionItem?>(null) }
     LaunchedEffect(viewModel) { viewModel.refreshIfNeeded() }
 
     PullToRefreshBox(
@@ -115,16 +129,17 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
                 item { AuctionErrorCard(message, hasCache = state.hasCache, onRetry = viewModel::refresh) }
             }
 
-            if (state.listMode == AuctionListMode.REMOVED) {
-                item { EndedAuctionNotice() }
-            }
-
             when {
                 state.items.isNotEmpty() -> items(state.items, key = AuctionItem::itemKey) { item ->
                     AuctionItemCard(
                         item = item,
                         isFavorite = item.itemKey in state.favoriteKeys,
                         onFavoriteChange = { favorite -> viewModel.setFavorite(item.itemKey, favorite) },
+                        onDeleteHistory = if (item.isRemoved) {
+                            { historyItemToDelete = item }
+                        } else {
+                            null
+                        },
                     )
                 }
                 state.isRefreshing && !state.hasCache -> item {
@@ -158,6 +173,27 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
             showFilterDialog = false
         },
     )
+    historyItemToDelete?.let { item ->
+        AlertDialog(
+            onDismissRequest = { historyItemToDelete = null },
+            title = { Text("이 종료 사건을 삭제할까요?", fontWeight = FontWeight.Black) },
+            text = {
+                Text("${item.caseNumber.ifBlank { item.buildingName }} 기록과 해당 관심 사건 저장이 함께 삭제됩니다.")
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = {
+                        viewModel.deleteHistoryItem(item.itemKey)
+                        historyItemToDelete = null
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("삭제") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { historyItemToDelete = null }) { Text("취소") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -175,7 +211,6 @@ private fun AuctionSummaryCard(state: AuctionUiState) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("REAL ESTATE AUCTION", color = Color.White.copy(alpha = .76f), fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
                 Text(
                     if (state.refreshCompleted || state.hasCache) "진행 중 경매 ${state.totalCount}건" else "경매 목록 불러오는 중",
@@ -216,28 +251,42 @@ private fun AuctionHeader(
         elevation = CardDefaults.cardElevation(1.dp),
     ) {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(46.dp).background(AppCobalt.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Gavel, contentDescription = null, tint = AppCobalt)
-                }
-                Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text("경매 검색 및 정렬", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        when {
-                            state.listMode == AuctionListMode.FAVORITES -> "${state.items.size}건 / 관심 ${state.favoriteCount}건"
-                            state.listMode == AuctionListMode.REMOVED -> "${state.items.size}건 / 종료 ${state.removedCount}건"
-                            state.filter.isActive || state.searchQuery.isNotBlank() -> "${state.items.size}건 / 전체 ${state.totalCount}건"
-                            else -> "총 ${state.totalCount}건"
-                        },
-                        color = AppCobalt,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                OutlinedButton(onClick = onShowFilter) {
-                    Text(if (state.filter.isActive) "필터 적용됨" else "필터")
-                }
-            }
-            LazyRow(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = state.searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("아파트명 검색") },
+                placeholder = { Text("예: 헬리오시티") },
+                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                trailingIcon = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (state.searchQuery.isNotBlank()) {
+                            IconButton(onClick = { onSearchQueryChange("") }, modifier = Modifier.size(40.dp)) {
+                                Icon(Icons.Rounded.Close, contentDescription = "검색어 지우기")
+                            }
+                        }
+                        IconButton(
+                            onClick = onShowFilter,
+                            modifier = Modifier.padding(end = 4.dp).size(40.dp)
+                                .then(
+                                    if (state.filter.isActive) {
+                                        Modifier.background(AppCobalt.copy(alpha = .12f), CircleShape)
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                        ) {
+                            Icon(
+                                Icons.Rounded.FilterAlt,
+                                contentDescription = if (state.filter.isActive) "필터 적용됨" else "필터",
+                                tint = AppCobalt,
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+            )
+            LazyRow(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                 FilterChip(
                     selected = state.listMode == AuctionListMode.ACTIVE,
@@ -267,20 +316,6 @@ private fun AuctionHeader(
                     )
                 }
             }
-            OutlinedTextField(
-                value = state.searchQuery,
-                onValueChange = onSearchQueryChange,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                label = { Text("아파트명 검색") },
-                placeholder = { Text("예: 헬리오시티") },
-                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (state.searchQuery.isNotBlank()) IconButton(onClick = { onSearchQueryChange("") }) {
-                        Icon(Icons.Rounded.Close, contentDescription = "검색어 지우기")
-                    }
-                },
-                singleLine = true,
-            )
             if (state.filter.isActive) {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
                     OutlinedButton(onClick = onClearFilter) { Text("필터 초기화") }
@@ -396,9 +431,17 @@ private fun AuctionFilterDialog(initial: AuctionListFilter, onDismiss: () -> Uni
 }
 
 @Composable
-private fun AuctionItemCard(item: AuctionItem, isFavorite: Boolean, onFavoriteChange: (Boolean) -> Unit) {
+private fun AuctionItemCard(
+    item: AuctionItem,
+    isFavorite: Boolean,
+    onFavoriteChange: (Boolean) -> Unit,
+    onDeleteHistory: (() -> Unit)?,
+) {
     val context = LocalContext.current
     val mapQuery = item.mapSearchQuery()
+    val calendarTime = item.calendarTime()
+    var noteExpanded by rememberSaveable(item.itemKey) { mutableStateOf(false) }
+    var noteCanExpand by remember(item.itemKey) { mutableStateOf(false) }
     Card(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -423,15 +466,15 @@ private fun AuctionItemCard(item: AuctionItem, isFavorite: Boolean, onFavoriteCh
                             maxLines = 2,
                         )
                     }
-                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (!item.isRemoved) Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            if (item.isRemoved) "상태 미확인" else auctionDdayLabel(item),
+                            auctionDdayLabel(item),
                             Modifier.background(AppOrange.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
                             color = AppOrange,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                         )
-                        if (item.isNew && !item.isRemoved) {
+                        if (isAuctionNewToday(item.isNew, item.firstSeenAt)) {
                             Text(
                                 "신규",
                                 Modifier.padding(start = 6.dp).background(AppGreen.copy(alpha = .13f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
@@ -452,35 +495,40 @@ private fun AuctionItemCard(item: AuctionItem, isFavorite: Boolean, onFavoriteCh
                         tint = if (isFavorite) AppCobalt else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                OutlinedButton(
-                    onClick = { openNaverMap(context, mapQuery) },
-                    enabled = mapQuery.isNotBlank(),
-                    modifier = Modifier.padding(start = 8.dp).height(38.dp),
-                    contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-                ) {
-                    Icon(Icons.Rounded.Map, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Text("지도", Modifier.padding(start = 4.dp))
-                }
             }
             Text(
                 item.buildingName.ifBlank { "아파트 경매" },
-                Modifier.padding(top = 11.dp),
+                Modifier.padding(top = 7.dp).clip(RoundedCornerShape(8.dp))
+                    .clickable { openCourtAuctionSite(context) }
+                    .padding(vertical = 4.dp),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Black,
+                color = AppCobalt,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                item.address,
-                Modifier.padding(top = 3.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(Modifier.fillMaxWidth().padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    item.address,
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                OutlinedButton(
+                    onClick = { openNaverMap(context, mapQuery) },
+                    enabled = mapQuery.isNotBlank(),
+                    modifier = Modifier.padding(start = 8.dp).height(36.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                ) {
+                    Icon(Icons.Rounded.Map, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Text("지도", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelMedium)
+                }
+            }
             if (item.isRemoved) {
                 Text(
-                    "진행 중 목록에서 제외됨 · 낙찰/취하 여부는 확인되지 않음",
+                    "낙찰/취하 여부는 추가 확인 필요함",
                     Modifier.padding(top = 9.dp).background(AppOrange.copy(alpha = .1f), RoundedCornerShape(10.dp))
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     color = AppOrange,
@@ -496,8 +544,29 @@ private fun AuctionItemCard(item: AuctionItem, isFavorite: Boolean, onFavoriteCh
                 color = AppCobalt,
                 fontWeight = FontWeight.Black,
             )
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${item.caseNumber} · 물건 ${item.auctionItemNumber}", style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth().padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                        .clickable(enabled = item.caseNumber.isNotBlank()) { copyCaseNumber(context, item.caseNumber) }
+                        .padding(vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "${item.caseNumber} · 물건 ${item.auctionItemNumber}",
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (item.caseNumber.isNotBlank()) {
+                        Icon(
+                            Icons.Rounded.ContentCopy,
+                            contentDescription = "사건번호 복사",
+                            modifier = Modifier.padding(horizontal = 6.dp).size(15.dp),
+                            tint = AppCobalt,
+                        )
+                    }
+                }
                 Text("유찰 ${item.failedCount}회", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
             }
             Text(
@@ -508,33 +577,102 @@ private fun AuctionItemCard(item: AuctionItem, isFavorite: Boolean, onFavoriteCh
             )
             if (item.objectCount >= 2) Text("구성물건 ${item.objectCount}개", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall)
             if (item.note.isNotBlank()) {
-                Text(
-                    item.note.replace('\n', ' '),
-                    Modifier.padding(top = 8.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp)).padding(9.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Column(
+                    Modifier.padding(top = 8.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable(enabled = noteCanExpand) { noteExpanded = !noteExpanded }
+                        .padding(10.dp),
+                ) {
+                    Text(
+                        item.note.trim(),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = if (noteExpanded) Int.MAX_VALUE else 2,
+                        overflow = if (noteExpanded) TextOverflow.Clip else TextOverflow.Ellipsis,
+                        onTextLayout = { result ->
+                            if (!noteExpanded && result.hasVisualOverflow) noteCanExpand = true
+                        },
+                    )
+                }
+            }
+            if (!item.isRemoved) {
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
+                    OutlinedButton(
+                        onClick = { openCalendarInsert(context, item) },
+                        enabled = calendarTime != null,
+                        modifier = Modifier.height(36.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    ) {
+                        Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text("캘린더 등록", Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+            if (onDeleteHistory != null) {
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
+                    OutlinedButton(
+                        onClick = onDeleteHistory,
+                        modifier = Modifier.height(36.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) {
+                        Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text("기록 삭제", Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
         }
     }
 }
 
-@Composable
-private fun EndedAuctionNotice() {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = AppOrange.copy(alpha = .1f)),
-        shape = RoundedCornerShape(18.dp),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(15.dp)) {
-            Text("종료 사건 안내", color = AppOrange, fontWeight = FontWeight.Black)
-            Text(
-                "전날 진행 중 목록에는 있었지만 오늘 목록에서 제외되어 종료 사건으로 분류했습니다. 낙찰, 취하, 변경 등 정확한 사유는 이 데이터만으로 확인할 수 없습니다.",
-                Modifier.padding(top = 4.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+private fun openCalendarInsert(context: Context, item: AuctionItem) {
+    val calendarTime = item.calendarTime() ?: return
+    val description = buildList {
+        if (item.caseNumber.isNotBlank()) add("사건번호: ${item.caseNumber}")
+        if (item.auctionItemNumber.isNotBlank()) add("물건번호: ${item.auctionItemNumber}")
+        if (item.buildingName.isNotBlank()) add("아파트: ${item.buildingName}")
+        add("감정가: ${formatAuctionPrice(item.appraisalPrice)}")
+        add("최저가: ${formatAuctionPrice(item.minimumPrice)} (${formatRate(item.minimumPriceRate)})")
+        listOf(item.courtName, item.courtDepartment).filter(String::isNotBlank).joinToString(" · ")
+            .takeIf(String::isNotBlank)?.let { add("법원: $it") }
+        if (item.address.isNotBlank()) add("주소: ${item.address}")
+        if (item.note.isNotBlank()) add("비고: ${item.note.trim()}")
+        add("법원경매정보: $COURT_AUCTION_SEARCH_URL")
+    }.joinToString("\n")
+    val location = listOf(item.courtName, item.auctionPlace).filter(String::isNotBlank).joinToString(" ")
+    val titleTarget = item.buildingName.ifBlank { item.caseNumber.ifBlank { "부동산 경매" } }
+    val intent = Intent(Intent.ACTION_INSERT, CalendarContract.Events.CONTENT_URI).apply {
+        putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, calendarTime.startAtMillis)
+        putExtra(CalendarContract.EXTRA_EVENT_END_TIME, calendarTime.endAtMillis)
+        putExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, calendarTime.isAllDay)
+        putExtra(CalendarContract.Events.TITLE, "[경매] $titleTarget")
+        putExtra(CalendarContract.Events.DESCRIPTION, description)
+        putExtra(CalendarContract.Events.EVENT_TIMEZONE, calendarTime.timeZoneId)
+        if (location.isNotBlank()) putExtra(CalendarContract.Events.EVENT_LOCATION, location)
+    }
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "일정을 등록할 캘린더 앱이 없습니다.", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun copyCaseNumber(context: Context, caseNumber: String) {
+    val copyValue = auctionCaseNumberForCopy(caseNumber)
+    if (copyValue.isBlank()) return
+    val clipboard = context.getSystemService(ClipboardManager::class.java)
+    clipboard.setPrimaryClip(ClipData.newPlainText("법원 경매 사건번호", copyValue))
+    Toast.makeText(context, "사건번호 $copyValue 이(가) 복사되었습니다.", Toast.LENGTH_SHORT).show()
+}
+
+private fun openCourtAuctionSite(context: Context) {
+    try {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(COURT_AUCTION_SEARCH_URL))
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "웹 브라우저를 열 수 없습니다.", Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -599,3 +737,6 @@ private fun decimalText(value: String): String = value.filter { it.isDigit() || 
     if (firstDot < 0) text.take(4) else text.substring(0, firstDot).take(4) + "." + text.substring(firstDot + 1).filter(Char::isDigit).take(1)
 }
 private fun dateText(value: String): String = value.filter { it.isDigit() || it == '-' }.take(10)
+
+private const val COURT_AUCTION_SEARCH_URL =
+    "https://www.courtauction.go.kr/pgj/index.on?w2xPath=/pgj/ui/pgj100/PGJ159M00.xml"

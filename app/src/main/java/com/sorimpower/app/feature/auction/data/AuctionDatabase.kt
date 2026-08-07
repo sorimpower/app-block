@@ -135,10 +135,16 @@ interface AuctionDao {
     @Query("DELETE FROM auction_favorites WHERE itemKey = :itemKey")
     suspend fun deleteFavorite(itemKey: String)
 
-    @Query("DELETE FROM auction_history_items")
-    suspend fun deleteAllHistoryItems()
+    @Query("DELETE FROM auction_history_items WHERE itemKey = :itemKey")
+    suspend fun deleteHistoryItem(itemKey: String)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Query("SELECT COUNT(*) FROM auction_history_items")
+    suspend fun getHistoryItemCount(): Int
+
+    @Query("DELETE FROM auction_sync_metadata WHERE id = 'history'")
+    suspend fun deleteHistoryMetadata()
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertHistoryItems(items: List<AuctionHistoryItemEntity>)
 
     @Transaction
@@ -149,10 +155,24 @@ interface AuctionDao {
     }
 
     @Transaction
-    suspend fun replaceHistorySnapshot(items: List<AuctionHistoryItemEntity>, metadata: AuctionSyncMetadataEntity) {
-        deleteAllHistoryItems()
-        insertHistoryItems(items)
+    suspend fun replaceSnapshotAndAppendHistory(
+        items: List<AuctionItemEntity>,
+        metadata: AuctionSyncMetadataEntity,
+        removedItems: List<AuctionHistoryItemEntity>,
+        historyMetadata: AuctionSyncMetadataEntity,
+    ) {
+        deleteAllItems()
+        insertItems(items)
+        insertHistoryItems(removedItems)
         upsertMetadata(metadata)
+        upsertMetadata(historyMetadata)
+    }
+
+    @Transaction
+    suspend fun deleteHistoryItemAndEmptyMetadata(itemKey: String) {
+        deleteFavorite(itemKey)
+        deleteHistoryItem(itemKey)
+        if (getHistoryItemCount() == 0) deleteHistoryMetadata()
     }
 }
 

@@ -18,16 +18,16 @@ internal fun shouldAutomaticallyRefreshAuctions(
     val elapsedSinceAttempt = lastAttemptAt?.let(now::minus)
     if (elapsedSinceAttempt != null && elapsedSinceAttempt in 0 until AUCTION_RETRY_COOLDOWN_MILLIS) return false
 
+    val latestRefreshCutoff = auctionRefreshWindowStart(now)
+    return lastSuccessfulSyncAt < latestRefreshCutoff
+}
+
+private fun auctionRefreshWindowStart(now: Long): Long {
     val current = Instant.ofEpochMilli(now).atZone(SEOUL_ZONE_ID)
-    val refreshDate = if (current.toLocalTime() >= DAILY_REFRESH_TIME) {
-        current.toLocalDate()
-    } else {
-        current.toLocalDate().minusDays(1)
-    }
-    val latestRefreshCutoff = refreshDate
+    val refreshDate = if (current.toLocalTime() >= DAILY_REFRESH_TIME) current.toLocalDate() else current.toLocalDate().minusDays(1)
+    return refreshDate
         .atTime(DAILY_REFRESH_TIME)
         .atZone(SEOUL_ZONE_ID)
         .toInstant()
         .toEpochMilli()
-    return lastSuccessfulSyncAt < latestRefreshCutoff
 }

@@ -152,4 +152,8 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
     fun setFavorite(itemKey: String, favorite: Boolean) {
         viewModelScope.launch { repository.setFavorite(itemKey, favorite) }
     }
+
+    fun deleteHistoryItem(itemKey: String) {
+        viewModelScope.launch { repository.deleteHistoryItem(itemKey) }
+    }
 }

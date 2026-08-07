@@ -2,6 +2,8 @@ package com.sorimpower.app.feature.auction.domain
 
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.LocalDateTime
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -9,6 +11,32 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AuctionModelsTest {
+    @Test
+    fun `사건번호 복사는 타경 뒤 번호만 반환한다`() {
+        assertEquals("1109", auctionCaseNumberForCopy("2025타경1109"))
+        assertEquals("1802", auctionCaseNumberForCopy("2025타경 1802"))
+        assertEquals("52290", auctionCaseNumberForCopy("2025타경52290 (중복)"))
+        assertEquals("원본번호", auctionCaseNumberForCopy("원본번호"))
+    }
+
+    @Test
+    fun `매각일과 시간이 있으면 서울 시간 한시간 일정으로 변환한다`() {
+        val calendarTime = item(auctionDate = "2026-08-20").copy(auctionTime = "10:30").calendarTime()!!
+        assertEquals(seoulMillis(2026, 8, 20, 10, 30), calendarTime.startAtMillis)
+        assertEquals(seoulMillis(2026, 8, 20, 11, 30), calendarTime.endAtMillis)
+        assertFalse(calendarTime.isAllDay)
+        assertEquals("Asia/Seoul", calendarTime.timeZoneId)
+    }
+
+    @Test
+    fun `매각 시간 없이 날짜만 있으면 종일 일정으로 변환한다`() {
+        val calendarTime = item(auctionDate = "2026-08-20").copy(auctionTime = "").calendarTime()!!
+        assertTrue(calendarTime.isAllDay)
+        assertEquals("UTC", calendarTime.timeZoneId)
+        assertEquals(24 * 60 * 60 * 1_000L, calendarTime.endAtMillis - calendarTime.startAtMillis)
+        assertNull(item(auctionDate = "invalid").calendarTime())
+    }
+
     @Test
     fun `지도 검색어는 주소를 우선하고 없으면 아파트명을 사용한다`() {
         assertEquals("서울특별시 송파구 가락동 1", item(address = " 서울특별시 송파구 가락동 1 ").mapSearchQuery())
@@ -86,6 +114,14 @@ class AuctionModelsTest {
         val now = OffsetDateTime.parse("2026-08-07T21:27:15+09:00")
         assertFalse(isAuctionDataStale("2026-08-06T15:27:15+09:00", now))
         assertTrue(isAuctionDataStale("2026-08-06T09:27:15+09:00", now))
+    }
+
+    @Test
+    fun `신규 배지는 서울 날짜 기준 오늘 처음 발견된 사건에만 표시한다`() {
+        val now = seoulMillis(2026, 8, 7, 0, 5)
+        assertTrue(isAuctionNewToday(true, seoulMillis(2026, 8, 7, 0, 1), now))
+        assertFalse(isAuctionNewToday(true, seoulMillis(2026, 8, 6, 23, 59), now))
+        assertFalse(isAuctionNewToday(false, seoulMillis(2026, 8, 7, 0, 1), now))
     }
 
     @Test
@@ -182,4 +218,10 @@ class AuctionModelsTest {
         objectCount = 1,
         collectedAt = "2026-08-06T15:27:15+09:00",
     )
+
+    private fun seoulMillis(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =
+        LocalDateTime.of(year, month, day, hour, minute)
+            .atZone(ZoneId.of("Asia/Seoul"))
+            .toInstant()
+            .toEpochMilli()
 }
