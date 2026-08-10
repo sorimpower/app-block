@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Gavel
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -119,6 +120,7 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
     val context = LocalContext.current
     var showFilterDialog by remember { mutableStateOf(false) }
     var showAiSettingsDialog by remember { mutableStateOf(false) }
+    var showCollectionInfo by remember { mutableStateOf(false) }
     var historyItemToDelete by remember { mutableStateOf<AuctionItem?>(null) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LaunchedEffect(viewModel) { viewModel.refreshIfNeeded() }
@@ -137,6 +139,7 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
                 AuctionModeTabs(
                     state = state,
                     onListModeChange = viewModel::setListMode,
+                    onShowCollectionInfo = { showCollectionInfo = true },
                 )
             }
 
@@ -208,6 +211,24 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
             showFilterDialog = false
         },
     )
+    if (showCollectionInfo) {
+        AlertDialog(
+            onDismissRequest = { showCollectionInfo = false },
+            title = { Text("법원 경매 수집 조건", fontWeight = FontWeight.Black) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text("법원경매정보 공개 검색 API에서 아래 조건으로 가져옵니다.")
+                    Text("• 지역: 서울특별시")
+                    Text("• 용도: 아파트")
+                    Text("• 상태: 진행 중")
+                    Text("• 감정가: 15억 원 이상")
+                    Text("• 매각기일: 오늘부터 90일 이내")
+                    Text("가져온 뒤에도 앱에서 조건을 다시 검증합니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = { OutlinedButton(onClick = { showCollectionInfo = false }) { Text("확인") } },
+        )
+    }
     if (showAiSettingsDialog) AuctionAiSettingsDialog(
         initial = state.aiPreferences,
         onDismiss = { showAiSettingsDialog = false },
@@ -247,7 +268,11 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun AuctionModeTabs(state: AuctionUiState, onListModeChange: (AuctionListMode) -> Unit) {
+private fun AuctionModeTabs(
+    state: AuctionUiState,
+    onListModeChange: (AuctionListMode) -> Unit,
+    onShowCollectionInfo: () -> Unit,
+) {
     val tabs = listOf(
         AuctionListMode.ACTIVE to "진행 중",
         AuctionListMode.FAVORITES to "관심",
@@ -255,19 +280,24 @@ private fun AuctionModeTabs(state: AuctionUiState, onListModeChange: (AuctionLis
         AuctionListMode.REMOVED to "종료",
     )
     val selectedIndex = tabs.indexOfFirst { it.first == state.listMode }.coerceAtLeast(0)
-    PrimaryTabRow(selectedTabIndex = selectedIndex) {
-        tabs.forEachIndexed { index, (mode, label) ->
-            val count = when (mode) {
-                AuctionListMode.ACTIVE -> state.totalCount
-                AuctionListMode.FAVORITES -> state.favoriteCount
-                AuctionListMode.ANALYZED -> state.analysisCount
-                AuctionListMode.REMOVED -> state.removedCount
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        PrimaryTabRow(selectedTabIndex = selectedIndex, modifier = Modifier.weight(1f)) {
+            tabs.forEachIndexed { index, (mode, label) ->
+                val count = when (mode) {
+                    AuctionListMode.ACTIVE -> state.totalCount
+                    AuctionListMode.FAVORITES -> state.favoriteCount
+                    AuctionListMode.ANALYZED -> state.analysisCount
+                    AuctionListMode.REMOVED -> state.removedCount
+                }
+                Tab(
+                    selected = index == selectedIndex,
+                    onClick = { onListModeChange(mode) },
+                    text = { Text("$label $count", maxLines = 1) },
+                )
             }
-            Tab(
-                selected = index == selectedIndex,
-                onClick = { onListModeChange(mode) },
-                text = { Text("$label $count", maxLines = 1) },
-            )
+        }
+        IconButton(onClick = onShowCollectionInfo) {
+            Icon(Icons.Rounded.Info, contentDescription = "법원 경매 수집 조건")
         }
     }
 }
@@ -494,7 +524,7 @@ private fun AuctionSummaryCard(state: AuctionUiState) {
                     fontWeight = FontWeight.Black,
                 )
                 Text(
-                    "서울 · 아파트 · 감정가 10억 이상",
+                    "서울 · 아파트 · 감정가 15억 이상",
                     color = Color.White.copy(alpha = .8f),
                     modifier = Modifier.padding(top = 4.dp),
                 )

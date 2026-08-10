@@ -11,7 +11,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
 
-const val MINIMUM_APPRAISAL_PRICE = 1_000_000_000L
+const val MINIMUM_APPRAISAL_PRICE = 1_500_000_000L
 
 data class AuctionItem(
     val itemKey: String,
