@@ -38,9 +38,26 @@ class AuctionModelsTest {
     }
 
     @Test
-    fun `지도 검색어는 주소를 우선하고 없으면 아파트명을 사용한다`() {
-        assertEquals("서울특별시 송파구 가락동 1", item(address = " 서울특별시 송파구 가락동 1 ").mapSearchQuery())
-        assertEquals("헬리오시티", item(address = "", buildingName = " 헬리오시티 ").mapSearchQuery())
+    fun `지도 검색어는 구와 동을 포함한 아파트명을 우선한다`() {
+        val apartment = item(
+            address = "서울특별시 송파구 가락동 1",
+            buildingName = " 헬리오시티 ",
+        ).copy(sigungu = "송파구", dong = "가락동")
+
+        assertEquals("서울특별시 송파구 가락동 헬리오시티", apartment.mapSearchQuery())
+        assertEquals("서울특별시 강남구 도곡동 1", item(address = " 서울특별시 강남구 도곡동 1 ").mapSearchQuery())
+    }
+
+    @Test
+    fun `단지명이 없으면 주소를 경매 카드 제목으로 사용한다`() {
+        assertEquals(
+            "송파구 가락동 1",
+            item(address = "서울특별시 송파구 가락동 1", buildingName = "").displayTitle(),
+        )
+        assertEquals(
+            "2025타경1",
+            item(address = "", buildingName = "아파트").displayTitle(),
+        )
     }
 
     @Test

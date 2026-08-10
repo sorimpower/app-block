@@ -52,19 +52,9 @@ internal fun HomeScreen(
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(18.dp),
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("내 기능", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                    Text("오늘 필요한 도구를 바로 열어보세요", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Text("3개 기능", color = AppCobalt, fontWeight = FontWeight.Bold)
-            }
-        }
-        item {
             FeatureCard(
                 title = "앱 차단",
                 description = if (state.enabled) "집중 모드 실행 중" else "방해되는 앱을 조건에 맞게 차단",
-                badge = if (state.enabled) "ACTIVE" else "READY",
                 icon = Icons.Rounded.Lock,
                 accent = AppCobalt,
                 onClick = openBlocker,
@@ -74,7 +64,6 @@ internal fun HomeScreen(
             FeatureCard(
                 title = "건강 기록",
                 description = "체중과 오늘 먹은 음식을 한곳에 기록",
-                badge = "NEW",
                 icon = Icons.Rounded.FavoriteBorder,
                 accent = AppOrange,
                 onClick = openBodyLog,
@@ -84,7 +73,7 @@ internal fun HomeScreen(
             FeatureCard(
                 title = "부동산 경매",
                 description = "서울·감정가 10억 이상 진행 중 아파트",
-                badge = "DAILY",
+                badge = "NEW",
                 icon = Icons.Rounded.Gavel,
                 accent = AppGreen,
                 onClick = openAuction,
@@ -117,7 +106,7 @@ internal fun HomeScreen(
 private fun FeatureCard(
     title: String,
     description: String,
-    badge: String,
+    badge: String? = null,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     accent: Color,
     onClick: () -> Unit,
@@ -135,13 +124,15 @@ private fun FeatureCard(
             Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                    Text(
-                        badge,
-                        Modifier.padding(start = 8.dp).background(if (badge == "ACTIVE") AppGreen.copy(alpha = .13f) else accent.copy(alpha = .1f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
-                        color = if (badge == "ACTIVE") AppGreen else accent,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    if (badge != null) {
+                        Text(
+                            badge,
+                            Modifier.padding(start = 8.dp).background(accent.copy(alpha = .1f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+                            color = accent,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
                 Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }

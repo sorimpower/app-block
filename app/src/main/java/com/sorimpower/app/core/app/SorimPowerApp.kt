@@ -118,6 +118,7 @@ internal fun SorimPowerApp(
     auctionViewModel: AuctionViewModel,
     accessibilityEnabled: () -> Boolean,
     openAccessibilitySettings: () -> Unit,
+    openAuctionAnalysesRequest: Int = 0,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf(Screen.HOME) }
@@ -138,6 +139,14 @@ internal fun SorimPowerApp(
         }
     }
 
+    LaunchedEffect(openAuctionAnalysesRequest) {
+        if (openAuctionAnalysesRequest > 0) {
+            initialDestinationApplied = true
+            screen = Screen.AUCTION
+            auctionViewModel.showAiAnalyses()
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -153,7 +162,7 @@ internal fun SorimPowerApp(
                 title = {
                     Column {
                         Text(when (screen) {
-                            Screen.HOME -> "소림파워"
+                            Screen.HOME -> "소림파워 전용"
                             Screen.BLOCKER -> "앱 차단"
                             Screen.BODY_LOG -> "건강 기록"
                             Screen.AUCTION -> "부동산 경매"

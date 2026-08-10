@@ -8,6 +8,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import com.sorimpower.app.core.app.SorimPowerApp
 import com.sorimpower.app.feature.blocker.presentation.BlockerViewModel
 import com.sorimpower.app.feature.blocker.service.AppBlockAccessibilityService
@@ -19,14 +22,35 @@ class MainActivity : ComponentActivity() {
     private val blockerViewModel: BlockerViewModel by viewModels()
     private val bodyLogViewModel: BodyLogViewModel by viewModels()
     private val auctionViewModel: AuctionViewModel by viewModels()
+    private var openAuctionAnalysesRequest by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
+        handleAuctionAnalysisIntent(intent)
         enableEdgeToEdge()
         setContent {
             SorimPowerTheme {
-                SorimPowerApp(blockerViewModel, bodyLogViewModel, auctionViewModel, ::isAccessibilityServiceEnabled, ::openAccessibilitySettings)
+                SorimPowerApp(
+                    blockerViewModel,
+                    bodyLogViewModel,
+                    auctionViewModel,
+                    ::isAccessibilityServiceEnabled,
+                    ::openAccessibilitySettings,
+                    openAuctionAnalysesRequest,
+                )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAuctionAnalysisIntent(intent)
+    }
+
+    private fun handleAuctionAnalysisIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_AUCTION_ANALYSES, false) == true) {
+            openAuctionAnalysesRequest++
         }
     }
 
@@ -40,4 +64,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openAccessibilitySettings() = startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+
+    companion object {
+        const val EXTRA_OPEN_AUCTION_ANALYSES = "open_auction_analyses"
+    }
 }

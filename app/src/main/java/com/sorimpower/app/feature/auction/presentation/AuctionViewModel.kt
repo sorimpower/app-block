@@ -4,12 +4,16 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sorimpower.app.feature.auction.data.AuctionRepository
+import com.sorimpower.app.feature.auction.data.AuctionAiPreferencesRepository
 import com.sorimpower.app.feature.auction.domain.AuctionItem
+import com.sorimpower.app.feature.auction.domain.AuctionAiAnalysis
+import com.sorimpower.app.feature.auction.domain.AuctionAiPreferences
 import com.sorimpower.app.feature.auction.domain.AuctionListFilter
 import com.sorimpower.app.feature.auction.domain.AuctionSortDirection
 import com.sorimpower.app.feature.auction.domain.AuctionSortField
 import com.sorimpower.app.feature.auction.domain.filterAndSortAuctions
 import com.sorimpower.app.feature.auction.domain.favoriteAuctionItems
+import com.sorimpower.app.feature.auction.reminder.AuctionAiRecommendationScheduler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -17,7 +21,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class AuctionListMode { ACTIVE, FAVORITES, REMOVED }
+enum class AuctionListMode { ACTIVE, FAVORITES, ANALYZED, REMOVED }
 
 private data class AuctionDisplayOptions(
     val filter: AuctionListFilter,
@@ -37,7 +41,10 @@ data class AuctionUiState(
     val refreshCompleted: Boolean = false,
     val errorMessage: String? = null,
     val favoriteKeys: Set<String> = emptySet(),
+    val aiAnalyses: Map<String, AuctionAiAnalysis> = emptyMap(),
+    val aiPreferences: AuctionAiPreferences = AuctionAiPreferences(),
     val favoriteCount: Int = 0,
+    val analysisCount: Int = 0,
     val removedCount: Int = 0,
     val listMode: AuctionListMode = AuctionListMode.ACTIVE,
     val filter: AuctionListFilter = AuctionListFilter(),
@@ -48,6 +55,7 @@ data class AuctionUiState(
 
 class AuctionViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = AuctionRepository(application)
+    private val aiPreferencesRepository = AuctionAiPreferencesRepository(application)
     private val refreshing = MutableStateFlow(false)
     private val refreshCompleted = MutableStateFlow(false)
     private val errorMessage = MutableStateFlow<String?>(null)
@@ -58,15 +66,23 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
     private val searchQuery = MutableStateFlow("")
     private var refreshJob: Job? = null
 
+    init {
+        viewModelScope.launch { repository.recoverStaleAiAnalyses() }
+    }
+
     private val displayOptions = combine(filter, sortField, sortDirection, searchQuery, listMode) { currentFilter, field, direction, query, mode ->
         AuctionDisplayOptions(currentFilter, field, direction, query, mode)
     }
 
     private val displayData = combine(repository.data, displayOptions) { data, options ->
         val favoriteItems = favoriteAuctionItems(data.items, data.historyItems, data.favoriteKeys)
+        val analyzedItems = (data.items + data.historyItems)
+            .distinctBy(AuctionItem::itemKey)
+            .filter { it.itemKey in data.aiAnalyses }
         val sourceItems = when (options.listMode) {
             AuctionListMode.ACTIVE -> data.items
             AuctionListMode.FAVORITES -> favoriteItems
+            AuctionListMode.ANALYZED -> analyzedItems
             AuctionListMode.REMOVED -> data.historyItems
         }
         val filteredItems = filterAndSortAuctions(
@@ -80,7 +96,9 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
             items = filteredItems,
             totalCount = data.items.size,
             favoriteKeys = data.favoriteKeys,
+            aiAnalyses = data.aiAnalyses,
             favoriteCount = favoriteItems.size,
+            analysisCount = analyzedItems.size,
             removedCount = data.historyItems.size,
             listMode = options.listMode,
             lastUpdatedAt = if (options.listMode == AuctionListMode.REMOVED) data.historyLastUpdatedAt else data.lastUpdatedAt,
@@ -98,11 +116,13 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
         refreshing,
         refreshCompleted,
         errorMessage,
-    ) { display, isRefreshing, completed, error ->
+        aiPreferencesRepository.preferences,
+    ) { display, isRefreshing, completed, error, aiPreferences ->
         display.copy(
             isRefreshing = isRefreshing,
             refreshCompleted = completed,
             errorMessage = error,
+            aiPreferences = aiPreferences,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AuctionUiState())
 
@@ -149,6 +169,8 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun showAiAnalyses() = setListMode(AuctionListMode.ANALYZED)
+
     fun setFavorite(itemKey: String, favorite: Boolean) {
         viewModelScope.launch { repository.setFavorite(itemKey, favorite) }
     }
@@ -156,4 +178,18 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
     fun deleteHistoryItem(itemKey: String) {
         viewModelScope.launch { repository.deleteHistoryItem(itemKey) }
     }
+
+    fun analyzeRights(item: AuctionItem) {
+        viewModelScope.launch {
+            repository.analyzeRights(item, aiPreferencesRepository.current().toCriteria())
+        }
+    }
+
+    fun saveAiPreferences(value: AuctionAiPreferences) {
+        viewModelScope.launch {
+            aiPreferencesRepository.save(value)
+            AuctionAiRecommendationScheduler.schedule(getApplication(), value)
+        }
+    }
+
 }

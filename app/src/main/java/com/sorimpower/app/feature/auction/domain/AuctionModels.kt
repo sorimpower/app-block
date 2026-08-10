@@ -122,7 +122,28 @@ fun AuctionItem.matchesAuctionCriteria(): Boolean =
         isInProgress &&
         usageName.trim() == "아파트"
 
-fun AuctionItem.mapSearchQuery(): String = address.trim().ifBlank { buildingName.trim() }
+fun AuctionItem.mapSearchQuery(): String {
+    val apartmentName = buildingName.trim()
+    val hasSpecificApartmentName = apartmentName.isNotBlank() && apartmentName !in GENERIC_BUILDING_NAMES
+    if (!hasSpecificApartmentName) return address.trim().ifBlank { apartmentName }
+    return listOf(sido, sigungu, dong, apartmentName)
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinct()
+        .joinToString(" ")
+}
+
+fun AuctionItem.displayTitle(): String {
+    val apartmentName = buildingName.trim().takeUnless { it in GENERIC_BUILDING_NAMES }
+    if (!apartmentName.isNullOrBlank()) return apartmentName
+    return address.trim()
+        .removePrefix("서울특별시")
+        .trim()
+        .ifBlank { caseNumber.trim() }
+        .ifBlank { "경매 사건" }
+}
+
+private val GENERIC_BUILDING_NAMES = setOf("아파트", "공동주택", "주상복합")
 
 fun auctionCaseNumberForCopy(caseNumber: String): String {
     val markerIndex = caseNumber.lastIndexOf("타경")

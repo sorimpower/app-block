@@ -2,17 +2,27 @@ package com.sorimpower.app.feature.auction.data
 
 import android.content.Context
 import com.sorimpower.app.feature.auction.domain.AuctionItem
+import com.sorimpower.app.feature.auction.domain.AuctionAiAnalysis
+import com.sorimpower.app.feature.auction.domain.AuctionAiCriteria
+import com.sorimpower.app.feature.auction.domain.AuctionAnalysisStatus
+import com.sorimpower.app.feature.auction.domain.AuctionDocumentType
+import com.sorimpower.app.feature.auction.domain.AuctionEvidenceBundle
+import com.sorimpower.app.feature.auction.domain.AuctionRiskLevel
 import com.sorimpower.app.feature.auction.domain.isAuctionNewToday
 import com.sorimpower.app.feature.auction.domain.matchesAuctionCriteria
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import org.json.JSONArray
 
 data class AuctionRepositoryData(
     val items: List<AuctionItem> = emptyList(),
     val historyItems: List<AuctionItem> = emptyList(),
     val favoriteKeys: Set<String> = emptySet(),
+    val aiAnalyses: Map<String, AuctionAiAnalysis> = emptyMap(),
     val lastUpdatedAt: String? = null,
     val historyLastUpdatedAt: String? = null,
     val lastSuccessfulSyncAt: Long? = null,
@@ -22,6 +32,8 @@ data class AuctionRepositoryData(
 class AuctionRepository internal constructor(
     context: Context,
     private val courtAuctionApi: CourtAuctionApi = CourtAuctionApi(),
+    private val evidenceSource: AuctionEvidenceSource = CourtAuctionEvidenceApi(),
+    private val rightsAnalyzer: AuctionRightsAnalyzer = GeminiAuctionRightsAnalyzer(context.applicationContext),
 ) {
     private val dao = AuctionDatabase.get(context).dao()
 
@@ -30,11 +42,13 @@ class AuctionRepository internal constructor(
         dao.observeHistoryItems(),
         dao.observeMetadata(),
         dao.observeFavoriteKeys(),
-    ) { items, historyItems, metadata, favoriteKeys ->
+        dao.observeAiAnalyses(),
+    ) { items, historyItems, metadata, favoriteKeys, aiAnalyses ->
         AuctionRepositoryData(
             items = items.map(AuctionItemEntity::toDomain),
             historyItems = historyItems.map(AuctionHistoryItemEntity::toDomain),
             favoriteKeys = favoriteKeys.toSet(),
+            aiAnalyses = aiAnalyses.associate { it.itemKey to it.toDomain() },
             lastUpdatedAt = metadata?.lastUpdatedAt,
             lastSuccessfulSyncAt = metadata?.lastSuccessfulSyncAt,
             hasCache = metadata?.baselineEstablished == true,
@@ -55,6 +69,69 @@ class AuctionRepository internal constructor(
         dao.deleteHistoryItemAndEmptyMetadata(itemKey)
     }
 
+    suspend fun getCurrentItems(): List<AuctionItem> = withContext(Dispatchers.IO) {
+        dao.getItems().map(AuctionItemEntity::toDomain)
+    }
+
+    suspend fun getAiAnalysisKeys(): Set<String> = withContext(Dispatchers.IO) {
+        dao.getAiAnalysisKeys().toSet()
+    }
+
+    suspend fun recoverStaleAiAnalyses(now: Long = System.currentTimeMillis()): Int = withContext(Dispatchers.IO) {
+        dao.failStaleAiAnalyses(
+            staleBefore = now - ANALYSIS_TIMEOUT_MILLIS,
+            resolvedAt = now,
+        )
+    }
+
+    suspend fun analyzeRights(
+        item: AuctionItem,
+        evidence: AuctionEvidenceBundle,
+        criteria: AuctionAiCriteria,
+        mode: AuctionAiAnalysisMode = AuctionAiAnalysisMode.MANUAL,
+    ): AuctionAiAnalysis = analyzeRightsInternal(item, criteria, mode) { evidence }
+
+    suspend fun analyzeRights(
+        item: AuctionItem,
+        criteria: AuctionAiCriteria,
+        mode: AuctionAiAnalysisMode = AuctionAiAnalysisMode.MANUAL,
+    ): AuctionAiAnalysis = analyzeRightsInternal(item, criteria, mode) { evidenceSource.fetch(item) }
+
+    private suspend fun analyzeRightsInternal(
+        item: AuctionItem,
+        criteria: AuctionAiCriteria,
+        mode: AuctionAiAnalysisMode,
+        evidenceProvider: suspend () -> AuctionEvidenceBundle,
+    ): AuctionAiAnalysis = withContext(Dispatchers.IO) {
+        dao.upsertAiAnalysis(
+            AuctionAiAnalysis(
+                itemKey = item.itemKey,
+                status = AuctionAnalysisStatus.ANALYZING,
+                analyzedAt = System.currentTimeMillis(),
+            ).toEntity(),
+        )
+        val result = runCatching {
+            withTimeout(ANALYSIS_TIMEOUT_MILLIS) {
+                rightsAnalyzer.analyze(item, evidenceProvider(), criteria, mode)
+            }
+        }
+            .getOrElse { error ->
+                AuctionAiAnalysis(
+                    itemKey = item.itemKey,
+                    status = AuctionAnalysisStatus.FAILED,
+                    headline = "AI 권리분석을 완료하지 못했어요",
+                    summary = if (error is TimeoutCancellationException) {
+                        "응답 대기 시간이 지나 분석을 중단했어요. 잠시 후 다시 분석해 주세요."
+                    } else {
+                        error.message.orEmpty()
+                    },
+                    analyzedAt = System.currentTimeMillis(),
+                )
+            }
+        dao.upsertAiAnalysis(result.toEntity())
+        result
+    }
+
     suspend fun needsAutomaticRefresh(now: Long = System.currentTimeMillis()): Boolean = withContext(Dispatchers.IO) {
         val metadata = dao.getMetadata()
         shouldAutomaticallyRefreshAuctions(
@@ -63,6 +140,10 @@ class AuctionRepository internal constructor(
             lastAttemptAt = metadata?.lastAttemptAt,
             now = now,
         )
+    }
+
+    private companion object {
+        const val ANALYSIS_TIMEOUT_MILLIS = 2 * 60 * 1000L
     }
 
     suspend fun refresh() = withContext(Dispatchers.IO) {
@@ -214,3 +295,51 @@ private fun AuctionItemEntity.toHistoryEntity(removedAt: String) = AuctionHistor
     historyStatus = "REMOVED",
     historyReason = "진행 중 검색 결과에서 사라짐",
 )
+
+private fun AuctionAiAnalysisEntity.toDomain() = AuctionAiAnalysis(
+    itemKey = itemKey,
+    status = enumValueOrDefault(status, AuctionAnalysisStatus.FAILED),
+    riskLevel = enumValueOrDefault(riskLevel, AuctionRiskLevel.UNKNOWN),
+    suitabilityScore = suitabilityScore.coerceIn(0, 100),
+    headline = headline,
+    summary = summary,
+    riskItems = riskItemsJson.jsonStringList(),
+    requiredChecks = requiredChecksJson.jsonStringList(),
+    evidenceTypes = evidenceTypes.enumSet(),
+    missingDocumentTypes = missingDocumentTypes.enumSet(),
+    analyzedAt = analyzedAt,
+    modelName = modelName,
+    promptVersion = promptVersion,
+)
+
+private fun AuctionAiAnalysis.toEntity() = AuctionAiAnalysisEntity(
+    itemKey = itemKey,
+    status = status.name,
+    riskLevel = riskLevel.name,
+    suitabilityScore = suitabilityScore.coerceIn(0, 100),
+    headline = headline,
+    summary = summary,
+    riskItemsJson = JSONArray(riskItems).toString(),
+    requiredChecksJson = JSONArray(requiredChecks).toString(),
+    evidenceTypes = evidenceTypes.joinToString(",", transform = AuctionDocumentType::name),
+    missingDocumentTypes = missingDocumentTypes.joinToString(",", transform = AuctionDocumentType::name),
+    analyzedAt = analyzedAt,
+    modelName = modelName,
+    promptVersion = promptVersion,
+)
+
+private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String, default: T): T =
+    enumValues<T>().firstOrNull { it.name == value } ?: default
+
+private fun String.jsonStringList(): List<String> = runCatching {
+    val source = JSONArray(this)
+    buildList {
+        for (index in 0 until source.length()) {
+            source.optString(index).trim().takeIf(String::isNotBlank)?.let(::add)
+        }
+    }
+}.getOrDefault(emptyList())
+
+private fun String.enumSet(): Set<AuctionDocumentType> = split(',')
+    .mapNotNull { value -> AuctionDocumentType.entries.firstOrNull { it.name == value } }
+    .toSet()

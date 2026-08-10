@@ -94,6 +94,23 @@ data class AuctionHistoryItemEntity(
     val historyReason: String,
 )
 
+@Entity(tableName = "auction_ai_analyses")
+data class AuctionAiAnalysisEntity(
+    @PrimaryKey val itemKey: String,
+    val status: String,
+    val riskLevel: String,
+    val suitabilityScore: Int,
+    val headline: String,
+    val summary: String,
+    val riskItemsJson: String,
+    val requiredChecksJson: String,
+    val evidenceTypes: String,
+    val missingDocumentTypes: String,
+    val analyzedAt: Long,
+    val modelName: String,
+    val promptVersion: String,
+)
+
 @Dao
 interface AuctionDao {
     @Query("SELECT * FROM auction_items ORDER BY CASE WHEN auctionDate = '' THEN 1 ELSE 0 END, auctionDate ASC, auctionTime ASC")
@@ -110,6 +127,24 @@ interface AuctionDao {
 
     @Query("SELECT * FROM auction_sync_metadata WHERE id = 'history' LIMIT 1")
     fun observeHistoryMetadata(): Flow<AuctionSyncMetadataEntity?>
+
+    @Query("SELECT * FROM auction_ai_analyses")
+    fun observeAiAnalyses(): Flow<List<AuctionAiAnalysisEntity>>
+
+    @Query("SELECT itemKey FROM auction_ai_analyses")
+    suspend fun getAiAnalysisKeys(): List<String>
+
+    @Query(
+        """
+        UPDATE auction_ai_analyses
+        SET status = 'FAILED',
+            headline = 'AI 권리분석 시간이 초과되었어요',
+            summary = '응답 대기 시간이 지나 분석을 중단했어요. 네트워크를 확인한 뒤 다시 분석해 주세요.',
+            analyzedAt = :resolvedAt
+        WHERE status = 'ANALYZING' AND analyzedAt <= :staleBefore
+        """,
+    )
+    suspend fun failStaleAiAnalyses(staleBefore: Long, resolvedAt: Long): Int
 
     @Query("SELECT * FROM auction_items")
     suspend fun getItems(): List<AuctionItemEntity>
@@ -138,6 +173,9 @@ interface AuctionDao {
     @Query("DELETE FROM auction_history_items WHERE itemKey = :itemKey")
     suspend fun deleteHistoryItem(itemKey: String)
 
+    @Query("DELETE FROM auction_ai_analyses WHERE itemKey = :itemKey")
+    suspend fun deleteAiAnalysis(itemKey: String)
+
     @Query("SELECT COUNT(*) FROM auction_history_items")
     suspend fun getHistoryItemCount(): Int
 
@@ -146,6 +184,9 @@ interface AuctionDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertHistoryItems(items: List<AuctionHistoryItemEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAiAnalysis(analysis: AuctionAiAnalysisEntity)
 
     @Transaction
     suspend fun replaceSnapshot(items: List<AuctionItemEntity>, metadata: AuctionSyncMetadataEntity) {
@@ -171,14 +212,21 @@ interface AuctionDao {
     @Transaction
     suspend fun deleteHistoryItemAndEmptyMetadata(itemKey: String) {
         deleteFavorite(itemKey)
+        deleteAiAnalysis(itemKey)
         deleteHistoryItem(itemKey)
         if (getHistoryItemCount() == 0) deleteHistoryMetadata()
     }
 }
 
 @Database(
-    entities = [AuctionItemEntity::class, AuctionSyncMetadataEntity::class, AuctionFavoriteEntity::class, AuctionHistoryItemEntity::class],
-    version = 4,
+    entities = [
+        AuctionItemEntity::class,
+        AuctionSyncMetadataEntity::class,
+        AuctionFavoriteEntity::class,
+        AuctionHistoryItemEntity::class,
+        AuctionAiAnalysisEntity::class,
+    ],
+    version = 5,
     exportSchema = false,
 )
 abstract class AuctionDatabase : RoomDatabase() {
@@ -192,7 +240,7 @@ abstract class AuctionDatabase : RoomDatabase() {
                 context.applicationContext,
                 AuctionDatabase::class.java,
                 "auction.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
         }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -240,6 +288,31 @@ abstract class AuctionDatabase : RoomDatabase() {
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `auction_sync_metadata` ADD COLUMN `lastAttemptAt` INTEGER")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `auction_ai_analyses` (
+                        `itemKey` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `riskLevel` TEXT NOT NULL,
+                        `suitabilityScore` INTEGER NOT NULL,
+                        `headline` TEXT NOT NULL,
+                        `summary` TEXT NOT NULL,
+                        `riskItemsJson` TEXT NOT NULL,
+                        `requiredChecksJson` TEXT NOT NULL,
+                        `evidenceTypes` TEXT NOT NULL,
+                        `missingDocumentTypes` TEXT NOT NULL,
+                        `analyzedAt` INTEGER NOT NULL,
+                        `modelName` TEXT NOT NULL,
+                        `promptVersion` TEXT NOT NULL,
+                        PRIMARY KEY(`itemKey`)
+                    )
+                    """.trimIndent(),
+                )
             }
         }
     }
