@@ -89,6 +89,8 @@ import com.sorimpower.app.feature.bodylog.presentation.BodyLogScreen
 import com.sorimpower.app.feature.bodylog.presentation.BodyLogViewModel
 import com.sorimpower.app.feature.auction.presentation.AuctionScreen
 import com.sorimpower.app.feature.auction.presentation.AuctionViewModel
+import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupScreen
+import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupViewModel
 import com.sorimpower.app.core.ui.AppCobalt
 import com.sorimpower.app.core.ui.AppLilac
 import com.sorimpower.app.core.ui.AppNavy
@@ -110,12 +112,15 @@ private enum class Screen(val label: String) {
     HOME("홈"), BLOCKER("차단"), BODY_LOG("기록"), AUCTION("경매"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
 }
 
+private enum class HealthRecordTab(val label: String) { DAILY("데일리 기록"), CHECKUP("건강검진") }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SorimPowerApp(
     viewModel: BlockerViewModel,
     bodyLogViewModel: BodyLogViewModel,
     auctionViewModel: AuctionViewModel,
+    healthCheckupViewModel: HealthCheckupViewModel,
     accessibilityEnabled: () -> Boolean,
     openAccessibilitySettings: () -> Unit,
     openAuctionAnalysesRequest: Int = 0,
@@ -124,6 +129,7 @@ internal fun SorimPowerApp(
     var screen by remember { mutableStateOf(Screen.HOME) }
     var editingSchedule by remember { mutableStateOf<BlockSchedule?>(null) }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
+    var healthRecordTab by remember { mutableStateOf(HealthRecordTab.DAILY) }
     var protectedAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var initialDestinationApplied by remember { mutableStateOf(false) }
 
@@ -197,7 +203,18 @@ internal fun SorimPowerApp(
                 { screen = Screen.AUCTION },
                 openAccessibilitySettings,
             )
-            Screen.BODY_LOG -> BodyLogScreen(padding, bodyLogViewModel)
+            Screen.BODY_LOG -> Column(Modifier.fillMaxSize().padding(padding)) {
+                HealthRecordTabs(
+                    selected = healthRecordTab,
+                    onSelected = { healthRecordTab = it },
+                )
+                Box(Modifier.fillMaxWidth().weight(1f)) {
+                    when (healthRecordTab) {
+                        HealthRecordTab.DAILY -> BodyLogScreen(PaddingValues(0.dp), bodyLogViewModel)
+                        HealthRecordTab.CHECKUP -> HealthCheckupScreen(PaddingValues(0.dp), healthCheckupViewModel)
+                    }
+                }
+            }
             Screen.AUCTION -> AuctionScreen(padding, auctionViewModel)
             Screen.MORE -> MoreMenuScreen(padding, onOpenSettings = { screen = Screen.SETTINGS })
             Screen.BLOCKER -> BlockerScreen(
@@ -264,6 +281,40 @@ internal fun SorimPowerApp(
                 action()
             },
         )
+    }
+}
+
+@Composable
+private fun HealthRecordTabs(
+    selected: HealthRecordTab,
+    onSelected: (HealthRecordTab) -> Unit,
+) {
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(1.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            HealthRecordTab.entries.forEach { tab ->
+                val active = selected == tab
+                Box(
+                    Modifier.weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (active) AppCobalt.copy(alpha = .12f) else Color.Transparent)
+                        .clickable { onSelected(tab) }
+                        .padding(vertical = 11.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        tab.label,
+                        color = if (active) AppCobalt else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (active) FontWeight.Black else FontWeight.Medium,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+        }
     }
 }
 

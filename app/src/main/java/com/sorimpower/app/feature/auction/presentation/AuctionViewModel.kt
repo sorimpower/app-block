@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sorimpower.app.feature.auction.data.AuctionRepository
 import com.sorimpower.app.feature.auction.data.AuctionAiPreferencesRepository
+import com.sorimpower.app.feature.auction.data.AuctionAiAnalysisMode
 import com.sorimpower.app.feature.auction.domain.AuctionItem
 import com.sorimpower.app.feature.auction.domain.AuctionAiAnalysis
 import com.sorimpower.app.feature.auction.domain.AuctionAiPreferences
@@ -179,9 +180,9 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { repository.deleteHistoryItem(itemKey) }
     }
 
-    fun analyzeRights(item: AuctionItem) {
+    fun analyzeRights(item: AuctionItem, useTerra: Boolean = false) {
         viewModelScope.launch {
-            repository.analyzeRights(item, aiPreferencesRepository.current().toCriteria())
+            repository.analyzeRights(item, aiPreferencesRepository.current().toCriteria(), if (useTerra) AuctionAiAnalysisMode.MANUAL_TERRA else AuctionAiAnalysisMode.MANUAL)
         }
     }
 

@@ -76,7 +76,9 @@ data class AuctionAiAnalysis(
 }
 
 data class AuctionAiCriteria(
+    val minimumBidPrice: Long? = null,
     val maxBidPrice: Long? = null,
+    val minimumSuitabilityScore: Int = 50,
     val preferredDistricts: Set<String> = emptySet(),
     val minimumDiscountRate: Double? = null,
     val maximumRiskLevel: AuctionRiskLevel = AuctionRiskLevel.MEDIUM,
@@ -86,7 +88,9 @@ data class AuctionAiCriteria(
 
 data class AuctionAiPreferences(
     val dailyRecommendationEnabled: Boolean = false,
-    val maxBidPrice: Long? = null,
+    val minimumBidPrice: Long? = 2_000_000_000L,
+    val maxBidPrice: Long? = 3_000_000_000L,
+    val minimumSuitabilityScore: Int = 50,
     val preferredDistricts: Set<String> = emptySet(),
     val minimumDiscountRate: Double? = null,
     val maximumRiskLevel: AuctionRiskLevel = AuctionRiskLevel.MEDIUM,
@@ -95,7 +99,9 @@ data class AuctionAiPreferences(
     val notificationHour: Int = 8,
 ) {
     fun toCriteria() = AuctionAiCriteria(
+        minimumBidPrice = minimumBidPrice,
         maxBidPrice = maxBidPrice,
+        minimumSuitabilityScore = minimumSuitabilityScore.coerceIn(0, 100),
         preferredDistricts = preferredDistricts,
         minimumDiscountRate = minimumDiscountRate,
         maximumRiskLevel = maximumRiskLevel,
@@ -105,6 +111,7 @@ data class AuctionAiPreferences(
 }
 
 fun AuctionItem.matchesAiPreferences(preferences: AuctionAiPreferences): Boolean {
+    if (preferences.minimumBidPrice != null && (minimumPrice <= 0L || minimumPrice < preferences.minimumBidPrice)) return false
     if (preferences.maxBidPrice != null && (minimumPrice <= 0L || minimumPrice > preferences.maxBidPrice)) return false
     if (preferences.preferredDistricts.isNotEmpty() &&
         sigungu !in preferences.preferredDistricts &&
@@ -120,7 +127,7 @@ fun AuctionItem.auctionDiscountRate(): Double =
 
 fun AuctionAiAnalysis.isPreliminaryRecommendationEligible(criteria: AuctionAiCriteria): Boolean {
     if (status !in setOf(AuctionAnalysisStatus.PRELIMINARY, AuctionAnalysisStatus.COMPLETE)) return false
-    if (suitabilityScore < 70) return false
+    if (suitabilityScore < criteria.minimumSuitabilityScore) return false
     val allowedRisks = when (criteria.maximumRiskLevel) {
         AuctionRiskLevel.LOW -> setOf(AuctionRiskLevel.LOW)
         AuctionRiskLevel.MEDIUM -> setOf(AuctionRiskLevel.LOW, AuctionRiskLevel.MEDIUM)

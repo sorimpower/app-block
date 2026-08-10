@@ -28,7 +28,11 @@ class AuctionAiPreferencesRepository(private val context: Context) {
         .map { values ->
             AuctionAiPreferences(
                 dailyRecommendationEnabled = values[ENABLED] ?: false,
-                maxBidPrice = values[MAX_BID_PRICE]?.takeIf { it > 0L },
+                // 기존 설정에는 하한이 없었으므로, 요청한 20~30억을 기본 범위로 적용한다.
+                minimumBidPrice = values[MINIMUM_BID_PRICE]?.takeIf { it > 0L } ?: DEFAULT_MINIMUM_BID_PRICE,
+                maxBidPrice = values[MAX_BID_PRICE]?.takeIf { it > 0L }
+                    ?.takeIf { values[MINIMUM_BID_PRICE] != null } ?: DEFAULT_MAXIMUM_BID_PRICE,
+                minimumSuitabilityScore = (values[MINIMUM_SUITABILITY_SCORE] ?: DEFAULT_MINIMUM_SUITABILITY_SCORE).coerceIn(0, 100),
                 preferredDistricts = values[PREFERRED_DISTRICTS].orEmpty(),
                 minimumDiscountRate = values[MINIMUM_DISCOUNT_RATE]?.takeIf { it >= 0.0 },
                 maximumRiskLevel = values[MAXIMUM_RISK_LEVEL]
@@ -45,7 +49,9 @@ class AuctionAiPreferencesRepository(private val context: Context) {
     suspend fun save(value: AuctionAiPreferences) {
         context.auctionAiDataStore.edit { values ->
             values[ENABLED] = value.dailyRecommendationEnabled
+            value.minimumBidPrice?.takeIf { it > 0L }?.let { values[MINIMUM_BID_PRICE] = it } ?: values.remove(MINIMUM_BID_PRICE)
             value.maxBidPrice?.takeIf { it > 0L }?.let { values[MAX_BID_PRICE] = it } ?: values.remove(MAX_BID_PRICE)
+            values[MINIMUM_SUITABILITY_SCORE] = value.minimumSuitabilityScore.coerceIn(0, 100)
             values[PREFERRED_DISTRICTS] = value.preferredDistricts
             value.minimumDiscountRate?.takeIf { it >= 0.0 }?.let { values[MINIMUM_DISCOUNT_RATE] = it }
                 ?: values.remove(MINIMUM_DISCOUNT_RATE)
@@ -58,12 +64,17 @@ class AuctionAiPreferencesRepository(private val context: Context) {
 
     private companion object {
         val ENABLED = booleanPreferencesKey("daily_recommendation_enabled")
+        val MINIMUM_BID_PRICE = longPreferencesKey("minimum_bid_price")
         val MAX_BID_PRICE = longPreferencesKey("max_bid_price")
+        val MINIMUM_SUITABILITY_SCORE = intPreferencesKey("minimum_suitability_score")
         val PREFERRED_DISTRICTS = stringSetPreferencesKey("preferred_districts")
         val MINIMUM_DISCOUNT_RATE = doublePreferencesKey("minimum_discount_rate")
         val MAXIMUM_RISK_LEVEL = stringPreferencesKey("maximum_risk_level")
         val ALLOW_OCCUPIED = booleanPreferencesKey("allow_occupied_property")
         val EXTRA_REQUEST = stringPreferencesKey("extra_request")
         val NOTIFICATION_HOUR = intPreferencesKey("notification_hour")
+        const val DEFAULT_MINIMUM_BID_PRICE = 2_000_000_000L
+        const val DEFAULT_MAXIMUM_BID_PRICE = 3_000_000_000L
+        const val DEFAULT_MINIMUM_SUITABILITY_SCORE = 50
     }
 }

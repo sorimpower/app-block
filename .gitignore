@@ -15,6 +15,7 @@ outputs/
 work/
 *.apk
 *.aab
+firebase-debug.log
 
 # macOS
 .DS_Store

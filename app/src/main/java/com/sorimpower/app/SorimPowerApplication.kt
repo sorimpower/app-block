@@ -11,6 +11,5 @@ class SorimPowerApplication : Application() {
         AuctionAiRecommendationScheduler.restore(this)
         FirebaseApp.initializeApp(this) ?: return
         FirebaseAppCheck.getInstance().installSorimPowerProvider()
-        verifyFirebaseAiConnectionOnce()
     }
 }

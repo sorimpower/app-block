@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,6 +58,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -82,6 +85,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import org.json.JSONObject
 import com.sorimpower.app.core.ui.AppCobalt
 import com.sorimpower.app.core.ui.AppGreen
 import com.sorimpower.app.core.ui.AppOrange
@@ -129,9 +133,14 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { AuctionSummaryCard(state) }
-
             item {
+                AuctionModeTabs(
+                    state = state,
+                    onListModeChange = viewModel::setListMode,
+                )
+            }
+
+            if (state.listMode == AuctionListMode.ANALYZED) item {
                 AuctionAiRecommendationCard(
                     preferences = state.aiPreferences,
                     onOpenSettings = { showAiSettingsDialog = true },
@@ -146,7 +155,6 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
                     onSort = viewModel::setSort,
                     onSortDirection = viewModel::setSortDirection,
                     onSearchQueryChange = viewModel::setSearchQuery,
-                    onListModeChange = viewModel::setListMode,
                 )
             }
 
@@ -161,7 +169,7 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
                         isFavorite = item.itemKey in state.favoriteKeys,
                         analysis = state.aiAnalyses[item.itemKey],
                         onFavoriteChange = { favorite -> viewModel.setFavorite(item.itemKey, favorite) },
-                        onAnalyzeRights = if (item.isRemoved) null else fun() { viewModel.analyzeRights(item) },
+                        onAnalyzeRights = if (item.isRemoved) null else { useTerra -> viewModel.analyzeRights(item, useTerra) },
                         onDeleteHistory = if (item.isRemoved) {
                             { historyItemToDelete = item }
                         } else {
@@ -238,6 +246,33 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun AuctionModeTabs(state: AuctionUiState, onListModeChange: (AuctionListMode) -> Unit) {
+    val tabs = listOf(
+        AuctionListMode.ACTIVE to "진행 중",
+        AuctionListMode.FAVORITES to "관심",
+        AuctionListMode.ANALYZED to "AI 분석",
+        AuctionListMode.REMOVED to "종료",
+    )
+    val selectedIndex = tabs.indexOfFirst { it.first == state.listMode }.coerceAtLeast(0)
+    PrimaryTabRow(selectedTabIndex = selectedIndex) {
+        tabs.forEachIndexed { index, (mode, label) ->
+            val count = when (mode) {
+                AuctionListMode.ACTIVE -> state.totalCount
+                AuctionListMode.FAVORITES -> state.favoriteCount
+                AuctionListMode.ANALYZED -> state.analysisCount
+                AuctionListMode.REMOVED -> state.removedCount
+            }
+            Tab(
+                selected = index == selectedIndex,
+                onClick = { onListModeChange(mode) },
+                text = { Text("$label $count", maxLines = 1) },
+            )
+        }
+    }
+}
+
+@Composable
 private fun AuctionAiRecommendationCard(
     preferences: AuctionAiPreferences,
     onOpenSettings: () -> Unit,
@@ -282,16 +317,23 @@ private fun AuctionAiSettingsDialog(
     onSave: (AuctionAiPreferences) -> Unit,
 ) {
     var enabled by remember(initial) { mutableStateOf(initial.dailyRecommendationEnabled) }
+    var minimumBidPrice by remember(initial) { mutableStateOf(initial.minimumBidPrice?.let(::eokText).orEmpty()) }
     var maxBidPrice by remember(initial) { mutableStateOf(initial.maxBidPrice?.let(::eokText).orEmpty()) }
+    var minimumScore by remember(initial) { mutableStateOf(initial.minimumSuitabilityScore.toString()) }
     var minimumDiscountRate by remember(initial) { mutableStateOf(initial.minimumDiscountRate?.let(::percentText).orEmpty()) }
     var preferredDistricts by remember(initial) { mutableStateOf(initial.preferredDistricts) }
     var maximumRisk by remember(initial) { mutableStateOf(initial.maximumRiskLevel) }
     var allowOccupied by remember(initial) { mutableStateOf(initial.allowOccupiedProperty) }
     var extraRequest by remember(initial) { mutableStateOf(initial.extraRequest) }
     var notificationHour by remember(initial) { mutableStateOf(initial.notificationHour) }
+    val minBidValue = eokValue(minimumBidPrice)
     val maxBidValue = eokValue(maxBidPrice)
+    val minScoreValue = minimumScore.toIntOrNull()
     val discountValue = minimumDiscountRate.toDoubleOrNull()
-    val valid = (maxBidPrice.isBlank() || maxBidValue != null) &&
+    val valid = (minimumBidPrice.isBlank() || minBidValue != null) &&
+        (maxBidPrice.isBlank() || maxBidValue != null) &&
+        (minBidValue == null || maxBidValue == null || minBidValue <= maxBidValue) &&
+        (minScoreValue != null && minScoreValue in 0..100) &&
         (minimumDiscountRate.isBlank() || (discountValue != null && discountValue in 0.0..99.0))
 
     AlertDialog(
@@ -310,13 +352,32 @@ private fun AuctionAiSettingsDialog(
                     Switch(checked = enabled, onCheckedChange = { enabled = it })
                 }
                 OutlinedTextField(
+                    value = minimumBidPrice,
+                    onValueChange = { minimumBidPrice = decimalText(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("최저매각가격 하한 (억 원)") },
+                    placeholder = { Text("예: 20") },
+                    supportingText = { Text("추천 대상 가격대의 시작값입니다.") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                OutlinedTextField(
                     value = maxBidPrice,
                     onValueChange = { maxBidPrice = decimalText(it) },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("최대 입찰 예산 (억 원)") },
-                    placeholder = { Text("예: 12") },
+                    label = { Text("최저매각가격 상한 (억 원)") },
+                    placeholder = { Text("예: 30") },
                     supportingText = { Text("현재 최저매각가격을 기준으로 1차 선별합니다.") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = minimumScore,
+                    onValueChange = { minimumScore = it.filter(Char::isDigit).take(3) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("추천 최소 AI 적합도 (점)") },
+                    supportingText = { Text("50점 이상인 사건만 알림 후보로 포함합니다.") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                 )
                 OutlinedTextField(
@@ -382,7 +443,7 @@ private fun AuctionAiSettingsDialog(
                     style = MaterialTheme.typography.labelSmall,
                     color = AppOrange,
                 )
-                if (!valid) Text("예산과 할인율 입력값을 확인해 주세요.", color = MaterialTheme.colorScheme.error)
+                if (!valid) Text("가격 범위·최소 점수·할인율 입력값을 확인해 주세요.", color = MaterialTheme.colorScheme.error)
             }
         },
         confirmButton = {
@@ -392,7 +453,9 @@ private fun AuctionAiSettingsDialog(
                     onSave(
                         AuctionAiPreferences(
                             dailyRecommendationEnabled = enabled,
+                            minimumBidPrice = minBidValue,
                             maxBidPrice = maxBidValue,
+                            minimumSuitabilityScore = minScoreValue ?: 50,
                             preferredDistricts = preferredDistricts,
                             minimumDiscountRate = discountValue,
                             maximumRiskLevel = maximumRisk,
@@ -454,7 +517,6 @@ private fun AuctionHeader(
     onSort: (AuctionSortField) -> Unit,
     onSortDirection: (AuctionSortDirection) -> Unit,
     onSearchQueryChange: (String) -> Unit,
-    onListModeChange: (AuctionListMode) -> Unit,
 ) {
     Card(
         Modifier.fillMaxWidth(),
@@ -498,46 +560,6 @@ private fun AuctionHeader(
                 },
                 singleLine = true,
             )
-            LazyRow(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item {
-                FilterChip(
-                    selected = state.listMode == AuctionListMode.ACTIVE,
-                    onClick = { onListModeChange(AuctionListMode.ACTIVE) },
-                    label = { Text("진행 중 ${state.totalCount}") },
-                )
-                }
-                item {
-                    FilterChip(
-                        selected = state.listMode == AuctionListMode.ANALYZED,
-                        onClick = { onListModeChange(AuctionListMode.ANALYZED) },
-                        label = { Text("AI 분석 ${state.analysisCount}") },
-                        leadingIcon = {
-                            Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(17.dp))
-                        },
-                    )
-                }
-                item {
-                FilterChip(
-                    selected = state.listMode == AuctionListMode.FAVORITES,
-                    onClick = { onListModeChange(AuctionListMode.FAVORITES) },
-                    label = { Text("관심 사건 ${state.favoriteCount}") },
-                    leadingIcon = {
-                        Icon(
-                            if (state.listMode == AuctionListMode.FAVORITES) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder,
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp),
-                        )
-                    },
-                )
-                }
-                item {
-                    FilterChip(
-                        selected = state.listMode == AuctionListMode.REMOVED,
-                        onClick = { onListModeChange(AuctionListMode.REMOVED) },
-                        label = { Text("종료 사건 ${state.removedCount}") },
-                    )
-                }
-            }
             if (state.filter.isActive) {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
                     OutlinedButton(onClick = onClearFilter) { Text("필터 초기화") }
@@ -658,10 +680,11 @@ private fun AuctionItemCard(
     isFavorite: Boolean,
     analysis: AuctionAiAnalysis?,
     onFavoriteChange: (Boolean) -> Unit,
-    onAnalyzeRights: (() -> Unit)?,
+    onAnalyzeRights: ((Boolean) -> Unit)?,
     onDeleteHistory: (() -> Unit)?,
 ) {
     val context = LocalContext.current
+    var showModelChooser by remember { mutableStateOf(false) }
     val mapQuery = item.mapSearchQuery()
     val calendarTime = item.calendarTime()
     var noteExpanded by rememberSaveable(item.itemKey) { mutableStateOf(false) }
@@ -828,7 +851,7 @@ private fun AuctionItemCard(
                 ) {
                     if (onAnalyzeRights != null) {
                         OutlinedButton(
-                            onClick = onAnalyzeRights,
+                            onClick = { showModelChooser = true },
                             enabled = analysis?.status != AuctionAnalysisStatus.ANALYZING,
                             modifier = Modifier.height(36.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
@@ -860,6 +883,13 @@ private fun AuctionItemCard(
                     }
                 }
             }
+            if (showModelChooser && onAnalyzeRights != null) AlertDialog(
+                onDismissRequest = { showModelChooser = false },
+                title = { Text("AI 모델 선택") },
+                text = { Text("Luna는 빠르고 비용이 낮고, Terra는 더 정교한 분석에 적합합니다.") },
+                confirmButton = { Button(onClick = { showModelChooser = false; onAnalyzeRights(false) }) { Text("Luna") } },
+                dismissButton = { OutlinedButton(onClick = { showModelChooser = false; onAnalyzeRights(true) }) { Text("Terra") } },
+            )
             if (onDeleteHistory != null) {
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
                     OutlinedButton(
@@ -913,15 +943,30 @@ private fun AuctionAiAnalysisCard(analysis: AuctionAiAnalysis) {
             Text("위험도 ${analysis.riskLevel.riskLabel()}", color = color, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
         }
         if (analysis.riskItems.isNotEmpty()) {
-            Text("주요 위험 · ${analysis.riskItems.take(3).joinToString(" · ")}", style = MaterialTheme.typography.bodySmall)
+            Text("주요 위험 · ${analysis.riskItems.take(3).map(::auctionAnalysisDisplayText).joinToString(" · ")}", style = MaterialTheme.typography.bodySmall)
         }
         if (analysis.requiredChecks.isNotEmpty()) {
-            Text("추가 확인 · ${analysis.requiredChecks.take(3).joinToString(" · ")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("추가 확인 · ${analysis.requiredChecks.take(3).map(::auctionAnalysisDisplayText).joinToString(" · ")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (analysis.status == AuctionAnalysisStatus.PRELIMINARY) {
             Text("등기사항전부증명서 원문이 없어 확정 분석이 아닌 예비 결과입니다.", color = AppOrange, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         }
     }
+}
+
+/** 이전에 객체 문자열로 저장된 분석 결과도 사람이 읽을 수 있게 표시한다. */
+private fun auctionAnalysisDisplayText(value: String): String {
+    val text = value.trim()
+    if (!text.startsWith("{")) return text
+    return runCatching {
+        val json = JSONObject(text)
+        listOf("category", "summary", "detail", "reason", "risk", "action")
+            .map { json.optString(it).trim() }
+            .filter(String::isNotBlank)
+            .distinct()
+            .joinToString(" · ")
+            .ifBlank { text }
+    }.getOrDefault(text)
 }
 
 private fun AuctionRiskLevel.riskLabel(): String = when (this) {

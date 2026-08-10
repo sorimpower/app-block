@@ -33,7 +33,7 @@ class AuctionRepository internal constructor(
     context: Context,
     private val courtAuctionApi: CourtAuctionApi = CourtAuctionApi(),
     private val evidenceSource: AuctionEvidenceSource = CourtAuctionEvidenceApi(),
-    private val rightsAnalyzer: AuctionRightsAnalyzer = GeminiAuctionRightsAnalyzer(context.applicationContext),
+    private val rightsAnalyzer: AuctionRightsAnalyzer = OpenAiAuctionRightsAnalyzer(context.applicationContext),
 ) {
     private val dao = AuctionDatabase.get(context).dao()
 

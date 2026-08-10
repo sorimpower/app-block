@@ -38,6 +38,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -73,6 +74,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -90,6 +92,7 @@ import com.sorimpower.app.feature.bodylog.data.MealWithDetails
 import com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity
 import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
 import com.sorimpower.app.feature.bodylog.domain.BodyLogState
+import com.sorimpower.app.feature.bodylog.domain.BodyLogAiAnalysis
 import com.sorimpower.app.feature.bodylog.domain.ChartPeriod
 import com.sorimpower.app.feature.bodylog.domain.ChartPoint
 import com.sorimpower.app.feature.bodylog.domain.MealType
@@ -115,6 +118,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val aiAnalysis by viewModel.aiAnalysis.collectAsStateWithLifecycle()
+    val isAiAnalyzing by viewModel.isAiAnalyzing.collectAsStateWithLifecycle()
+    val aiAnalysisError by viewModel.aiAnalysisError.collectAsStateWithLifecycle()
     var period by remember { mutableStateOf(ChartPeriod.WEEK) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var mealFilterDate by remember { mutableStateOf<LocalDate?>(null) }
@@ -159,6 +165,14 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 onWeight = { showWeightInput = true },
                 onGoal = { showGoalInput = true },
                 onWeightsHiddenChange = viewModel::setWeightsHidden,
+            )
+        }
+        item {
+            WeightProgressAiCard(
+                analysis = aiAnalysis,
+                isAnalyzing = isAiAnalyzing,
+                errorMessage = aiAnalysisError,
+                onAnalyze = viewModel::analyzeWeightProgress,
             )
         }
         item {
@@ -393,6 +407,68 @@ private fun BodyMetric(value: String, label: String, modifier: Modifier) {
     Column(modifier.background(Color(0xFFF5F4F6), RoundedCornerShape(16.dp)).padding(10.dp)) {
         Text(value, color = AppNavy, fontWeight = FontWeight.Black)
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun WeightProgressAiCard(
+    analysis: BodyLogAiAnalysis?,
+    isAnalyzing: Boolean,
+    errorMessage: String?,
+    onAnalyze: () -> Unit,
+) {
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(1.dp),
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = AppCobalt)
+                Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                    Text("AI 건강 경과 분석", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+                    Text("마운자로 주사·식단·체중 추세를 함께 검토해요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Button(
+                onClick = onAnalyze,
+                enabled = !isAnalyzing,
+                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+            ) {
+                if (isAnalyzing) {
+                    CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = Color.White)
+                    Text("기록 분석 중…", Modifier.padding(start = 8.dp))
+                } else {
+                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(17.dp))
+                    Text(if (analysis == null) "내 건강 기록 분석하기" else "현재 기록으로 다시 분석", Modifier.padding(start = 7.dp))
+                }
+            }
+            Text(
+                "버튼을 누를 때에만 최근 기록이 ChatGPT Luna에 전송됩니다.",
+                Modifier.padding(top = 10.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            errorMessage?.let {
+                Text(it, Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            analysis?.let { result ->
+                Text(result.headline, Modifier.padding(top = 16.dp), fontWeight = FontWeight.Black, color = AppNavy)
+                Text(result.trendSummary, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium)
+                Text("핵심 판단", Modifier.padding(top = 14.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                Text(result.encouragement, Modifier.padding(top = 6.dp), color = AppCobalt, style = MaterialTheme.typography.bodyMedium)
+                if (result.nextSteps.isNotEmpty()) {
+                    Text("다음 관리 포인트", Modifier.padding(top = 14.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                    result.nextSteps.forEach { step ->
+                        Text("• $step", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                result.safetyNote.takeIf(String::isNotBlank)?.let {
+                    Text(it, Modifier.padding(top = 14.dp), style = MaterialTheme.typography.labelSmall, color = AppOrange)
+                }
+            }
+        }
     }
 }
 

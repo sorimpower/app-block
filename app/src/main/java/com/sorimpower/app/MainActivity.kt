@@ -16,12 +16,14 @@ import com.sorimpower.app.feature.blocker.presentation.BlockerViewModel
 import com.sorimpower.app.feature.blocker.service.AppBlockAccessibilityService
 import com.sorimpower.app.feature.bodylog.presentation.BodyLogViewModel
 import com.sorimpower.app.feature.auction.presentation.AuctionViewModel
+import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupViewModel
 import com.sorimpower.app.core.ui.SorimPowerTheme
 
 class MainActivity : ComponentActivity() {
     private val blockerViewModel: BlockerViewModel by viewModels()
     private val bodyLogViewModel: BodyLogViewModel by viewModels()
     private val auctionViewModel: AuctionViewModel by viewModels()
+    private val healthCheckupViewModel: HealthCheckupViewModel by viewModels()
     private var openAuctionAnalysesRequest by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
@@ -34,6 +36,7 @@ class MainActivity : ComponentActivity() {
                     blockerViewModel,
                     bodyLogViewModel,
                     auctionViewModel,
+                    healthCheckupViewModel,
                     ::isAccessibilityServiceEnabled,
                     ::openAccessibilitySettings,
                     openAuctionAnalysesRequest,

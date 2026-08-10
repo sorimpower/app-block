@@ -2,7 +2,7 @@
 
 ## 현재 구현된 기반
 
-- Firebase AI Logic의 Gemini 구조화 JSON 응답 계약
+- Firebase Functions를 거치는 OpenAI 구조화 JSON 응답 계약
 - 법원 사건상세·현황조사서·감정평가 요약·매각물건명세서 메타데이터 자동 수집
 - 사건 카드의 `AI 권리분석` 버튼에서 수집과 분석을 한 번에 실행
 - 최신 등기사항전부증명서가 없으면 `PRELIMINARY`로 강제하고 확정 추천으로 표현하지 않음
@@ -11,11 +11,11 @@
 - 등기가 없더라도 사건상세·매각물건명세서·현황조사서가 모두 공개되고 위험도·적합도 조건을 통과한 결과는 `AI 예비 추천`으로 알림
 - 사건별 분석 결과를 Room `auction_ai_analyses`에 캐시
 
-## Firebase 연결에 필요한 작업
+## OpenAI 연결에 필요한 작업
 
 1. Firebase Console에서 프로젝트를 만든다.
 2. Android 앱 패키지 `com.sorimpower.app`을 등록한다.
-3. Firebase AI Logic에서 Gemini Developer API를 활성화한다.
+3. Firebase Functions Secret Manager에 `OPENAI_API_KEY`를 등록한다.
 4. 내려받은 `google-services.json`을 `app/google-services.json`에 둔다.
 5. Google services Gradle 플러그인은 프로젝트와 앱 모듈에 적용되어 있다.
 6. 디버그 빌드는 App Check debug provider, release 빌드는 Play Integrity provider를 사용한다.
@@ -27,7 +27,7 @@
 
 1. 법원 사건 상세 API에서 사건·물건 상세와 물건비고를 수집한다.
 2. 문서 공개 기간이면 현황조사서, 감정평가 요약, 매각물건명세서 문서 메타데이터를 추가 수집한다.
-3. Gemini가 구조화된 위험 항목과 추가 확인 사항을 생성한다.
+3. ChatGPT가 구조화된 위험 항목과 추가 확인 사항을 생성한다.
 4. 앱이 문서 충족 여부, 점수 범위, 상태를 다시 검증한다.
 5. 등기 미포함 분석은 예비 분석으로만 표시한다.
 6. 매일 아침 법원 목록을 새로고침하고, 오늘 새로 발견됐으며 AI 분석 이력이 없는 사건만 사용자 가격·지역 조건으로 최대 5건 선별한다.

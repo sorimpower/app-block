@@ -63,7 +63,7 @@ internal fun HomeScreen(
         item {
             FeatureCard(
                 title = "건강 기록",
-                description = "체중과 오늘 먹은 음식을 한곳에 기록",
+                description = "체중·식단·주사와 건강검진을 한곳에 기록",
                 icon = Icons.Rounded.FavoriteBorder,
                 accent = AppOrange,
                 onClick = openBodyLog,
