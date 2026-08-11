@@ -85,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sorimpower.app.feature.blocker.data.BlockerState
+import com.sorimpower.app.feature.blocker.data.BottomNavigationTab
 import com.sorimpower.app.feature.blocker.data.StartDestination
 import com.sorimpower.app.feature.blocker.domain.BlockSchedule
 import com.sorimpower.app.feature.blocker.domain.RepeatCycle
@@ -216,7 +217,7 @@ internal fun SorimPowerApp(
             )
         },
         bottomBar = {
-            if (screen != Screen.SCHEDULE && screen != Screen.APP_RULES) FloatingNavigation(screen) { screen = it }
+            if (screen != Screen.SCHEDULE && screen != Screen.APP_RULES) FloatingNavigation(screen, state.bottomNavigationOrder) { screen = it }
         },
     ) { padding ->
         when (screen) {
@@ -342,13 +343,13 @@ private fun HealthRecordTabs(
 }
 
 @Composable
-private fun FloatingNavigation(selected: Screen, onSelected: (Screen) -> Unit) {
+private fun FloatingNavigation(selected: Screen, order: List<BottomNavigationTab>, onSelected: (Screen) -> Unit) {
     Surface(color = Color.White, shadowElevation = 12.dp) {
         Row(
             Modifier.fillMaxWidth().navigationBarsPadding().height(70.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            listOf(Screen.HOME, Screen.PHONE_INSIGHT, Screen.BLOCKER, Screen.BODY_LOG, Screen.AUCTION, Screen.MORE).forEach { item ->
+            order.map(BottomNavigationTab::screen).forEach { item ->
                 val active = selected == item || (item == Screen.MORE && selected == Screen.SETTINGS)
                 Column(
                     Modifier.weight(1f).clickable { onSelected(item) }.padding(vertical = 6.dp),
@@ -368,6 +369,15 @@ private fun FloatingNavigation(selected: Screen, onSelected: (Screen) -> Unit) {
             }
         }
     }
+}
+
+private fun BottomNavigationTab.screen() = when (this) {
+    BottomNavigationTab.HOME -> Screen.HOME
+    BottomNavigationTab.PHONE_INSIGHT -> Screen.PHONE_INSIGHT
+    BottomNavigationTab.BLOCKER -> Screen.BLOCKER
+    BottomNavigationTab.BODY_LOG -> Screen.BODY_LOG
+    BottomNavigationTab.AUCTION -> Screen.AUCTION
+    BottomNavigationTab.MORE -> Screen.MORE
 }
 
 @Composable
@@ -408,7 +418,7 @@ private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
                     }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text("앱 정보", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                        Text("소림파워 v0.6.0", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
+                        Text("소림파워 v0.6.1", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
                         Text("집중을 위한 개인용 시스템", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }

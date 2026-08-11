@@ -40,6 +40,7 @@ class BlockerRepository(private val context: Context) {
     private val appScheduleAssignmentsKey = stringSetPreferencesKey("app_schedule_assignments_v3")
     private val blockMessageKey = stringPreferencesKey("block_message")
     private val startDestinationKey = stringPreferencesKey("start_destination")
+    private val bottomNavigationOrderKey = stringPreferencesKey("bottom_navigation_order")
     private val passwordHashKey = stringPreferencesKey("password_hash")
     private val passwordSaltKey = stringPreferencesKey("password_salt")
     private val legacyBypassPackageKey = stringPreferencesKey("bypass_package")
@@ -78,6 +79,7 @@ class BlockerRepository(private val context: Context) {
             appScheduleIds = assignments,
             blockMessage = preferences[blockMessageKey] ?: DEFAULT_BLOCK_MESSAGE,
             startDestination = StartDestination.from(preferences[startDestinationKey]),
+            bottomNavigationOrder = BottomNavigationTab.from(preferences[bottomNavigationOrderKey]),
             hasPassword = !preferences[passwordHashKey].isNullOrBlank(),
             oneTimeBypassPackage = preferences[legacyBypassPackageKey],
         )
@@ -162,6 +164,10 @@ class BlockerRepository(private val context: Context) {
 
     suspend fun setStartDestination(destination: StartDestination) = context.blockerDataStore.edit {
         it[startDestinationKey] = destination.name
+    }
+
+    suspend fun setBottomNavigationOrder(order: List<BottomNavigationTab>) = context.blockerDataStore.edit {
+        it[bottomNavigationOrderKey] = BottomNavigationTab.normalize(order).joinToString(",") { tab -> tab.name }
     }
 
     suspend fun setPassword(password: String) {
@@ -351,6 +357,25 @@ enum class StartDestination {
     }
 }
 
+enum class BottomNavigationTab(val label: String) {
+    HOME("홈"), PHONE_INSIGHT("챙김"), BLOCKER("차단"), BODY_LOG("기록"), AUCTION("경매"), MORE("더보기");
+
+    companion object {
+        val defaultOrder = entries.toList()
+
+        fun from(value: String?): List<BottomNavigationTab> {
+            if (value.isNullOrBlank()) return defaultOrder
+            return normalize(value.split(",").mapNotNull { name -> entries.firstOrNull { it.name == name } })
+        }
+
+        fun normalize(order: List<BottomNavigationTab>): List<BottomNavigationTab> {
+            val selected = order.distinct().toMutableList()
+            if (MORE !in selected) selected += MORE
+            return selected
+        }
+    }
+}
+
 data class BlockerState(
     val loaded: Boolean = false,
     val enabled: Boolean = false,
@@ -359,6 +384,7 @@ data class BlockerState(
     val appScheduleIds: Map<String, Set<String>> = emptyMap(),
     val blockMessage: String = BlockerRepository.DEFAULT_BLOCK_MESSAGE,
     val startDestination: StartDestination = StartDestination.HOME,
+    val bottomNavigationOrder: List<BottomNavigationTab> = BottomNavigationTab.defaultOrder,
     val hasPassword: Boolean = false,
     val oneTimeBypassPackage: String? = null,
 ) {

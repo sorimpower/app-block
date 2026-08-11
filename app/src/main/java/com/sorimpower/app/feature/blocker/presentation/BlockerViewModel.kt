@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sorimpower.app.feature.blocker.data.BlockerRepository
 import com.sorimpower.app.feature.blocker.data.BlockerState
+import com.sorimpower.app.feature.blocker.data.BottomNavigationTab
 import com.sorimpower.app.feature.blocker.data.StartDestination
 import com.sorimpower.app.feature.blocker.domain.BlockSchedule
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +65,7 @@ class BlockerViewModel(application: Application) : AndroidViewModel(application)
     }
     fun setBlockMessage(message: String) = viewModelScope.launch { repository.setBlockMessage(message) }
     fun setStartDestination(destination: StartDestination) = viewModelScope.launch { repository.setStartDestination(destination) }
+    fun setBottomNavigationOrder(order: List<BottomNavigationTab>) = viewModelScope.launch { repository.setBottomNavigationOrder(order) }
     fun setPassword(password: String) = viewModelScope.launch { repository.setPassword(password) }
     fun clearPassword() = viewModelScope.launch { repository.clearPassword() }
     fun verifyPassword(password: String, onResult: (Boolean) -> Unit) = viewModelScope.launch {

@@ -2,7 +2,7 @@
 
 개인용 APK 설치를 전제로 만든 Kotlin·Jetpack Compose Android 앱입니다. 생활 관리, 건강 기록, 부동산 경매, 휴대폰 데이터 기반 AI 챙김을 하나의 앱에서 제공합니다.
 
-> 버전: `v0.6.0` · 최소 Android 8.0(API 26) · target SDK 35
+> 버전: `v0.6.1` · 최소 Android 8.0(API 26) · target SDK 35
 
 ## 주요 기능
 

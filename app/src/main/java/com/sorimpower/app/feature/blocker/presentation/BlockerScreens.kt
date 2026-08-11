@@ -49,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -127,51 +128,34 @@ internal fun BlockerScreen(
     ) {
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(26.dp),
-                elevation = CardDefaults.cardElevation(2.dp),
-            ) {
-                Row(
-                    Modifier.padding(10.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp))
-                        .background(Brush.linearGradient(listOf(Color(0xFF7C2AE8), Color(0xFFB623E6), Color(0xFFE72A99))))
-                        .padding(22.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("APP BLOCKER", color = Color.White.copy(alpha = .76f), fontWeight = FontWeight.Bold)
-                        Text(if (state.enabled) "차단 실행 중" else "차단 대기 중", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-                        Text("앱 ${state.blockedPackages.size}개 · 조건 ${state.activeScheduleCount}개", color = Color.White.copy(alpha = .78f))
-                    }
-                    CleanSwitch(checked = state.enabled, onCheckedChange = { enabled -> requestProtectedAction { viewModel.setEnabled(enabled) } })
-                }
-            }
-        }
-        item {
-            Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 shape = RoundedCornerShape(22.dp),
                 elevation = CardDefaults.cardElevation(1.dp),
             ) {
-                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FeatureSectionTitle(Icons.Rounded.Tune, "차단 조건", "앱마다 필요한 조건을 선택해요", Modifier.weight(1f))
-                    Button(onClick = onAddSchedule) {
-                        Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
-                        Text("추가", Modifier.padding(start = 4.dp))
+                Column {
+                    Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        FeatureSectionTitle(Icons.Rounded.Tune, "차단 조건", "앱마다 필요한 조건을 선택해요", Modifier.weight(1f))
+                        CleanSwitch(checked = state.enabled, onCheckedChange = { enabled -> requestProtectedAction { viewModel.setEnabled(enabled) } })
+                        Button(onClick = onAddSchedule, Modifier.padding(start = 8.dp)) {
+                            Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
+                            Text("추가", Modifier.padding(start = 4.dp))
+                        }
+                    }
+                    HorizontalDivider()
+                    if (state.schedules.isEmpty()) {
+                        Text("아직 조건이 없어요. 조건을 추가해야 차단됩니다.", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        state.schedules.forEachIndexed { index, schedule ->
+                            ScheduleRow(
+                                schedule = schedule,
+                                onClick = { onEditSchedule(schedule) },
+                                onDelete = { requestProtectedAction { viewModel.deleteSchedule(schedule.id) } },
+                            )
+                            if (index < state.schedules.lastIndex) HorizontalDivider(Modifier.padding(start = 20.dp))
+                        }
                     }
                 }
-            }
-        }
-        if (state.schedules.isEmpty()) {
-            item { EmptyCard("아직 조건이 없어요. 조건을 추가해야 차단됩니다.") }
-        } else {
-            items(state.schedules, key = BlockSchedule::id) { schedule ->
-                ScheduleCard(
-                    schedule = schedule,
-                    onClick = { onEditSchedule(schedule) },
-                    onDelete = { requestProtectedAction { viewModel.deleteSchedule(schedule.id) } },
-                )
             }
         }
         item {
@@ -205,56 +189,50 @@ internal fun BlockerScreen(
                 shape = RoundedCornerShape(22.dp),
                 elevation = CardDefaults.cardElevation(1.dp),
             ) {
-                Column(Modifier.padding(20.dp)) {
-                    FeatureSectionTitle(Icons.Rounded.Apps, "차단할 앱", "앱을 켠 뒤 적용할 조건을 선택하세요")
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                        label = { Text("앱 검색") },
-                        placeholder = { Text("예: YouTube") },
-                        leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                        singleLine = true,
-                    )
-                    Text(
-                        if (appsLoading) "앱 목록 불러오는 중..." else "검색 결과 ${filteredApps.size}개",
-                        Modifier.padding(top = 6.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-        }
-        items(filteredApps, key = { it.packageName }) { app ->
-            Card(
-                Modifier.fillMaxWidth().clickable { onOpenApp(app) },
-                colors = CardDefaults.cardColors(
-                    containerColor = if (app.packageName in state.blockedPackages) Color(0xFFF2E7FC) else Color.White,
-                ),
-                shape = RoundedCornerShape(20.dp),
-                elevation = CardDefaults.cardElevation(1.dp),
-            ) {
-                Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val appIcon = remember(app.packageName) { app.icon.toBitmap(96, 96).asImageBitmap() }
-                    Image(appIcon, contentDescription = null, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)))
-                    Column(Modifier.weight(1f).padding(start = 13.dp)) {
-                        Text(app.label, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Column {
+                    Column(Modifier.padding(20.dp)) {
+                        FeatureSectionTitle(Icons.Rounded.Apps, "차단할 앱", "앱을 켠 뒤 적용할 조건을 선택하세요")
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                            label = { Text("앱 검색") },
+                            placeholder = { Text("예: YouTube") },
+                            leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                            singleLine = true,
+                        )
                         Text(
-                            if (app.packageName in state.blockedPackages) {
-                                "적용 조건 ${state.appScheduleIds[app.packageName].orEmpty().size}개 · 탭하여 설정"
-                            } else {
-                                app.packageName
-                            },
+                            if (appsLoading) "앱 목록 불러오는 중..." else "검색 결과 ${filteredApps.size}개",
+                            Modifier.padding(top = 6.dp),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
                         )
                     }
-                    CleanSwitch(
-                        checked = app.packageName in state.blockedPackages,
-                        onCheckedChange = { blocked ->
-                            requestProtectedAction { viewModel.setBlocked(app.packageName, blocked) }
-                        },
-                    )
+                HorizontalDivider()
+                LazyColumn(Modifier.height(480.dp)) {
+                    items(filteredApps, key = { it.packageName }) { app ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onOpenApp(app) }.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val appIcon = remember(app.packageName) { app.icon.toBitmap(96, 96).asImageBitmap() }
+                            Image(appIcon, contentDescription = null, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)))
+                            Column(Modifier.weight(1f).padding(start = 13.dp)) {
+                                Text(app.label, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    if (app.packageName in state.blockedPackages) "적용 조건 ${state.appScheduleIds[app.packageName].orEmpty().size}개 · 탭하여 설정" else app.packageName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                            CleanSwitch(
+                                checked = app.packageName in state.blockedPackages,
+                                onCheckedChange = { blocked -> requestProtectedAction { viewModel.setBlocked(app.packageName, blocked) } },
+                            )
+                        }
+                        if (app != filteredApps.lastOrNull()) HorizontalDivider(Modifier.padding(start = 72.dp))
+                    }
+                }
                 }
             }
         }
@@ -262,36 +240,28 @@ internal fun BlockerScreen(
 }
 
 @Composable
-private fun ScheduleCard(
+private fun ScheduleRow(
     schedule: BlockSchedule,
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(
-        Modifier.fillMaxWidth().clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(1.dp),
-    ) {
-        Column(Modifier.padding(18.dp)) {
+    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 13.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(schedule.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                    Text(schedule.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Black)
                     Text(
                         if (schedule.action == ScheduleAction.BLOCK) "차단 실행 조건" else "차단 해제 조건",
                         color = if (schedule.action == ScheduleAction.BLOCK) AppCobalt else MaterialTheme.colorScheme.tertiary,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                     )
-                    Text(scheduleSummary(schedule), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                    Text(scheduleSummary(schedule), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 2)
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                OutlinedButton(onClick = onDelete) { Text("삭제") }
-                Spacer(Modifier.size(8.dp))
-                Button(onClick = onClick) { Text("편집") }
+            Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDelete) { Text("삭제") }
+                TextButton(onClick = onClick) { Text("편집") }
             }
-        }
     }
 }
 

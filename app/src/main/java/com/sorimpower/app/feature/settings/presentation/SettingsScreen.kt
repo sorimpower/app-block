@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -47,6 +48,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -61,7 +63,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -77,6 +81,7 @@ import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Security
 import com.sorimpower.app.feature.blocker.data.BlockerState
+import com.sorimpower.app.feature.blocker.data.BottomNavigationTab
 import com.sorimpower.app.feature.blocker.data.StartDestination
 import com.sorimpower.app.feature.blocker.domain.BlockSchedule
 import com.sorimpower.app.feature.blocker.domain.RepeatCycle
@@ -167,7 +172,117 @@ internal fun SettingsScreen(
                 }
             }
         }
+        item {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp), elevation = CardDefaults.cardElevation(1.dp)) {
+                Column(Modifier.padding(18.dp)) {
+                    SectionTitle("하단 탭 순서", "길게 눌러 드래그하면 순서를 바꿀 수 있어요")
+                    var draggingTab by remember { mutableStateOf<BottomNavigationTab?>(null) }
+                    var accumulatedDrag by remember { mutableStateOf(0f) }
+                    val rowHeight = with(LocalDensity.current) { 56.dp.toPx() }
+                    Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        state.bottomNavigationOrder.forEach { tab ->
+                            val isDragging = draggingTab == tab
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (isDragging) Color(0xFFE7E8FF) else MaterialTheme.colorScheme.surfaceVariant,
+                                        RoundedCornerShape(14.dp),
+                                    )
+                                    .pointerInput(tab, state.bottomNavigationOrder) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = {
+                                                draggingTab = tab
+                                                accumulatedDrag = 0f
+                                            },
+                                            onDragCancel = {
+                                                draggingTab = null
+                                                accumulatedDrag = 0f
+                                            },
+                                            onDragEnd = {
+                                                draggingTab = null
+                                                accumulatedDrag = 0f
+                                            },
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                accumulatedDrag += dragAmount.y
+                                                val direction = when {
+                                                    accumulatedDrag >= rowHeight -> 1
+                                                    accumulatedDrag <= -rowHeight -> -1
+                                                    else -> 0
+                                                }
+                                                if (direction != 0) {
+                                                    val currentIndex = state.bottomNavigationOrder.indexOf(tab)
+                                                    val updated = moveTab(state.bottomNavigationOrder, currentIndex, direction)
+                                                    if (updated != state.bottomNavigationOrder) {
+                                                        viewModel.setBottomNavigationOrder(updated)
+                                                        accumulatedDrag -= direction * rowHeight
+                                                    }
+                                                }
+                                            },
+                                        )
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(Modifier.size(34.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                                    Icon(bottomNavigationIcon(tab), contentDescription = null, tint = AppCobalt, modifier = Modifier.size(18.dp))
+                                }
+                                Text(tab.label, Modifier.weight(1f).padding(start = 11.dp), fontWeight = FontWeight.Bold)
+                                if (tab != BottomNavigationTab.MORE) {
+                                    TextButton(
+                                        onClick = { viewModel.setBottomNavigationOrder(state.bottomNavigationOrder - tab) },
+                                    ) { Text("삭제") }
+                                }
+                            }
+                        }
+                        val hiddenTabs = BottomNavigationTab.entries.filterNot { it in state.bottomNavigationOrder }
+                        if (hiddenTabs.isNotEmpty()) {
+                            Text("숨긴 탭", Modifier.padding(top = 10.dp, bottom = 2.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            hiddenTabs.forEach { tab ->
+                                Row(
+                                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Box(Modifier.size(34.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                                        Icon(bottomNavigationIcon(tab), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                    }
+                                    Text(tab.label, Modifier.weight(1f).padding(start = 11.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    OutlinedButton(onClick = { viewModel.setBottomNavigationOrder(addTab(state.bottomNavigationOrder, tab)) }) { Text("추가") }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+private fun moveTab(order: List<BottomNavigationTab>, index: Int, offset: Int): List<BottomNavigationTab> {
+    val target = index + offset
+    if (target !in order.indices) return order
+    return order.toMutableList().also { values ->
+        val item = values.removeAt(index)
+        values.add(target, item)
+    }
+}
+
+private fun addTab(order: List<BottomNavigationTab>, tab: BottomNavigationTab): List<BottomNavigationTab> {
+    if (tab in order) return order
+    val values = order.toMutableList()
+    val moreIndex = values.indexOf(BottomNavigationTab.MORE).takeIf { it >= 0 } ?: values.size
+    values.add(moreIndex, tab)
+    return values
+}
+
+private fun bottomNavigationIcon(tab: BottomNavigationTab): ImageVector = when (tab) {
+    BottomNavigationTab.HOME -> Icons.Rounded.Home
+    BottomNavigationTab.PHONE_INSIGHT -> Icons.Rounded.NotificationsNone
+    BottomNavigationTab.BLOCKER -> Icons.Rounded.Block
+    BottomNavigationTab.BODY_LOG -> Icons.Rounded.FavoriteBorder
+    BottomNavigationTab.AUCTION -> Icons.Rounded.Gavel
+    BottomNavigationTab.MORE -> Icons.Rounded.MoreHoriz
 }
 
 @Composable
