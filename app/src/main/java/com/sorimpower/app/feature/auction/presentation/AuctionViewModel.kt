@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.sorimpower.app.feature.auction.data.AuctionRepository
 import com.sorimpower.app.feature.auction.data.AuctionAiPreferencesRepository
 import com.sorimpower.app.feature.auction.data.AuctionAiAnalysisMode
+import com.sorimpower.app.feature.auction.data.AuctionSortPreference
+import com.sorimpower.app.feature.auction.data.AuctionSortPreferencesRepository
 import com.sorimpower.app.feature.auction.domain.AuctionItem
 import com.sorimpower.app.feature.auction.domain.AuctionAiAnalysis
 import com.sorimpower.app.feature.auction.domain.AuctionAiPreferences
@@ -19,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -57,6 +60,7 @@ data class AuctionUiState(
 class AuctionViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = AuctionRepository(application)
     private val aiPreferencesRepository = AuctionAiPreferencesRepository(application)
+    private val sortPreferencesRepository = AuctionSortPreferencesRepository(application)
     private val refreshing = MutableStateFlow(false)
     private val refreshCompleted = MutableStateFlow(false)
     private val errorMessage = MutableStateFlow<String?>(null)
@@ -64,11 +68,21 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
     private val filter = MutableStateFlow(AuctionListFilter())
     private val sortField = MutableStateFlow(AuctionSortField.AUCTION_DATE)
     private val sortDirection = MutableStateFlow(AuctionSortDirection.ASCENDING)
+    private val normalSortPreference = MutableStateFlow(AuctionSortPreference())
     private val searchQuery = MutableStateFlow("")
     private var refreshJob: Job? = null
 
     init {
         viewModelScope.launch { repository.recoverStaleAiAnalyses() }
+        viewModelScope.launch {
+            sortPreferencesRepository.preference.collectLatest { saved ->
+                normalSortPreference.value = saved
+                if (listMode.value != AuctionListMode.REMOVED) {
+                    sortField.value = saved.field
+                    sortDirection.value = saved.direction
+                }
+            }
+        }
     }
 
     private val displayOptions = combine(filter, sortField, sortDirection, searchQuery, listMode) { currentFilter, field, direction, query, mode ->
@@ -153,9 +167,13 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
 
     fun setSort(field: AuctionSortField) {
         sortField.value = field
+        if (field != AuctionSortField.REMOVED_AT) saveNormalSort(field = field)
     }
 
-    fun setSortDirection(direction: AuctionSortDirection) { sortDirection.value = direction }
+    fun setSortDirection(direction: AuctionSortDirection) {
+        sortDirection.value = direction
+        if (listMode.value != AuctionListMode.REMOVED) saveNormalSort(direction = direction)
+    }
 
     fun setSearchQuery(query: String) { searchQuery.value = query.take(60) }
 
@@ -164,10 +182,20 @@ class AuctionViewModel(application: Application) : AndroidViewModel(application)
         if (value == AuctionListMode.REMOVED) {
             sortField.value = AuctionSortField.REMOVED_AT
             sortDirection.value = AuctionSortDirection.DESCENDING
-        } else if (sortField.value == AuctionSortField.REMOVED_AT) {
-            sortField.value = AuctionSortField.AUCTION_DATE
-            sortDirection.value = AuctionSortDirection.ASCENDING
+            viewModelScope.launch { repository.refreshHistoryFinalResults() }
+        } else {
+            sortField.value = normalSortPreference.value.field
+            sortDirection.value = normalSortPreference.value.direction
         }
+    }
+
+    private fun saveNormalSort(
+        field: AuctionSortField = normalSortPreference.value.field,
+        direction: AuctionSortDirection = normalSortPreference.value.direction,
+    ) {
+        val value = AuctionSortPreference(field, direction)
+        normalSortPreference.value = value
+        viewModelScope.launch { sortPreferencesRepository.save(value) }
     }
 
     fun showAiAnalyses() = setListMode(AuctionListMode.ANALYZED)

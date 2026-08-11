@@ -10,6 +10,7 @@ import androidx.core.content.FileProvider
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +25,8 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
 
 private val Context.bodyLogDataStore by preferencesDataStore("body_log_settings")
 
@@ -33,9 +36,17 @@ data class BodyLogData(
     val goal: WeightGoalEntity?,
     val mounjaroInjections: List<MounjaroInjectionEntity>,
     val weightsHidden: Boolean,
+    val quickMealTemplates: List<MealQuickTemplate>,
 )
 
 data class MealItemInput(val name: String, val amount: String = "")
+data class MealQuickTemplate(
+    val id: String,
+    val mealType: String,
+    val items: List<String>,
+    val note: String?,
+    val tags: Set<String>,
+)
 
 class BodyLogRepository(private val context: Context) {
     private val dao = BodyLogDatabase.get(context).dao()
@@ -43,14 +54,18 @@ class BodyLogRepository(private val context: Context) {
     private val weightsHidden = context.bodyLogDataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { preferences -> preferences[weightsHiddenKey] ?: false }
+    private val quickMealTemplates = context.bodyLogDataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences -> parseQuickMealTemplates(preferences[quickMealTemplatesKey]) }
     val data = combine(
         dao.observeWeights(),
         dao.observeMeals(),
         dao.observeActiveGoal(),
         dao.observeMounjaroInjections(),
         weightsHidden,
-        ::BodyLogData,
-    )
+    ) { weights, meals, goal, injections, hidden ->
+        BodyLogData(weights, meals, goal, injections, hidden, emptyList())
+    }.combine(quickMealTemplates) { data, templates -> data.copy(quickMealTemplates = templates) }
 
     init {
         CoroutineScope(Dispatchers.IO).launch { cleanupOrphanedMealPhotos() }
@@ -58,6 +73,28 @@ class BodyLogRepository(private val context: Context) {
 
     suspend fun setWeightsHidden(hidden: Boolean) {
         context.bodyLogDataStore.edit { preferences -> preferences[weightsHiddenKey] = hidden }
+    }
+
+    suspend fun saveQuickMealTemplate(mealType: String, items: List<String>, note: String?, tags: Set<String>) {
+        val cleanItems = items.map(String::trim).filter(String::isNotBlank).take(12)
+        if (cleanItems.isEmpty()) return
+        context.bodyLogDataStore.edit { preferences ->
+            val updated = parseQuickMealTemplates(preferences[quickMealTemplatesKey]) + MealQuickTemplate(
+                id = UUID.randomUUID().toString(),
+                mealType = mealType,
+                items = cleanItems,
+                note = note?.trim()?.take(200)?.ifBlank { null },
+                tags = tags,
+            )
+            preferences[quickMealTemplatesKey] = updated.takeLast(MAX_QUICK_MEAL_TEMPLATES).quickMealTemplatesJson()
+        }
+    }
+
+    suspend fun deleteQuickMealTemplate(id: String) {
+        context.bodyLogDataStore.edit { preferences ->
+            preferences[quickMealTemplatesKey] = parseQuickMealTemplates(preferences[quickMealTemplatesKey])
+                .filterNot { it.id == id }.quickMealTemplatesJson()
+        }
     }
 
     suspend fun saveWeight(
@@ -260,5 +297,32 @@ class BodyLogRepository(private val context: Context) {
     private companion object {
         const val MAX_PHOTO_SIDE = 2048
         const val THUMBNAIL_SIDE = 360
+        val quickMealTemplatesKey = stringPreferencesKey("quick_meal_templates")
+        const val MAX_QUICK_MEAL_TEMPLATES = 12
     }
 }
+
+private fun parseQuickMealTemplates(source: String?): List<MealQuickTemplate> = runCatching {
+    val array = JSONArray(source.orEmpty())
+    buildList {
+        for (index in 0 until array.length()) {
+            val value = array.optJSONObject(index) ?: continue
+            val items = value.optJSONArray("items")?.let { foods ->
+                buildList { for (foodIndex in 0 until foods.length()) foods.optString(foodIndex).trim().takeIf(String::isNotBlank)?.let(::add) }
+            }.orEmpty()
+            if (items.isNotEmpty()) add(MealQuickTemplate(
+                id = value.optString("id").ifBlank { UUID.randomUUID().toString() },
+                mealType = value.optString("mealType"),
+                items = items,
+                note = value.optString("note").ifBlank { null },
+                tags = value.optJSONArray("tags")?.let { tags -> buildSet { for (tagIndex in 0 until tags.length()) tags.optString(tagIndex).trim().takeIf(String::isNotBlank)?.let(::add) } }.orEmpty(),
+            ))
+        }
+    }
+}.getOrDefault(emptyList())
+
+private fun List<MealQuickTemplate>.quickMealTemplatesJson(): String = JSONArray().apply {
+    forEach { template -> put(JSONObject().apply {
+        put("id", template.id); put("mealType", template.mealType); put("items", JSONArray(template.items)); put("note", template.note); put("tags", JSONArray(template.tags.toList()))
+    }) }
+}.toString()

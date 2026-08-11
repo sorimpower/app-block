@@ -23,7 +23,7 @@ import java.util.UUID
 internal class OpenAiHealthDocumentExtractor(private val context: Context) {
     suspend fun extract(document: ImportedHealthDocument): HealthDocumentExtraction {
         val file = File(document.localPath)
-        val images = if (document.mimeType == "application/pdf") preparePdfForExtraction(file) else listOf(AiImageAttachment(document.mimeType, file.readBytes()))
+        val images = if (document.mimeType == "application/pdf") preparePdfForExtraction(file) else listOf(AiImageAttachment(mimeType=document.mimeType,bytes=file.readBytes()))
         require(images.isNotEmpty()) { "문서 내용이 비어 있어요." }
         val response = AiModelRouter(context).generate(
             AiRequest(

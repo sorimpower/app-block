@@ -16,7 +16,8 @@ internal class OpenAiProvider : AiProvider {
                     put("model", model.name)
                     put("prompt", request.userPrompt)
                     put("jsonOutput", request.jsonOutput)
-                    if (request.images.isNotEmpty()) put("images", request.images.map { image -> mapOf("mimeType" to image.mimeType, "base64" to Base64.encodeToString(image.bytes, Base64.NO_WRAP)) })
+                    if (request.images.isNotEmpty()) put("images", request.images.map { image -> mapOf("sourceId" to image.sourceId,"mimeType" to image.mimeType, "base64" to Base64.encodeToString(image.bytes, Base64.NO_WRAP)) })
+                    if (request.audios.isNotEmpty()) put("audios", request.audios.map { audio -> mapOf("sourceId" to audio.sourceId, "fileName" to audio.fileName, "mimeType" to audio.mimeType, "base64" to Base64.encodeToString(audio.bytes, Base64.NO_WRAP)) })
                 },
             )
             .await()

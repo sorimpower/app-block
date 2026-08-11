@@ -17,6 +17,7 @@ import com.sorimpower.app.feature.blocker.service.AppBlockAccessibilityService
 import com.sorimpower.app.feature.bodylog.presentation.BodyLogViewModel
 import com.sorimpower.app.feature.auction.presentation.AuctionViewModel
 import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupViewModel
+import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightViewModel
 import com.sorimpower.app.core.ui.SorimPowerTheme
 
 class MainActivity : ComponentActivity() {
@@ -24,11 +25,14 @@ class MainActivity : ComponentActivity() {
     private val bodyLogViewModel: BodyLogViewModel by viewModels()
     private val auctionViewModel: AuctionViewModel by viewModels()
     private val healthCheckupViewModel: HealthCheckupViewModel by viewModels()
+    private val phoneInsightViewModel: PhoneInsightViewModel by viewModels()
     private var openAuctionAnalysesRequest by mutableIntStateOf(0)
+    private var openPhoneInsightRequest by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         handleAuctionAnalysisIntent(intent)
+        handlePhoneInsightIntent(intent)
         enableEdgeToEdge()
         setContent {
             SorimPowerTheme {
@@ -37,18 +41,22 @@ class MainActivity : ComponentActivity() {
                     bodyLogViewModel,
                     auctionViewModel,
                     healthCheckupViewModel,
+                    phoneInsightViewModel,
                     ::isAccessibilityServiceEnabled,
                     ::openAccessibilitySettings,
                     openAuctionAnalysesRequest,
+                    openPhoneInsightRequest,
                 )
             }
         }
     }
 
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleAuctionAnalysisIntent(intent)
+        handlePhoneInsightIntent(intent)
     }
 
     private fun handleAuctionAnalysisIntent(intent: Intent?) {
@@ -56,6 +64,7 @@ class MainActivity : ComponentActivity() {
             openAuctionAnalysesRequest++
         }
     }
+    private fun handlePhoneInsightIntent(intent: Intent?) { if (intent?.getBooleanExtra(EXTRA_OPEN_PHONE_INSIGHT, false) == true) openPhoneInsightRequest++ }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
@@ -70,5 +79,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_OPEN_AUCTION_ANALYSES = "open_auction_analyses"
+        const val EXTRA_OPEN_PHONE_INSIGHT = "open_phone_insight"
     }
 }

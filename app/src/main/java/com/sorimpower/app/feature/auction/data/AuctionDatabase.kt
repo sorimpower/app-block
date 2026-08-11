@@ -71,6 +71,8 @@ data class AuctionFavoriteEntity(
 @Entity(tableName = "auction_history_items")
 data class AuctionHistoryItemEntity(
     @PrimaryKey val itemKey: String,
+    val courtCode: String,
+    val internalCaseNumber: String,
     val courtName: String,
     val caseNumber: String,
     val auctionItemNumber: String,
@@ -92,6 +94,10 @@ data class AuctionHistoryItemEntity(
     val historyCreatedAt: String,
     val historyStatus: String,
     val historyReason: String,
+    val finalResultStatus: String,
+    val finalSalePrice: Long,
+    val finalResultDate: String,
+    val finalResultCheckedAt: Long,
 )
 
 @Entity(tableName = "auction_ai_analyses")
@@ -124,6 +130,9 @@ interface AuctionDao {
 
     @Query("SELECT * FROM auction_history_items ORDER BY historyCreatedAt DESC")
     fun observeHistoryItems(): Flow<List<AuctionHistoryItemEntity>>
+
+    @Query("SELECT * FROM auction_history_items ORDER BY historyCreatedAt DESC")
+    suspend fun getHistoryItems(): List<AuctionHistoryItemEntity>
 
     @Query("SELECT * FROM auction_sync_metadata WHERE id = 'history' LIMIT 1")
     fun observeHistoryMetadata(): Flow<AuctionSyncMetadataEntity?>
@@ -172,6 +181,24 @@ interface AuctionDao {
 
     @Query("DELETE FROM auction_history_items WHERE itemKey = :itemKey")
     suspend fun deleteHistoryItem(itemKey: String)
+
+    @Query(
+        """
+        UPDATE auction_history_items
+        SET finalResultStatus = :status,
+            finalSalePrice = :salePrice,
+            finalResultDate = :resultDate,
+            finalResultCheckedAt = :checkedAt
+        WHERE itemKey = :itemKey
+        """,
+    )
+    suspend fun updateHistoryFinalResult(
+        itemKey: String,
+        status: String,
+        salePrice: Long,
+        resultDate: String,
+        checkedAt: Long,
+    )
 
     @Query("DELETE FROM auction_ai_analyses WHERE itemKey = :itemKey")
     suspend fun deleteAiAnalysis(itemKey: String)
@@ -226,7 +253,7 @@ interface AuctionDao {
         AuctionHistoryItemEntity::class,
         AuctionAiAnalysisEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AuctionDatabase : RoomDatabase() {
@@ -240,7 +267,7 @@ abstract class AuctionDatabase : RoomDatabase() {
                 context.applicationContext,
                 AuctionDatabase::class.java,
                 "auction.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
         }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -313,6 +340,17 @@ abstract class AuctionDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `auction_history_items` ADD COLUMN `courtCode` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `auction_history_items` ADD COLUMN `internalCaseNumber` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `auction_history_items` ADD COLUMN `finalResultStatus` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `auction_history_items` ADD COLUMN `finalSalePrice` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `auction_history_items` ADD COLUMN `finalResultDate` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `auction_history_items` ADD COLUMN `finalResultCheckedAt` INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

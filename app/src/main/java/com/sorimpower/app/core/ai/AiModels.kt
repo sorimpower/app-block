@@ -2,7 +2,11 @@ package com.sorimpower.app.core.ai
 
 enum class AiProviderType { OPENAI }
 
-internal enum class AiTaskType { BODY_LOG_PROGRESS_ANALYSIS, HEALTH_CHECKUP_PAGE_SELECTION, HEALTH_CHECKUP_EXTRACTION, HEALTH_TREND_ANALYSIS, HEALTH_SCREENING_OPTION_RECOMMENDATION, AUCTION_RIGHTS_ANALYSIS }
+internal enum class AiTaskType {
+    BODY_LOG_PROGRESS_ANALYSIS, HEALTH_CHECKUP_PAGE_SELECTION, HEALTH_CHECKUP_EXTRACTION,
+    HEALTH_TREND_ANALYSIS, HEALTH_SCREENING_OPTION_RECOMMENDATION, AUCTION_RIGHTS_ANALYSIS,
+    PHONE_INSIGHT_BATCH,
+}
 
 enum class AiModelId(
     val provider: AiProviderType,
@@ -17,9 +21,11 @@ internal data class AiRequest(
     val userPrompt: String,
     val jsonOutput: Boolean = true,
     val images: List<AiImageAttachment> = emptyList(),
+    val audios: List<AiAudioAttachment> = emptyList(),
 )
 
-internal data class AiImageAttachment(val mimeType: String = "image/jpeg", val bytes: ByteArray)
+internal data class AiImageAttachment(val sourceId:String="",val mimeType: String = "image/jpeg", val bytes: ByteArray)
+internal data class AiAudioAttachment(val sourceId: String, val fileName: String, val mimeType: String, val bytes: ByteArray)
 
 internal data class AiResponse(
     val text: String,

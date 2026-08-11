@@ -14,8 +14,18 @@ internal interface AuctionEvidenceSource {
     suspend fun fetch(item: AuctionItem): AuctionEvidenceBundle
 }
 
+internal data class AuctionFinalOutcome(
+    val status: String,
+    val salePrice: Long,
+    val resultDate: String,
+)
+
+internal interface AuctionOutcomeSource {
+    suspend fun fetchFinalOutcome(item: AuctionItem): AuctionFinalOutcome
+}
+
 /** Collects the public evidence exposed by the Court Auction WebSquare screens. */
-internal class CourtAuctionEvidenceApi : AuctionEvidenceSource {
+internal class CourtAuctionEvidenceApi : AuctionEvidenceSource, AuctionOutcomeSource {
     override suspend fun fetch(item: AuctionItem): AuctionEvidenceBundle {
         require(item.courtCode.isNotBlank() && item.caseNumber.isNotBlank()) {
             "법원 코드와 사건번호가 없어 법원 문서를 조회할 수 없습니다."
@@ -54,6 +64,34 @@ internal class CourtAuctionEvidenceApi : AuctionEvidenceSource {
         return AuctionEvidenceBundle(itemKey = item.itemKey, documents = documents)
     }
 
+    override suspend fun fetchFinalOutcome(item: AuctionItem): AuctionFinalOutcome {
+        require(item.courtCode.isNotBlank() && item.caseNumber.isNotBlank()) {
+            "법원 코드와 사건번호가 없어 최종 결과를 조회할 수 없습니다."
+        }
+        val caseData = requestCaseDetail(item)
+        val caseBase = caseData.optJSONObject("dma_csBasInf") ?: JSONObject()
+        val courtItem = (caseData.optJSONArray("dlt_dspslGdsDspslObjctLst") ?: JSONArray())
+            .findItem(item.auctionItemNumber)
+            ?: throw IOException("법원 사건 상세에서 해당 물건번호를 찾지 못했습니다.")
+        val relatedObject = (caseData.optJSONArray("dlt_rletCsDspslObjctLst") ?: JSONArray())
+            .findItem(item.auctionItemNumber)
+        val finalStatus = relatedObject?.optString("ultmtNm").orEmpty().trim()
+            .takeUnless { it == "미종국" }
+            .orEmpty()
+        val salePrice = courtItem.optLong("dspslAmt").coerceAtLeast(0L)
+        // 입찰일 직후에는 사건이 아직 미종국이어도 법원이 dspslAmt에 낙찰가를 먼저 제공한다.
+        // 이 경우 종결 결과와 구분해 '매각허가 전 낙찰'로 표시한다.
+        val status = finalStatus.ifBlank {
+            if (salePrice > 0L) "낙찰(매각허가 전)" else ""
+        }
+        return AuctionFinalOutcome(
+            status = status,
+            salePrice = salePrice,
+            resultDate = caseBase.optString("csUltmtYmd").trim()
+                .ifBlank { courtItem.optString("dspslDxdyYmd").trim() },
+        )
+    }
+
     private fun requestCaseDetail(item: AuctionItem): JSONObject = post(
         url = CASE_DETAIL_API_URL,
         programId = "PGJ15AF01",
@@ -63,7 +101,7 @@ internal class CourtAuctionEvidenceApi : AuctionEvidenceSource {
             "dma_srchCsDtlInf",
             JSONObject().apply {
                 put("cortOfcCd", item.courtCode)
-                put("csNo", item.caseNumber)
+                put("csNo", item.internalCaseNumber.ifBlank { item.caseNumber })
             },
         ),
     ).getJSONObject("data")
@@ -237,7 +275,12 @@ internal class CourtAuctionEvidenceApi : AuctionEvidenceSource {
         val target = itemNumber.toIntOrNull()
         for (index in 0 until length()) {
             val value = optJSONObject(index) ?: continue
-            if (value.optInt("dspslGdsSeq", -1) == target || value.optString("dspslGdsSeq") == itemNumber) return value
+            if (
+                value.optInt("dspslGdsSeq", -1) == target ||
+                value.optString("dspslGdsSeq") == itemNumber ||
+                value.optInt("dspslObjctSeq", -1) == target ||
+                value.optString("dspslObjctSeq") == itemNumber
+            ) return value
         }
         return null
     }

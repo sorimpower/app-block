@@ -13,9 +13,9 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
-import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.sorimpower.app.MainActivity
@@ -50,9 +50,12 @@ class AuctionAiRecommendationWorker(
 
         val repository = AuctionRepository(applicationContext)
         val refreshSucceeded = runCatching { repository.refresh() }.isSuccess
-        if (!refreshSucceeded) return if (runAttemptCount < 2) Result.retry() else Result.success()
+        if (!refreshSucceeded) {
+            return if (runAttemptCount < 2) Result.retry()
+            else completeAndScheduleTomorrow(preferences)
+        }
         val items = repository.getCurrentItems()
-        if (items.isEmpty()) return Result.success()
+        if (items.isEmpty()) return completeAndScheduleTomorrow(preferences)
         val analyzedKeys = repository.getAiAnalysisKeys()
 
         val criteria = preferences.toCriteria()
@@ -82,6 +85,13 @@ class AuctionAiRecommendationWorker(
         if (recommendations.isNotEmpty()) {
             AuctionAiRecommendationNotifier.show(applicationContext, recommendations.take(MAX_NOTIFICATION_ITEMS))
         }
+        return completeAndScheduleTomorrow(preferences)
+    }
+
+    private fun completeAndScheduleTomorrow(preferences: AuctionAiPreferences): Result {
+        // PeriodicWork는 실제 실행 시각을 기준으로 다음 주기를 계산해 8시 예약이 밀릴 수 있다.
+        // 완료 후 다음 날 목표 시각을 새로 계산하면 매일 아침 시간대로 다시 맞춰진다.
+        AuctionAiRecommendationScheduler.scheduleNextAfterCompletion(applicationContext, preferences)
         return Result.success()
     }
 
@@ -92,12 +102,21 @@ class AuctionAiRecommendationWorker(
 }
 
 object AuctionAiRecommendationScheduler {
-    private const val UNIQUE_WORK_NAME = "auction_ai_daily_recommendation"
+    private const val UNIQUE_WORK_NAME = "auction_ai_daily_recommendation_v2"
+    private const val LEGACY_WORK_NAME = "auction_ai_daily_recommendation"
 
-    fun schedule(
+    /** 사용자가 켜기/시간 변경을 저장했을 때 기존 예약을 목표 시각으로 교체한다. */
+    fun schedule(context: Context, preferences: AuctionAiPreferences) =
+        scheduleAtNextMorning(context, preferences, ExistingWorkPolicy.REPLACE)
+
+    /** 현재 실행 중인 작업 뒤에 다음 날 작업을 연결한다. */
+    fun scheduleNextAfterCompletion(context: Context, preferences: AuctionAiPreferences) =
+        scheduleAtNextMorning(context, preferences, ExistingWorkPolicy.APPEND_OR_REPLACE)
+
+    private fun scheduleAtNextMorning(
         context: Context,
         preferences: AuctionAiPreferences,
-        existingWorkPolicy: ExistingPeriodicWorkPolicy = ExistingPeriodicWorkPolicy.UPDATE,
+        existingWorkPolicy: ExistingWorkPolicy,
     ) {
         val workManager = WorkManager.getInstance(context.applicationContext)
         if (!preferences.dailyRecommendationEnabled) {
@@ -108,17 +127,19 @@ object AuctionAiRecommendationScheduler {
         var nextRun = now.toLocalDate().atTime(preferences.notificationHour, 0).atZone(now.zone)
         if (!nextRun.isAfter(now)) nextRun = nextRun.plusDays(1)
         val initialDelay = Duration.between(now, nextRun).toMillis().coerceAtLeast(0L)
-        val request = PeriodicWorkRequestBuilder<AuctionAiRecommendationWorker>(24, TimeUnit.HOURS)
+        val request = OneTimeWorkRequestBuilder<AuctionAiRecommendationWorker>()
             .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .build()
-        workManager.enqueueUniquePeriodicWork(UNIQUE_WORK_NAME, existingWorkPolicy, request)
+        workManager.enqueueUniqueWork(UNIQUE_WORK_NAME, existingWorkPolicy, request)
     }
 
     fun restore(context: Context) {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             val preferences = AuctionAiPreferencesRepository(context.applicationContext).current()
-            schedule(context, preferences, ExistingPeriodicWorkPolicy.KEEP)
+            // v1 PeriodicWork가 남아 있으면 KEEP 정책이 새 단발 예약을 무시한다.
+            WorkManager.getInstance(context.applicationContext).cancelUniqueWork(LEGACY_WORK_NAME)
+            scheduleAtNextMorning(context, preferences, ExistingWorkPolicy.KEEP)
         }
     }
 

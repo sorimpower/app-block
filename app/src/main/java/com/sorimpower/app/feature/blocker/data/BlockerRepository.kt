@@ -342,7 +342,9 @@ enum class StartDestination {
     HOME,
     APP_BLOCKER,
     BODY_LOG,
-    REAL_ESTATE_AUCTION;
+    REAL_ESTATE_AUCTION,
+    PHONE_INSIGHT,
+    MORE;
 
     companion object {
         fun from(value: String?) = entries.firstOrNull { it.name == value } ?: HOME

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -44,6 +45,7 @@ internal fun HomeScreen(
     openBlocker: () -> Unit,
     openBodyLog: () -> Unit,
     openAuction: () -> Unit,
+    openPhoneInsight: () -> Unit,
     openAccessibilitySettings: () -> Unit,
 ) {
     LazyColumn(
@@ -51,6 +53,15 @@ internal fun HomeScreen(
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(18.dp),
     ) {
+        item {
+            FeatureCard(
+                title = "AI 챙김",
+                description = "문자에서 기한, 예약, 쿠폰과 중요한 안내를 확인",
+                icon = Icons.Rounded.NotificationsNone,
+                accent = AppCobalt,
+                onClick = openPhoneInsight,
+            )
+        }
         item {
             FeatureCard(
                 title = "앱 차단",

@@ -8,6 +8,7 @@ import com.sorimpower.app.feature.bodylog.data.BodyLogRepository
 import com.sorimpower.app.feature.bodylog.data.OpenAiBodyLogAnalyzer
 import com.sorimpower.app.feature.bodylog.data.MealItemInput
 import com.sorimpower.app.feature.bodylog.data.MealWithDetails
+import com.sorimpower.app.feature.bodylog.data.MealQuickTemplate
 import com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity
 import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
 import com.sorimpower.app.feature.bodylog.domain.BodyLogState
@@ -34,7 +35,7 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
     private val _aiAnalysisError = MutableStateFlow<String?>(null)
     val aiAnalysisError = _aiAnalysisError.asStateFlow()
     val state = repository.data.map {
-        BodyLogState(it.weights, it.meals, it.goal, it.mounjaroInjections, it.weightsHidden, loaded = true)
+        BodyLogState(it.weights, it.meals, it.goal, it.mounjaroInjections, it.weightsHidden, it.quickMealTemplates, loaded = true)
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BodyLogState())
 
@@ -121,6 +122,11 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun deleteMeal(meal: MealWithDetails) = viewModelScope.launch { repository.deleteMeal(meal) }
+    fun saveQuickMealTemplate(mealType: String, items: List<String>, note: String?, tags: Set<String>, onSaved: () -> Unit) = viewModelScope.launch {
+        repository.saveQuickMealTemplate(mealType, items, note, tags)
+        onSaved()
+    }
+    fun deleteQuickMealTemplate(template: MealQuickTemplate) = viewModelScope.launch { repository.deleteQuickMealTemplate(template.id) }
     fun createCameraUri(): Pair<Uri, File> = repository.createCameraUri()
 
 }

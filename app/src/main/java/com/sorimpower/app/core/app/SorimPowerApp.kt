@@ -44,12 +44,16 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material.icons.Icons
@@ -57,8 +61,10 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Gavel
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -88,9 +94,12 @@ import com.sorimpower.app.feature.blocker.presentation.InstalledApp
 import com.sorimpower.app.feature.bodylog.presentation.BodyLogScreen
 import com.sorimpower.app.feature.bodylog.presentation.BodyLogViewModel
 import com.sorimpower.app.feature.auction.presentation.AuctionScreen
+import com.sorimpower.app.feature.auction.presentation.AuctionCollectionInfoDialog
 import com.sorimpower.app.feature.auction.presentation.AuctionViewModel
 import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupScreen
 import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupViewModel
+import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightScreen
+import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightViewModel
 import com.sorimpower.app.core.ui.AppCobalt
 import com.sorimpower.app.core.ui.AppLilac
 import com.sorimpower.app.core.ui.AppNavy
@@ -109,7 +118,7 @@ import com.sorimpower.app.feature.blocker.presentation.ScheduleScreen
 import com.sorimpower.app.feature.settings.presentation.SettingsScreen
 
 private enum class Screen(val label: String) {
-    HOME("홈"), BLOCKER("차단"), BODY_LOG("기록"), AUCTION("경매"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
+    HOME("홈"), BLOCKER("차단"), BODY_LOG("기록"), AUCTION("경매"), PHONE_INSIGHT("챙김"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
 }
 
 private enum class HealthRecordTab(val label: String) { DAILY("데일리 기록"), CHECKUP("건강검진") }
@@ -121,9 +130,11 @@ internal fun SorimPowerApp(
     bodyLogViewModel: BodyLogViewModel,
     auctionViewModel: AuctionViewModel,
     healthCheckupViewModel: HealthCheckupViewModel,
+    phoneInsightViewModel: PhoneInsightViewModel,
     accessibilityEnabled: () -> Boolean,
     openAccessibilitySettings: () -> Unit,
     openAuctionAnalysesRequest: Int = 0,
+    openPhoneInsightRequest: Int = 0,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf(Screen.HOME) }
@@ -131,27 +142,29 @@ internal fun SorimPowerApp(
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
     var healthRecordTab by remember { mutableStateOf(HealthRecordTab.DAILY) }
     var protectedAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var initialDestinationApplied by remember { mutableStateOf(false) }
+    var showAuctionCollectionInfo by remember { mutableStateOf(false) }
+    var showPhoneInsightScheduleInfo by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.loaded, state.startDestination) {
-        if (state.loaded && !initialDestinationApplied) {
+        if (state.loaded) {
             screen = when (state.startDestination) {
                 StartDestination.HOME -> Screen.HOME
                 StartDestination.APP_BLOCKER -> Screen.BLOCKER
                 StartDestination.BODY_LOG -> Screen.BODY_LOG
                 StartDestination.REAL_ESTATE_AUCTION -> Screen.AUCTION
+                StartDestination.PHONE_INSIGHT -> Screen.PHONE_INSIGHT
+                StartDestination.MORE -> Screen.MORE
             }
-            initialDestinationApplied = true
         }
     }
 
     LaunchedEffect(openAuctionAnalysesRequest) {
         if (openAuctionAnalysesRequest > 0) {
-            initialDestinationApplied = true
             screen = Screen.AUCTION
             auctionViewModel.showAiAnalyses()
         }
     }
+    LaunchedEffect(openPhoneInsightRequest) { if (openPhoneInsightRequest > 0) screen = Screen.PHONE_INSIGHT }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -173,6 +186,7 @@ internal fun SorimPowerApp(
                             Screen.BODY_LOG -> "건강 기록"
                             Screen.AUCTION -> "부동산 경매"
                             Screen.MORE -> "더보기"
+                            Screen.PHONE_INSIGHT -> "AI 챙김"
                             Screen.SCHEDULE -> "조건 편집"
                             Screen.APP_RULES -> "앱별 조건"
                             Screen.SETTINGS -> "설정"
@@ -182,6 +196,18 @@ internal fun SorimPowerApp(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                },
+                actions = {
+                    if (screen == Screen.AUCTION) {
+                        IconButton(onClick = { showAuctionCollectionInfo = true }) {
+                            Icon(Icons.Rounded.Info, contentDescription = "법원 경매 수집 조건")
+                        }
+                    }
+                    if (screen == Screen.PHONE_INSIGHT) {
+                        IconButton(onClick = { showPhoneInsightScheduleInfo = true }) {
+                            Icon(Icons.Rounded.Info, contentDescription = "AI 챙김 자동 확인 안내")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -201,6 +227,7 @@ internal fun SorimPowerApp(
                 { screen = Screen.BLOCKER },
                 { screen = Screen.BODY_LOG },
                 { screen = Screen.AUCTION },
+                { screen = Screen.PHONE_INSIGHT },
                 openAccessibilitySettings,
             )
             Screen.BODY_LOG -> Column(Modifier.fillMaxSize().padding(padding)) {
@@ -216,6 +243,7 @@ internal fun SorimPowerApp(
                 }
             }
             Screen.AUCTION -> AuctionScreen(padding, auctionViewModel)
+            Screen.PHONE_INSIGHT -> PhoneInsightScreen(padding, phoneInsightViewModel)
             Screen.MORE -> MoreMenuScreen(padding, onOpenSettings = { screen = Screen.SETTINGS })
             Screen.BLOCKER -> BlockerScreen(
                 padding,
@@ -267,6 +295,17 @@ internal fun SorimPowerApp(
             )
         }
     }
+    if (showAuctionCollectionInfo) {
+        AuctionCollectionInfoDialog(onDismiss = { showAuctionCollectionInfo = false })
+    }
+    if (showPhoneInsightScheduleInfo) {
+        AlertDialog(
+            onDismissRequest = { showPhoneInsightScheduleInfo = false },
+            title = { Text("AI 챙김 자동 확인", fontWeight = FontWeight.Black) },
+            text = { Text("매일 오전 8시 · 오후 7시 새로운 일정 확인") },
+            confirmButton = { TextButton(onClick = { showPhoneInsightScheduleInfo = false }) { Text("확인") } },
+        )
+    }
     protectedAction?.let { action ->
         PasswordGateDialog(
             hasPassword = state.hasPassword,
@@ -284,36 +323,20 @@ internal fun SorimPowerApp(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HealthRecordTabs(
     selected: HealthRecordTab,
     onSelected: (HealthRecordTab) -> Unit,
 ) {
-    Card(
-        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(1.dp),
-    ) {
-        Row(Modifier.fillMaxWidth().padding(5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            HealthRecordTab.entries.forEach { tab ->
-                val active = selected == tab
-                Box(
-                    Modifier.weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(if (active) AppCobalt.copy(alpha = .12f) else Color.Transparent)
-                        .clickable { onSelected(tab) }
-                        .padding(vertical = 11.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        tab.label,
-                        color = if (active) AppCobalt else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = if (active) FontWeight.Black else FontWeight.Medium,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-            }
+    val selectedIndex = HealthRecordTab.entries.indexOf(selected)
+    PrimaryTabRow(selectedTabIndex = selectedIndex) {
+        HealthRecordTab.entries.forEachIndexed { index, tab ->
+            Tab(
+                selected = index == selectedIndex,
+                onClick = { onSelected(tab) },
+                text = { Text(tab.label, style = MaterialTheme.typography.labelMedium) },
+            )
         }
     }
 }
@@ -325,7 +348,7 @@ private fun FloatingNavigation(selected: Screen, onSelected: (Screen) -> Unit) {
             Modifier.fillMaxWidth().navigationBarsPadding().height(70.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            listOf(Screen.HOME, Screen.BLOCKER, Screen.BODY_LOG, Screen.AUCTION, Screen.MORE).forEach { item ->
+            listOf(Screen.HOME, Screen.PHONE_INSIGHT, Screen.BLOCKER, Screen.BODY_LOG, Screen.AUCTION, Screen.MORE).forEach { item ->
                 val active = selected == item || (item == Screen.MORE && selected == Screen.SETTINGS)
                 Column(
                     Modifier.weight(1f).clickable { onSelected(item) }.padding(vertical = 6.dp),
@@ -355,9 +378,6 @@ private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("설정과 앞으로 추가될 기능을 한곳에서 관리하세요.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        item {
             Card(
                 Modifier.fillMaxWidth().clickable(onClick = onOpenSettings),
                 shape = RoundedCornerShape(20.dp),
@@ -375,6 +395,25 @@ private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
                 }
             }
         }
+        item {
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(1.dp),
+            ) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(46.dp).background(AppOrange.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Info, null, tint = AppOrange)
+                    }
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text("앱 정보", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                        Text("소림파워 v0.6.0", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
+                        Text("집중을 위한 개인용 시스템", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -385,6 +424,7 @@ private fun NavIcon(screen: Screen, selected: Boolean) {
         Screen.BLOCKER -> Icons.Rounded.Block
         Screen.BODY_LOG -> Icons.Rounded.FavoriteBorder
         Screen.AUCTION -> Icons.Rounded.Gavel
+        Screen.PHONE_INSIGHT -> Icons.Rounded.NotificationsNone
         Screen.MORE -> Icons.Rounded.MoreHoriz
         else -> Icons.Rounded.Settings
     }

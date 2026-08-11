@@ -76,7 +76,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private enum class HealthCheckupPage { HOME, ADD, DETAIL }
-private enum class HealthCheckupHomeTab(val label: String) { RECORDS("검진 기록"), INSIGHTS("AI 인사이트"), ARCHIVE("보관함") }
+private enum class HealthCheckupHomeTab(val label: String) { RECORDS("검진 기록"), INSIGHTS("AI 인사이트") }
 
 @Composable
 fun HealthCheckupScreen(
@@ -166,7 +166,17 @@ private fun HealthCheckupHome(
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item { LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(HealthCheckupHomeTab.entries) { tab -> FilterChip(selectedTab == tab, { selectedTab = tab }, { Text(tab.label) }) } } }
+        item {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(HealthCheckupHomeTab.entries) { tab ->
+                    FilterChip(
+                        selected = selectedTab == tab,
+                        onClick = { selectedTab = tab },
+                        label = { Text(tab.label) },
+                    )
+                }
+            }
+        }
         if (selectedTab == HealthCheckupHomeTab.RECORDS) {
         item {
             Card(
@@ -193,7 +203,6 @@ private fun HealthCheckupHome(
         }
         }
         if (selectedTab == HealthCheckupHomeTab.INSIGHTS) {
-        item { ScreeningOptionCard(screeningRecommendation, isScreeningAnalyzing, screeningErrorMessage, onAnalyzeOptions) }
         item {
             LongTermTrendCard(
                 checkupCount = checkups.size,
@@ -203,10 +212,11 @@ private fun HealthCheckupHome(
                 onAnalyze = onAnalyzeTrend,
             )
         }
+        item { ScreeningOptionCard(screeningRecommendation, isScreeningAnalyzing, screeningErrorMessage, onAnalyzeOptions) }
         }
         if (selectedTab != HealthCheckupHomeTab.INSIGHTS) {
         item {
-            Text(if (selectedTab == HealthCheckupHomeTab.ARCHIVE) "원본 문서 보관함" else "등록된 건강검진", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+            Text("등록된 건강검진", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
         }
         if (checkups.isEmpty()) {
             item { SimpleInfoCard("아직 등록된 건강검진이 없어요. PDF나 결과표 이미지를 추가해 보세요.") }

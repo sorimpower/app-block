@@ -33,6 +33,7 @@ class AuctionRepository internal constructor(
     context: Context,
     private val courtAuctionApi: CourtAuctionApi = CourtAuctionApi(),
     private val evidenceSource: AuctionEvidenceSource = CourtAuctionEvidenceApi(),
+    private val outcomeSource: AuctionOutcomeSource = CourtAuctionEvidenceApi(),
     private val rightsAnalyzer: AuctionRightsAnalyzer = OpenAiAuctionRightsAnalyzer(context.applicationContext),
 ) {
     private val dao = AuctionDatabase.get(context).dao()
@@ -67,6 +68,29 @@ class AuctionRepository internal constructor(
 
     suspend fun deleteHistoryItem(itemKey: String) = withContext(Dispatchers.IO) {
         dao.deleteHistoryItemAndEmptyMetadata(itemKey)
+    }
+
+    /**
+     * 진행 목록에서 사라진 사건은 매각·취하 등의 최종 결과가 바로 반영되지 않을 수 있다.
+     * 종료 목록을 열 때 미확인/하루 이상 지난 항목 일부만 다시 확인해 법원 요청을 제한한다.
+     */
+    suspend fun refreshHistoryFinalResults() = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        dao.getHistoryItems()
+            .asSequence()
+            .filter { it.finalResultStatus.isBlank() || now - it.finalResultCheckedAt >= OUTCOME_RECHECK_INTERVAL_MILLIS }
+            .take(MAX_OUTCOME_CHECKS_PER_REFRESH)
+            .forEach { entity ->
+                val item = entity.toDomain()
+                val outcome = runCatching { outcomeSource.fetchFinalOutcome(item) }.getOrNull() ?: return@forEach
+                dao.updateHistoryFinalResult(
+                    itemKey = entity.itemKey,
+                    status = outcome.status,
+                    salePrice = outcome.salePrice,
+                    resultDate = outcome.resultDate,
+                    checkedAt = now,
+                )
+            }
     }
 
     suspend fun getCurrentItems(): List<AuctionItem> = withContext(Dispatchers.IO) {
@@ -144,6 +168,8 @@ class AuctionRepository internal constructor(
 
     private companion object {
         const val ANALYSIS_TIMEOUT_MILLIS = 2 * 60 * 1000L
+        const val MAX_OUTCOME_CHECKS_PER_REFRESH = 5
+        const val OUTCOME_RECHECK_INTERVAL_MILLIS = 24 * 60 * 60 * 1000L
     }
 
     suspend fun refresh() = withContext(Dispatchers.IO) {
@@ -241,9 +267,9 @@ private fun AuctionItem.toEntity(firstSeenAt: Long, lastSeenAt: Long, isNew: Boo
 
 private fun AuctionHistoryItemEntity.toDomain() = AuctionItem(
     itemKey = itemKey,
-    courtCode = "",
+    courtCode = courtCode.ifBlank { itemKey.take(7).takeIf { it.startsWith("B") }.orEmpty() },
     courtName = courtName,
-    internalCaseNumber = "",
+    internalCaseNumber = internalCaseNumber,
     caseNumber = caseNumber,
     auctionItemNumber = auctionItemNumber,
     usageName = "아파트",
@@ -269,10 +295,16 @@ private fun AuctionHistoryItemEntity.toDomain() = AuctionItem(
     historyCreatedAt = historyCreatedAt,
     historyStatus = historyStatus,
     historyReason = historyReason,
+    finalResultStatus = finalResultStatus,
+    finalSalePrice = finalSalePrice,
+    finalResultDate = finalResultDate,
+    finalResultCheckedAt = finalResultCheckedAt,
 )
 
 private fun AuctionItemEntity.toHistoryEntity(removedAt: String) = AuctionHistoryItemEntity(
     itemKey = itemKey,
+    courtCode = courtCode,
+    internalCaseNumber = internalCaseNumber,
     courtName = courtName,
     caseNumber = caseNumber,
     auctionItemNumber = auctionItemNumber,
@@ -294,6 +326,10 @@ private fun AuctionItemEntity.toHistoryEntity(removedAt: String) = AuctionHistor
     historyCreatedAt = removedAt,
     historyStatus = "REMOVED",
     historyReason = "진행 중 검색 결과에서 사라짐",
+    finalResultStatus = "",
+    finalSalePrice = 0L,
+    finalResultDate = "",
+    finalResultCheckedAt = 0L,
 )
 
 private fun AuctionAiAnalysisEntity.toDomain() = AuctionAiAnalysis(

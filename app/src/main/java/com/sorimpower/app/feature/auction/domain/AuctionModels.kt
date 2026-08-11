@@ -46,6 +46,10 @@ data class AuctionItem(
     val historyCreatedAt: String = "",
     val historyStatus: String = "",
     val historyReason: String = "",
+    val finalResultStatus: String = "",
+    val finalSalePrice: Long = 0L,
+    val finalResultDate: String = "",
+    val finalResultCheckedAt: Long = 0L,
 )
 
 data class AuctionCalendarTime(

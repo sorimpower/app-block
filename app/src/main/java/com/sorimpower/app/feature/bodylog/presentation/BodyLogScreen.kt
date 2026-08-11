@@ -6,6 +6,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -67,6 +68,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -88,6 +90,7 @@ import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.sorimpower.app.feature.bodylog.data.MealItemInput
+import com.sorimpower.app.feature.bodylog.data.MealQuickTemplate
 import com.sorimpower.app.feature.bodylog.data.MealWithDetails
 import com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity
 import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
@@ -115,17 +118,24 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 
+private enum class DailyRecordSection(val label: String) { WEIGHT("체중 관리"), LOG("식사 · 주사") }
+
 @Composable
 fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val aiAnalysis by viewModel.aiAnalysis.collectAsStateWithLifecycle()
     val isAiAnalyzing by viewModel.isAiAnalyzing.collectAsStateWithLifecycle()
     val aiAnalysisError by viewModel.aiAnalysisError.collectAsStateWithLifecycle()
-    var period by remember { mutableStateOf(ChartPeriod.WEEK) }
+    val period = ChartPeriod.MONTH
+    var dailyRecordSection by remember { mutableStateOf(DailyRecordSection.WEIGHT) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var mealFilterDate by remember { mutableStateOf<LocalDate?>(null) }
     var showWeightInput by remember { mutableStateOf(false) }
     var showMealInput by remember { mutableStateOf(false) }
+    var showQuickMealTemplateInput by remember { mutableStateOf(false) }
+    var showQuickMealTemplateManager by remember { mutableStateOf(false) }
+    var quickMealEditMode by remember { mutableStateOf(false) }
+    var deletingQuickMealTemplate by remember { mutableStateOf<MealQuickTemplate?>(null) }
     var showGoalInput by remember { mutableStateOf(false) }
     var showMounjaroInput by remember { mutableStateOf(false) }
     var editingMeal by remember { mutableStateOf<MealWithDetails?>(null) }
@@ -160,6 +170,35 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(1.dp),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DailyRecordSection.entries.forEach { section ->
+                        val selected = dailyRecordSection == section
+                        Box(
+                            Modifier.weight(1f)
+                                .clip(RoundedCornerShape(13.dp))
+                                .background(if (selected) AppCobalt else Color.Transparent)
+                                .clickable { dailyRecordSection = section }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                section.label,
+                                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (dailyRecordSection == DailyRecordSection.WEIGHT) {
+        item {
             BodySummaryCard(
                 state,
                 onWeight = { showWeightInput = true },
@@ -176,49 +215,113 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             )
         }
         item {
+            PeriodNavigation(period, selectedDate, onDateChange = {
+                selectedDate = it
+            })
+            WeightChart(points, weightsHidden = state.weightsHidden)
+        }
+        item {
+            MonthCalendar(
+                date = selectedDate,
+                state = state,
+                onSelect = { selectedDate = it },
+                weightsHidden = state.weightsHidden,
+            )
+        }
+        }
+        if (dailyRecordSection == DailyRecordSection.LOG) {
+        item { MonthCalendar(selectedDate, state, onSelect = {
+                selectedDate = it
+                mealFilterDate = it
+                scope.launch { listState.animateScrollToItem(2) }
+            }, weightsHidden = state.weightsHidden) }
+        item {
             Card(
                 Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(22.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(1.dp),
             ) {
-                Row(Modifier.fillMaxWidth().padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    ChartPeriod.entries.forEach { option ->
-                        Box(
-                            Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
-                                .background(if (period == option) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
-                                .clickable {
-                                    period = option
-                                }.padding(vertical = 11.dp),
-                            contentAlignment = Alignment.Center,
-                        ) { Text(option.label, color = if (period == option) AppCobalt else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (period == option) FontWeight.Bold else FontWeight.Normal) }
+                Column(Modifier.padding(16.dp)) {
+                    Text("일일 기록 추가", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                    Text(
+                        "${selectedDate.monthValue}월 ${selectedDate.dayOfMonth}일 기록",
+                        Modifier.padding(top = 2.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(
+                            onClick = { showMealInput = true },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                        ) {
+                            Icon(Icons.Rounded.Restaurant, null, Modifier.size(18.dp), tint = AppCobalt)
+                            Text("식사 기록", Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { showMounjaroInput = true },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                        ) {
+                            Icon(Icons.Rounded.Medication, null, Modifier.size(18.dp), tint = AppCobalt)
+                            Text("주사 기록", Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                if (state.quickMealTemplates.isNotEmpty()) {
+                    Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("빠른 식사", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = Color.Black, fontWeight = FontWeight.Bold)
+                        OutlinedButton(onClick = { quickMealEditMode = !quickMealEditMode }, modifier = Modifier.height(32.dp)) {
+                            Text(if (quickMealEditMode) "완료" else "편집", style = MaterialTheme.typography.labelMedium)
+                        }
+                        OutlinedButton(onClick = { showQuickMealTemplateInput = true }, modifier = Modifier.height(32.dp)) {
+                            Text("+ 추가", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                    Column(Modifier.padding(top = 7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        state.quickMealTemplates.take(4).chunked(2).forEach { rowTemplates ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                rowTemplates.forEach { template ->
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (quickMealEditMode) {
+                                                deletingQuickMealTemplate = template
+                                            } else {
+                                                viewModel.saveMeal(
+                                                    eatenAt = timestampForDate(selectedDate, timeForTimestamp(System.currentTimeMillis())),
+                                                    mealType = template.mealType,
+                                                    items = template.items.map { MealItemInput(it) },
+                                                    note = template.note,
+                                                    tags = template.tags,
+                                                    photoUris = emptyList(),
+                                                ) { Toast.makeText(context, "식사 기록을 추가했어요.", Toast.LENGTH_SHORT).show() }
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f).height(58.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    ) {
+                                        Column(Modifier.fillMaxWidth()) {
+                                            Text(if (quickMealEditMode) "삭제" else MealType.from(template.mealType).label, color = if (quickMealEditMode) MaterialTheme.colorScheme.error else AppCobalt, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                            Text(template.items.take(2).joinToString(" · ") + if (template.items.size > 2) " 외" else "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                                        }
+                                    }
+                                }
+                                if (rowTemplates.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    if (state.quickMealTemplates.size > 4) {
+                        Text(
+                            "전체 ${state.quickMealTemplates.size}개 보기",
+                            Modifier.padding(top = 9.dp).clickable { showQuickMealTemplateManager = true },
+                            color = AppCobalt,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                } else {
+                    OutlinedButton(onClick = { showQuickMealTemplateInput = true }, modifier = Modifier.padding(top = 12.dp).height(36.dp)) {
+                        Text("+ 빠른 식사 추가", style = MaterialTheme.typography.labelMedium)
                     }
                 }
-            }
-        }
-        item {
-            PeriodNavigation(period, selectedDate, onDateChange = {
-                selectedDate = it
-            })
-            WeightChart(points, weightsHidden = state.weightsHidden)
-        }
-        item { MonthCalendar(selectedDate, state, onSelect = {
-                selectedDate = it
-                mealFilterDate = it
-                scope.launch { listState.animateScrollToItem(4) }
-            }, weightsHidden = state.weightsHidden) }
-        item {
-            Column(Modifier.fillMaxWidth()) {
-                Text("일일 기록", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = { showMounjaroInput = true }) {
-                        Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
-                        Text("주사 기록", Modifier.padding(start = 3.dp))
-                    }
-                    OutlinedButton(onClick = { showMealInput = true }) {
-                        Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
-                        Text("식사 기록", Modifier.padding(start = 3.dp))
-                    }
                 }
             }
         }
@@ -253,6 +356,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 )
             }
         }
+        }
     }
 
     expandedPhotoPath?.let { path -> ExpandedMealPhoto(path, onDismiss = { expandedPhotoPath = null }) }
@@ -262,6 +366,17 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             message = "식사 내용과 연결된 사진도 함께 삭제되며 복구할 수 없어요.",
             onDismiss = { deletingMeal = null },
             onConfirm = { viewModel.deleteMeal(meal); deletingMeal = null },
+        )
+    }
+    deletingQuickMealTemplate?.let { template ->
+        DeleteRecordDialog(
+            title = "빠른 식사를 삭제할까요?",
+            message = "삭제해도 기존 식사 기록은 유지됩니다.",
+            onDismiss = { deletingQuickMealTemplate = null },
+            onConfirm = {
+                viewModel.deleteQuickMealTemplate(template)
+                deletingQuickMealTemplate = null
+            },
         )
     }
     deletingMounjaroInjection?.let { injection ->
@@ -284,6 +399,17 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
         },
     )
     if (showMealInput) MealInputDialog(viewModel, existing = null, selectedDate = selectedDate, onDismiss = { showMealInput = false }) { showMealInput = false }
+    if (showQuickMealTemplateInput) QuickMealTemplateInputDialog(
+        onDismiss = { showQuickMealTemplateInput = false },
+        onSave = { type, foods, note, tags ->
+            viewModel.saveQuickMealTemplate(type.name, foods, note, tags) { showQuickMealTemplateInput = false }
+        },
+    )
+    if (showQuickMealTemplateManager) QuickMealTemplateManagerDialog(
+        templates = state.quickMealTemplates,
+        onDismiss = { showQuickMealTemplateManager = false },
+        onDelete = viewModel::deleteQuickMealTemplate,
+    )
     editingMeal?.let { meal -> MealInputDialog(viewModel, existing = meal, selectedDate = meal.meal.localDate(), onDismiss = { editingMeal = null }) { editingMeal = null } }
     if (showGoalInput) GoalInputDialog(
         start = state.activeGoal?.startWeightKg ?: state.latestWeight?.weightKg,
@@ -328,6 +454,45 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             },
         )
     }
+}
+
+@Composable
+private fun QuickMealTemplateInputDialog(onDismiss: () -> Unit, onSave: (MealType, List<String>, String?, Set<String>) -> Unit) {
+    var type by remember { mutableStateOf(MealType.LUNCH) }
+    var foods by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    var tags by remember { mutableStateOf(emptySet<String>()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("빠른 식사 추가", fontWeight = FontWeight.Black) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(MealType.entries) { item -> FilterChip(type == item, { type = item }, label = { Text(item.label) }) } }
+                OutlinedTextField(foods, { foods = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("음식 (한 줄에 하나)") }, minLines = 3)
+                OutlinedTextField(note, { note = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("메모 (선택)") })
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(listOf("배고픔", "적당함", "과식", "외식", "야식")) { tag -> FilterChip(tag in tags, { tags = if (tag in tags) tags - tag else tags + tag }, label = { Text(tag) }) } }
+            }
+        },
+        confirmButton = { Button(enabled = foods.lineSequence().any { it.isNotBlank() }, onClick = {
+            onSave(type, foods.lineSequence().flatMap { it.split(',').asSequence() }.map(String::trim).filter(String::isNotBlank).toList(), note.ifBlank { null }, tags)
+        }) { Text("추가") } },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+@Composable
+private fun QuickMealTemplateManagerDialog(templates: List<MealQuickTemplate>, onDismiss: () -> Unit, onDelete: (MealQuickTemplate) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("빠른 식사 관리", fontWeight = FontWeight.Black) },
+        text = { LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) { items(templates, key = MealQuickTemplate::id) { template ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("${MealType.from(template.mealType).label} · ${template.items.joinToString(" · ")}", Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                IconButton(onClick = { onDelete(template) }) { Icon(Icons.Rounded.DeleteOutline, "빠른 식사 삭제", tint = MaterialTheme.colorScheme.error) }
+            }
+        } } },
+        confirmButton = { Button(onClick = onDismiss) { Text("완료") } },
+    )
 }
 
 @Composable

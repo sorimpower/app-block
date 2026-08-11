@@ -37,7 +37,6 @@ import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Gavel
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -120,29 +119,26 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
     val context = LocalContext.current
     var showFilterDialog by remember { mutableStateOf(false) }
     var showAiSettingsDialog by remember { mutableStateOf(false) }
-    var showCollectionInfo by remember { mutableStateOf(false) }
     var historyItemToDelete by remember { mutableStateOf<AuctionItem?>(null) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LaunchedEffect(viewModel) { viewModel.refreshIfNeeded() }
 
-    PullToRefreshBox(
-        isRefreshing = state.isRefreshing,
-        onRefresh = viewModel::refresh,
-        modifier = Modifier.fillMaxSize().padding(padding),
-    ) {
-        LazyColumn(
+    Column(Modifier.fillMaxSize().padding(padding)) {
+        AuctionModeTabs(
+            state = state,
+            onListModeChange = viewModel::setListMode,
+        )
+
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+        ) {
+            LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                AuctionModeTabs(
-                    state = state,
-                    onListModeChange = viewModel::setListMode,
-                    onShowCollectionInfo = { showCollectionInfo = true },
-                )
-            }
-
             if (state.listMode == AuctionListMode.ANALYZED) item {
                 AuctionAiRecommendationCard(
                     preferences = state.aiPreferences,
@@ -202,6 +198,7 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
                 )
             }
         }
+        }
     }
     if (showFilterDialog) AuctionFilterDialog(
         initial = state.filter,
@@ -211,24 +208,6 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
             showFilterDialog = false
         },
     )
-    if (showCollectionInfo) {
-        AlertDialog(
-            onDismissRequest = { showCollectionInfo = false },
-            title = { Text("법원 경매 수집 조건", fontWeight = FontWeight.Black) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Text("법원경매정보 공개 검색 API에서 아래 조건으로 가져옵니다.")
-                    Text("• 지역: 서울특별시")
-                    Text("• 용도: 아파트")
-                    Text("• 상태: 진행 중")
-                    Text("• 감정가: 15억 원 이상")
-                    Text("• 매각기일: 오늘부터 90일 이내")
-                    Text("가져온 뒤에도 앱에서 조건을 다시 검증합니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            },
-            confirmButton = { OutlinedButton(onClick = { showCollectionInfo = false }) { Text("확인") } },
-        )
-    }
     if (showAiSettingsDialog) AuctionAiSettingsDialog(
         initial = state.aiPreferences,
         onDismiss = { showAiSettingsDialog = false },
@@ -271,35 +250,47 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
 private fun AuctionModeTabs(
     state: AuctionUiState,
     onListModeChange: (AuctionListMode) -> Unit,
-    onShowCollectionInfo: () -> Unit,
 ) {
     val tabs = listOf(
-        AuctionListMode.ACTIVE to "진행 중",
+        AuctionListMode.ACTIVE to "진행",
         AuctionListMode.FAVORITES to "관심",
-        AuctionListMode.ANALYZED to "AI 분석",
+        AuctionListMode.ANALYZED to "AI",
         AuctionListMode.REMOVED to "종료",
     )
     val selectedIndex = tabs.indexOfFirst { it.first == state.listMode }.coerceAtLeast(0)
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        PrimaryTabRow(selectedTabIndex = selectedIndex, modifier = Modifier.weight(1f)) {
-            tabs.forEachIndexed { index, (mode, label) ->
-                val count = when (mode) {
-                    AuctionListMode.ACTIVE -> state.totalCount
-                    AuctionListMode.FAVORITES -> state.favoriteCount
-                    AuctionListMode.ANALYZED -> state.analysisCount
-                    AuctionListMode.REMOVED -> state.removedCount
-                }
-                Tab(
-                    selected = index == selectedIndex,
-                    onClick = { onListModeChange(mode) },
-                    text = { Text("$label $count", maxLines = 1) },
-                )
+    PrimaryTabRow(selectedTabIndex = selectedIndex) {
+        tabs.forEachIndexed { index, (mode, label) ->
+            val count = when (mode) {
+                AuctionListMode.ACTIVE -> state.totalCount
+                AuctionListMode.FAVORITES -> state.favoriteCount
+                AuctionListMode.ANALYZED -> state.analysisCount
+                AuctionListMode.REMOVED -> state.removedCount
             }
-        }
-        IconButton(onClick = onShowCollectionInfo) {
-            Icon(Icons.Rounded.Info, contentDescription = "법원 경매 수집 조건")
+            Tab(
+                selected = index == selectedIndex,
+                onClick = { onListModeChange(mode) },
+                text = { Text("$label($count)", maxLines = 1, style = MaterialTheme.typography.labelMedium) },
+            )
         }
     }
+}
+
+@Composable
+fun AuctionCollectionInfoDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("법원 경매 수집 조건", fontWeight = FontWeight.Black) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text("• 지역: 서울특별시")
+                Text("• 용도: 아파트")
+                Text("• 상태: 진행 중")
+                Text("• 감정가: 15억 원 이상")
+                Text("• 매각기일: 오늘부터 90일 이내")
+            }
+        },
+        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("확인") } },
+    )
 }
 
 @Composable
@@ -804,11 +795,25 @@ private fun AuctionItemCard(
                 }
             }
             if (item.isRemoved) {
+                val hasFinalResult = item.finalResultStatus.isNotBlank()
+                val isPendingSaleApproval = item.finalResultStatus == "낙찰(매각허가 전)"
+                val resultLabel = when {
+                    isPendingSaleApproval && item.finalSalePrice > 0L ->
+                        "낙찰 결과 · ${formatAuctionPrice(item.finalSalePrice)} · 매각허가 전"
+                    item.finalResultStatus == "매각" && item.finalSalePrice > 0L ->
+                        "최종 결과 · 낙찰 ${formatAuctionPrice(item.finalSalePrice)}"
+                    item.finalResultStatus == "매각" -> "최종 결과 · 낙찰"
+                    hasFinalResult -> "최종 결과 · ${item.finalResultStatus}"
+                    else -> "낙찰/취하 여부는 추가 확인 필요함"
+                }
                 Text(
-                    "낙찰/취하 여부는 추가 확인 필요함",
-                    Modifier.padding(top = 9.dp).background(AppOrange.copy(alpha = .1f), RoundedCornerShape(10.dp))
+                    resultLabel,
+                    Modifier.padding(top = 9.dp).background(
+                        (if (hasFinalResult && !isPendingSaleApproval) AppGreen else AppOrange).copy(alpha = .1f),
+                        RoundedCornerShape(10.dp),
+                    )
                         .padding(horizontal = 10.dp, vertical = 8.dp),
-                    color = AppOrange,
+                    color = if (hasFinalResult && !isPendingSaleApproval) AppGreen else AppOrange,
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
                 )

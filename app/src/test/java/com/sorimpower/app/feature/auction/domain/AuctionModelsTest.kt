@@ -90,9 +90,9 @@ class AuctionModelsTest {
     }
 
     @Test
-    fun `10억원 경계값을 포함한 서울 진행중 아파트만 허용한다`() {
+    fun `15억원 경계값을 포함한 서울 진행중 아파트만 허용한다`() {
         assertTrue(item().matchesAuctionCriteria())
-        assertFalse(item(appraisalPrice = 999_999_999L).matchesAuctionCriteria())
+        assertFalse(item(appraisalPrice = 1_499_999_999L).matchesAuctionCriteria())
         assertFalse(item(sido = "경기도", address = "경기도 성남시").matchesAuctionCriteria())
         assertFalse(item(usageName = "오피스텔").matchesAuctionCriteria())
         assertFalse(item(isInProgress = false).matchesAuctionCriteria())
@@ -200,7 +200,7 @@ class AuctionModelsTest {
     }
 
     private fun item(
-        appraisalPrice: Long = 1_000_000_000L,
+        appraisalPrice: Long = 1_500_000_000L,
         sido: String = "서울특별시",
         address: String = "서울특별시 강남구 도곡동",
         usageName: String = "아파트",
