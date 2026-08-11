@@ -418,7 +418,7 @@ private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
                     }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text("앱 정보", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                        Text("소림파워 v0.6.1", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
+                        Text("소림파워 v0.6.2", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
                         Text("집중을 위한 개인용 시스템", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }

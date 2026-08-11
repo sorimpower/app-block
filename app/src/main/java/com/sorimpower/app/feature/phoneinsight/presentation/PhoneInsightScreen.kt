@@ -101,7 +101,7 @@ private fun InsightItemCard(value:PhoneInsightEntity,onStatus:(String,InsightSta
                     }
                 }
             }
-            Text(listOf(sourceLabel,value.senderOrApp).filter{it.isNotBlank()}.joinToString(" · "),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(sourceDisplayLabel(sourceLabel,value.senderOrApp),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             HorizontalDivider(color=accent.copy(alpha=.14f))
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(9.dp)){
                 Button({onStatus(value.id,InsightStatus.COMPLETED)},Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=accent)){Text("완료")}
@@ -109,6 +109,12 @@ private fun InsightItemCard(value:PhoneInsightEntity,onStatus:(String,InsightSta
             }
         }
     }
+}
+
+private fun sourceDisplayLabel(sourceLabel:String,detail:String):String{
+    val trimmedDetail=detail.trim()
+    if(trimmedDetail.isBlank()||trimmedDetail.equals(sourceLabel.trim(),ignoreCase=true))return sourceLabel
+    return "$sourceLabel · $trimmedDetail"
 }
 
 @Composable
