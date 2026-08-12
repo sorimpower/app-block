@@ -1,8 +1,8 @@
 # 소림파워 (SorimPower)
 
-개인용 APK 설치를 전제로 만든 Kotlin·Jetpack Compose Android 앱입니다. 생활 관리, 건강 기록, 부동산 경매, 휴대폰 데이터 기반 AI 챙김을 하나의 앱에서 제공합니다.
+개인용 APK 설치를 전제로 만든 Kotlin·Jetpack Compose Android 앱입니다. 생활 관리, 건강 기록, 부동산 경매·세금, 휴대폰 데이터 기반 AI 챙김을 하나의 앱에서 제공합니다.
 
-> 버전: `v0.6.2` · 최소 Android 8.0(API 26) · target SDK 35
+> 버전: `v0.7.5` · 최소 Android 8.0(API 26) · target SDK 35
 
 ## 주요 기능
 
@@ -43,9 +43,21 @@
 - 사건별 AI 권리 분석과 Luna/Terra 모델 선택
 - 새 사건 중심의 매일 아침 AI 맞춤 추천 및 로컬 알림
 
+### 부동산 세금
+
+- 보유 주택 포트폴리오와 취득가·공시가격·지분·보유기간 관리
+- 버전이 고정된 Rule Engine으로 취득세·재산세·종합부동산세·양도소득세 계산
+- 적용 규칙, 계산 단계, 법령·국세청 출처, 확인 필요 조건을 결과와 함께 표시
+- 가상 매도 시뮬레이션 저장, 재계산 전후 Revision 이력 보존
+- 1주택+1분양권 특례, 조정대상지역 다주택 취득·양도 중과, 12억원 1주택 비과세 판정
+- 부부 공동명의 지분별 재산세·양도세와 종부세 개별 과세/공동명의 1주택 특례 비교
+- 분석할 때마다 GPT-5.6 Sol(max)이 공식 법령을 실시간 검색해 현재 Rule Engine과 비교하고, 변경 감지 시 계산값 확정 사용을 차단
+- 같은 매도 시뮬레이션의 직전 AI 분석도 비교 자료로 사용해 이전 오류, 새 차이, 그대로 유효한 판단을 구분
+- 확인에 사용한 공식 출처·시행일·경과규정·영향을 구조화해 표시하며 AI는 세율이나 계산식을 자동 변경하지 않음
+
 ### 공통
 
-- 홈, 챙김, 차단, 기록, 경매, 더보기 하단 탭
+- 홈, 챙김, 차단, 기록, 경매, 세금, 더보기 하단 탭
 - 시작 화면 선택, 앱 정보, 접근성 권한, 비밀번호 설정
 - 개인 기록과 분석 결과는 기능별 Room 로컬 DB에 저장
 
@@ -70,6 +82,7 @@ app/src/main/java/com/sorimpower/app/
 │  ├─ bodylog/           체중·식사·주사 기록
 │  ├─ healthcheckup/     건강검진 기록·분석
 │  ├─ auction/           부동산 경매
+│  ├─ propertytax/       부동산 세금 Rule Engine·시뮬레이션
 │  ├─ phoneinsight/      AI 챙김
 │  ├─ home/              홈
 │  └─ settings/          설정
@@ -87,6 +100,7 @@ docs/                    현재 기능 명세
 - [앱 차단](docs/app-blocker-spec.md)
 - [건강 기록 및 건강검진](docs/health-spec.md)
 - [부동산 경매](docs/auction-spec.md)
+- [부동산 세금](docs/property-tax-spec.md)
 - [AI 챙김](docs/phone-insight-spec.md)
 - [AI 및 Firebase](docs/ai-and-backend-spec.md)
 

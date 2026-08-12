@@ -28,6 +28,10 @@ class BlockerViewModel(application: Application) : AndroidViewModel(application)
     val appsLoading = _appsLoading.asStateFlow()
     private var appsLoaded = false
 
+    init {
+        viewModelScope.launch { repository.migrateBottomNavigation() }
+    }
+
     fun loadApps() {
         if (appsLoaded || _appsLoading.value) return
         viewModelScope.launch {

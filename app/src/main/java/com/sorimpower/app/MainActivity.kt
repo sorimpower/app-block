@@ -18,6 +18,7 @@ import com.sorimpower.app.feature.bodylog.presentation.BodyLogViewModel
 import com.sorimpower.app.feature.auction.presentation.AuctionViewModel
 import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupViewModel
 import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightViewModel
+import com.sorimpower.app.feature.propertytax.presentation.PropertyTaxViewModel
 import com.sorimpower.app.core.ui.SorimPowerTheme
 
 class MainActivity : ComponentActivity() {
@@ -26,6 +27,7 @@ class MainActivity : ComponentActivity() {
     private val auctionViewModel: AuctionViewModel by viewModels()
     private val healthCheckupViewModel: HealthCheckupViewModel by viewModels()
     private val phoneInsightViewModel: PhoneInsightViewModel by viewModels()
+    private val propertyTaxViewModel: PropertyTaxViewModel by viewModels()
     private var openAuctionAnalysesRequest by mutableIntStateOf(0)
     private var openPhoneInsightRequest by mutableIntStateOf(0)
 
@@ -42,6 +44,7 @@ class MainActivity : ComponentActivity() {
                     auctionViewModel,
                     healthCheckupViewModel,
                     phoneInsightViewModel,
+                    propertyTaxViewModel,
                     ::isAccessibilityServiceEnabled,
                     ::openAccessibilitySettings,
                     openAuctionAnalysesRequest,

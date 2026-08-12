@@ -8,6 +8,7 @@
 | [앱 차단](app-blocker-spec.md) | 차단 규칙, 접근성 서비스, 비밀번호 |
 | [건강 기록 및 검진](health-spec.md) | 체중·식사·주사 기록, 건강검진 분석 |
 | [부동산 경매](auction-spec.md) | 사건 수집, 관심, 종료 결과, AI 분석·추천 |
+| [부동산 세금](property-tax-spec.md) | 자산 포트폴리오, 취득·보유·양도세 Rule Engine, 시뮬레이션·공식 최신 법령 검증 |
 | [AI 챙김](phone-insight-spec.md) | 휴대폰 데이터 수집, AI 분석, 알림 정책 |
 | [AI 및 Firebase](ai-and-backend-spec.md) | OpenAI 호출 경로, 비밀값, Cloud Functions |
 

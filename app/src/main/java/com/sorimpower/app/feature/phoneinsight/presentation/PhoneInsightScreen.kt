@@ -7,15 +7,21 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.positionChange
+import kotlin.math.abs
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,7 +35,7 @@ import java.time.format.DateTimeFormatter
 
 private enum class InsightTab(val label:String){HOME("챙길 항목"),SOURCES("분석 데이터")}
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun PhoneInsightScreen(padding:PaddingValues, vm:PhoneInsightViewModel){
+@Composable fun PhoneInsightScreen(padding:PaddingValues, vm:PhoneInsightViewModel, onSwipeEdgeLeft:()->Unit={}, onSwipeEdgeRight:()->Unit={}){
     val configs by vm.configs.collectAsStateWithLifecycle();val insights by vm.insights.collectAsStateWithLifecycle();val latestRun by vm.latestRun.collectAsStateWithLifecycle();val latestSourceRuns by vm.latestSourceRuns.collectAsStateWithLifecycle();val working by vm.working.collectAsStateWithLifecycle();val message by vm.message.collectAsStateWithLifecycle();var tab by remember{mutableStateOf(InsightTab.HOME)};var rangeDialog by remember{mutableStateOf(false)};var sourceRangeType by remember{mutableStateOf<InsightSourceType?>(null)};var pendingRange by remember{mutableStateOf(SmsScanRange.ONE_YEAR)};var pendingSourceRange by remember{mutableStateOf(SmsScanRange.ONE_MONTH)};var awaitingUsageEstimate by remember{mutableStateOf(false)};var awaitingDownloadsPermission by remember{mutableStateOf(false)};var pendingDownloadsRoot by remember{mutableStateOf(false)};var disableSms by remember{mutableStateOf(false)};var appSelectionType by remember{mutableStateOf<InsightSourceType?>(null)};var usageSelection by remember{mutableStateOf<Set<String>>(emptySet())}
     val context=androidx.compose.ui.platform.LocalContext.current
     val lifecycleOwner=androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -44,7 +50,7 @@ private enum class InsightTab(val label:String){HOME("챙길 항목"),SOURCES("�
     val smsPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted->if(granted){vm.configureSms(pendingRange);if(Build.VERSION.SDK_INT>=33)notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)}}
     LaunchedEffect(Unit){if(Build.VERSION.SDK_INT>=33&&androidx.core.content.ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)}
     Column(Modifier.fillMaxSize().padding(padding)){PrimaryTabRow(InsightTab.entries.indexOf(tab)){InsightTab.entries.forEachIndexed{i,t->Tab(selected=tab==t,onClick={tab=t},text={Text(t.label)})}}
-        if(tab==InsightTab.HOME) InsightHome(insights,configs.firstOrNull{it.type==InsightSourceType.SMS},vm::status)
+        Box(Modifier.fillMaxWidth().weight(1f).horizontalSwipe(onSwipeLeft={val next=(InsightTab.entries.indexOf(tab)+1).coerceAtMost(InsightTab.entries.lastIndex);if(next==InsightTab.entries.indexOf(tab))onSwipeEdgeLeft() else tab=InsightTab.entries[next]},onSwipeRight={val previous=(InsightTab.entries.indexOf(tab)-1).coerceAtLeast(0);if(previous==InsightTab.entries.indexOf(tab))onSwipeEdgeRight() else tab=InsightTab.entries[previous]})){if(tab==InsightTab.HOME) InsightHome(insights,configs.firstOrNull{it.type==InsightSourceType.SMS},vm::status,working,vm::refresh)
         else SourceManagement(configs,latestRun,latestSourceRuns,working,onSmsToggle={enabled->if(enabled)rangeDialog=true else disableSms=true},onToggle={type,enabled->
             if(!enabled) vm.disableSource(type) else when(type){
                 InsightSourceType.NOTIFICATION->{vm.enableSource(type);context.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))}
@@ -52,7 +58,7 @@ private enum class InsightTab(val label:String){HOME("챙길 항목"),SOURCES("�
                 InsightSourceType.CONTACTS->contactsPermission.launch(Manifest.permission.READ_CONTACTS)
                 InsightSourceType.SMS->Unit
             }
-        },onAddFolder={type->pendingDownloadsRoot=false;sourceRangeType=type},onAddDownloads={pendingDownloadsRoot=true;sourceRangeType=InsightSourceType.DOCUMENT},onEditApps={type,selected->usageSelection=selected;appSelectionType=type})
+        },onAddFolder={type->pendingDownloadsRoot=false;sourceRangeType=type},onAddDownloads={pendingDownloadsRoot=true;sourceRangeType=InsightSourceType.DOCUMENT},onEditApps={type,selected->usageSelection=selected;appSelectionType=type})}
     }
     if(rangeDialog) AlertDialog(onDismissRequest={rangeDialog=false},title={Text("문자 분석 범위")},text={Column{SmsScanRange.entries.forEach{r->TextButton({pendingRange=r;rangeDialog=false;smsPermission.launch(Manifest.permission.READ_SMS)},Modifier.fillMaxWidth()){Text(r.label)}}}},confirmButton={})
     sourceRangeType?.let { type->AlertDialog(onDismissRequest={sourceRangeType=null;pendingDownloadsRoot=false},title={Text("${type.label} 데이터 범위")},text={Column{Text(if(type==InsightSourceType.CALENDAR)"선택한 과거 기간과 앞으로 2주 일정까지 분석 후보에 포함합니다." else "분석할 기존 데이터의 기간만 설정합니다. 여기서는 AI를 호출하지 않습니다.",style=MaterialTheme.typography.bodySmall);SmsScanRange.entries.forEach{r->TextButton({pendingSourceRange=r;sourceRangeType=null;when(type){InsightSourceType.SCREENSHOT->photoTree.launch(null);InsightSourceType.DOCUMENT->{if(pendingDownloadsRoot){pendingDownloadsRoot=false;if(Build.VERSION.SDK_INT<30||android.os.Environment.isExternalStorageManager())vm.configureSource(type,r,DeviceInsightSources.DOWNLOADS_ROOT)else{awaitingDownloadsPermission=true;context.startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,android.net.Uri.parse("package:${context.packageName}")))}}else documentTree.launch(null)};InsightSourceType.CALL_RECORDING->recordingTree.launch(null);InsightSourceType.CALENDAR->calendarPermission.launch(Manifest.permission.READ_CALENDAR);InsightSourceType.CALL_LOG->callLogPermission.launch(Manifest.permission.READ_CALL_LOG);InsightSourceType.APP_USAGE->{awaitingUsageEstimate=true;context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))};else->Unit}},Modifier.fillMaxWidth()){Text(r.label)}}}},confirmButton={})}
@@ -60,10 +66,11 @@ private enum class InsightTab(val label:String){HOME("챙길 항목"),SOURCES("�
     appSelectionType?.let{selectionType->val apps=remember{context.packageManager.getInstalledApplications(0).filter{it.packageName!=context.packageName}.map{it.packageName to runCatching{context.packageManager.getApplicationLabel(it).toString()}.getOrDefault(it.packageName)}.sortedBy{it.second.lowercase()}};AlertDialog(onDismissRequest={appSelectionType=null},title={Text(if(selectionType==InsightSourceType.NOTIFICATION)"알림을 확인할 앱" else "사용 기록을 분석할 앱")},text={LazyColumn(Modifier.heightIn(max=460.dp)){if(selectionType==InsightSourceType.NOTIFICATION)item{Row(Modifier.fillMaxWidth().padding(vertical=3.dp),verticalAlignment=Alignment.CenterVertically){Checkbox(usageSelection.isEmpty(),{checked->if(checked)usageSelection=emptySet()});Column{Text("전체 앱",fontWeight=FontWeight.Bold);Text("기본 설정 · 새로 도착하는 모든 앱 알림",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}};HorizontalDivider()};items(apps,key={it.first}){(pkg,label)->Row(Modifier.fillMaxWidth().padding(vertical=3.dp),verticalAlignment=Alignment.CenterVertically){Checkbox(pkg in usageSelection,{checked->usageSelection=if(checked)usageSelection+pkg else usageSelection-pkg});Column{Text(label);Text(pkg,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}}}}},confirmButton={Button({vm.setSelectedApps(selectionType,usageSelection);appSelectionType=null}){Text("저장")}},dismissButton={TextButton({appSelectionType=null}){Text("취소")}})}
     message?.let{AlertDialog(onDismissRequest=vm::clearMessage,title={Text("알림")},text={Text(it)},confirmButton={Button(vm::clearMessage){Text("확인")}})}
 }
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun InsightHome(values: List<PhoneInsightEntity>, sms: InsightSourceConfigEntity?, onStatus: (String, InsightStatus) -> Unit) {
+private fun InsightHome(values: List<PhoneInsightEntity>, sms: InsightSourceConfigEntity?, onStatus: (String, InsightStatus) -> Unit, working:Boolean, onRefresh:()->Unit) {
     val context=androidx.compose.ui.platform.LocalContext.current;val alarmManager=remember{context.getSystemService(android.app.AlarmManager::class.java)};val exactAllowed=Build.VERSION.SDK_INT<31||alarmManager.canScheduleExactAlarms()
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    PullToRefreshBox(isRefreshing=working,onRefresh=onRefresh,modifier=Modifier.fillMaxSize()) { LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (!exactAllowed) item {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(18.dp)) {
@@ -76,8 +83,10 @@ private fun InsightHome(values: List<PhoneInsightEntity>, sms: InsightSourceConf
         items(values, key = { it.id }) { value ->
             InsightItemCard(value=value,onStatus=onStatus)
         }
-    }
+    } }
 }
+
+private fun Modifier.horizontalSwipe(onSwipeLeft:()->Unit,onSwipeRight:()->Unit):Modifier=pointerInput(Unit){awaitPointerEventScope{while(true){val down=awaitFirstDown(requireUnconsumed=false,pass=PointerEventPass.Initial);var dx=0f;var dy=0f;while(true){val event=awaitPointerEvent(PointerEventPass.Initial);val change=event.changes.firstOrNull{it.id==down.id}?:break;if(!change.pressed){if(abs(dx)>100f&&abs(dx)>abs(dy)*1.2f){if(dx<0)onSwipeLeft() else onSwipeRight()};break};val delta=change.positionChange();dx+=delta.x;dy+=delta.y}}}}
 
 @Composable
 private fun InsightItemCard(value:PhoneInsightEntity,onStatus:(String,InsightStatus)->Unit){

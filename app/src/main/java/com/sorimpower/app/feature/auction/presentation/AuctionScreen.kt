@@ -13,6 +13,7 @@ import android.provider.CalendarContract
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,6 +73,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.positionChange
+import kotlin.math.abs
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -114,7 +119,7 @@ import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
+fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel, onSwipeEdgeLeft: () -> Unit = {}, onSwipeEdgeRight: () -> Unit = {}) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showFilterDialog by remember { mutableStateOf(false) }
@@ -132,7 +137,10 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = viewModel::refresh,
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier.fillMaxWidth().weight(1f).horizontalSwipe(
+                onSwipeLeft = { moveAuctionTab(state.listMode, 1, viewModel::setListMode, onSwipeEdgeLeft) },
+                onSwipeRight = { moveAuctionTab(state.listMode, -1, viewModel::setListMode, onSwipeEdgeRight) },
+            ),
         ) {
             LazyColumn(
             Modifier.fillMaxSize(),
@@ -244,6 +252,14 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel) {
         )
     }
 }
+
+private fun moveAuctionTab(current: AuctionListMode, offset: Int, onChange: (AuctionListMode) -> Unit, onEdge: () -> Unit) {
+    val tabs = listOf(AuctionListMode.ACTIVE, AuctionListMode.FAVORITES, AuctionListMode.ANALYZED, AuctionListMode.REMOVED)
+    val target = (tabs.indexOf(current) + offset).coerceIn(0, tabs.lastIndex)
+    if (tabs[target] != current) onChange(tabs[target]) else onEdge()
+}
+
+private fun Modifier.horizontalSwipe(onSwipeLeft:()->Unit,onSwipeRight:()->Unit):Modifier=pointerInput(Unit){awaitPointerEventScope{while(true){val down=awaitFirstDown(requireUnconsumed=false,pass=PointerEventPass.Initial);var dx=0f;var dy=0f;while(true){val event=awaitPointerEvent(PointerEventPass.Initial);val change=event.changes.firstOrNull{it.id==down.id}?:break;if(!change.pressed){if(abs(dx)>100f&&abs(dx)>abs(dy)*1.2f){if(dx<0)onSwipeLeft() else onSwipeRight()};break};val delta=change.positionChange();dx+=delta.x;dy+=delta.y}}}}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)

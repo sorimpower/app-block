@@ -34,6 +34,7 @@ class PhoneInsightViewModel(application: Application): AndroidViewModel(applicat
     fun setSelectedApps(type:InsightSourceType,packages:Set<String>)=work{repo.setSelectedApps(type,packages)}
     fun disable(type:InsightSourceType, delete:Boolean)=work { repo.disable(type,delete) }
     fun status(id:String,status:InsightStatus)=viewModelScope.launch { repo.updateStatus(id,status) }
+    fun refresh()=work { val count=repo.refresh(); _message.value=if(count>0) "새로운 정보 ${count}건을 분석했습니다." else "새로운 정보가 없습니다." }
     fun clearMessage(){_message.value=null}
     private fun work(block:suspend()->Unit){if(_working.value)return;viewModelScope.launch{_working.value=true;runCatching{block()}.onFailure{_message.value=it.message?:"분석을 완료하지 못했어요."};_working.value=false}}
 }

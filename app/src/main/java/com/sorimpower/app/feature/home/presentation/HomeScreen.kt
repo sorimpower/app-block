@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.NotificationsNone
+import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -46,6 +47,7 @@ internal fun HomeScreen(
     openBodyLog: () -> Unit,
     openAuction: () -> Unit,
     openPhoneInsight: () -> Unit,
+    openPropertyTax: () -> Unit,
     openAccessibilitySettings: () -> Unit,
 ) {
     LazyColumn(
@@ -53,6 +55,15 @@ internal fun HomeScreen(
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(18.dp),
     ) {
+        item {
+            FeatureCard(
+                title = "부동산 세금",
+                description = "보유 자산의 취득·보유·양도세와 거래 시나리오 계산",
+                icon = Icons.Rounded.AccountBalance,
+                accent = AppCobalt,
+                onClick = openPropertyTax,
+            )
+        }
         item {
             FeatureCard(
                 title = "AI 챙김",

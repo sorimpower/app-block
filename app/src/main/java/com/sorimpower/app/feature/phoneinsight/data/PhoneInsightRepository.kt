@@ -80,6 +80,9 @@ class PhoneInsightRepository(context:Context){
     suspend fun scanSms(full:Boolean=false)=scan(setOf(InsightSourceType.SMS),full)
     suspend fun scanAll(full:Boolean=false)=scan(null,full)
 
+    /** Pull-to-refresh: collect every enabled source and analyze only newly discovered candidates. */
+    suspend fun refresh()=scan(null,false)
+
     private suspend fun scan(only:Set<InsightSourceType>?,full:Boolean):Int=withContext(Dispatchers.IO){InsightSyncGate.run{
         val started=System.currentTimeMillis();val runId=dao.insertRun(InsightAnalysisRunEntity(startedAt=started));var collected=0
         try{

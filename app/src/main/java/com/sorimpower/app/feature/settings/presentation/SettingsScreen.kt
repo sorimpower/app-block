@@ -79,6 +79,7 @@ import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.Security
 import com.sorimpower.app.feature.blocker.data.BlockerState
 import com.sorimpower.app.feature.blocker.data.BottomNavigationTab
@@ -167,6 +168,7 @@ internal fun SettingsScreen(
                         DestinationCard(Icons.Rounded.Block, "앱 차단", "차단 설정으로 바로 시작", state.startDestination == StartDestination.APP_BLOCKER) { viewModel.setStartDestination(StartDestination.APP_BLOCKER) }
                         DestinationCard(Icons.Rounded.FavoriteBorder, "건강 기록", "체중과 식사 기록으로 바로 시작", state.startDestination == StartDestination.BODY_LOG) { viewModel.setStartDestination(StartDestination.BODY_LOG) }
                         DestinationCard(Icons.Rounded.Gavel, "부동산 경매", "관심 조건 경매 목록으로 바로 시작", state.startDestination == StartDestination.REAL_ESTATE_AUCTION) { viewModel.setStartDestination(StartDestination.REAL_ESTATE_AUCTION) }
+                        DestinationCard(Icons.Rounded.AccountBalance, "부동산 세금", "세금 포트폴리오로 바로 시작", state.startDestination == StartDestination.PROPERTY_TAX) { viewModel.setStartDestination(StartDestination.PROPERTY_TAX) }
                         DestinationCard(Icons.Rounded.MoreHoriz, "더보기", "추가 메뉴와 설정 화면으로 바로 시작", state.startDestination == StartDestination.MORE) { viewModel.setStartDestination(StartDestination.MORE) }
                     }
                 }
@@ -282,6 +284,7 @@ private fun bottomNavigationIcon(tab: BottomNavigationTab): ImageVector = when (
     BottomNavigationTab.BLOCKER -> Icons.Rounded.Block
     BottomNavigationTab.BODY_LOG -> Icons.Rounded.FavoriteBorder
     BottomNavigationTab.AUCTION -> Icons.Rounded.Gavel
+    BottomNavigationTab.PROPERTY_TAX -> Icons.Rounded.AccountBalance
     BottomNavigationTab.MORE -> Icons.Rounded.MoreHoriz
 }
 
