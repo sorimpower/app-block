@@ -3,7 +3,7 @@ package com.sorimpower.app.feature.propertytax.domain
 import java.time.LocalDate
 
 enum class PropertyType(val label: String) {
-    APARTMENT("아파트"), HOUSE("주택"), PRESALE_RIGHT("분양권"), ASSOCIATION_RIGHT("조합원입주권"),
+    APARTMENT("아파트"), HOUSE("주택"), PRESALE_RIGHT("분양권"), ASSOCIATION_RIGHT("입주권"),
     OFFICETEL("오피스텔"), COMMERCIAL("상가"), LAND("토지"), OTHER("기타")
 }
 
@@ -52,6 +52,13 @@ data class PropertyAsset(
     val residenceRequirementExempt: Boolean = false,
     val jointComprehensiveTaxSpecialRequested: Boolean = false,
     val jointSpecialTaxpayer: OwnerRole? = null,
+    val redevelopmentHistory: Boolean = false,
+    val managementDispositionApprovalDate: LocalDate? = null,
+    val demolitionDate: LocalDate? = null,
+    val redevelopmentCompletionDate: LocalDate? = null,
+    val additionalContribution: Long = 0,
+    val settlementRefund: Long = 0,
+    val redevelopmentNecessaryExpenses: Long = 0,
 )
 
 data class TaxRuleVersion(
@@ -213,4 +220,35 @@ data class PropertyTaxAiAnalysis(
     val correctedPreviousFindings: List<String> = emptyList(),
     val newlyDetectedDifferences: List<String> = emptyList(),
     val unchangedFindings: List<String> = emptyList(),
+)
+
+data class TaxPlanTimelineItem(
+    val date: String,
+    val title: String,
+    val detail: String,
+    val status: String,
+)
+
+data class TaxPlanScenario(
+    val name: String,
+    val verdict: String,
+    val saleOrder: List<String>,
+    val taxTreatment: List<String>,
+    val advantages: List<String>,
+    val risks: List<String>,
+    val deadlines: List<String>,
+)
+
+data class PropertyTaxPlanAnalysis(
+    val summary: String,
+    val recommendedScenario: String,
+    val timeline: List<TaxPlanTimelineItem>,
+    val scenarios: List<TaxPlanScenario>,
+    val keyFindings: List<String>,
+    val assumptions: List<String>,
+    val missingInformation: List<String>,
+    val nextActions: List<String>,
+    val officialSources: List<TaxOfficialSource>,
+    val verificationStatus: TaxLawVerificationStatus,
+    val checkedAt: Long?,
 )

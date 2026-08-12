@@ -14,8 +14,8 @@ android {
         applicationId = "com.sorimpower.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "0.7.7"
+        versionCode = 29
+        versionName = "0.8.4"
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -55,4 +55,5 @@ dependencies {
     releaseImplementation(libs.firebase.appcheck.playintegrity)
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
 }

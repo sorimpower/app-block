@@ -21,7 +21,7 @@ internal class OpenAiPropertyTaxAnalyzer(context: Context) {
             검색 시 현행 조문뿐 아니라 시행일, 부칙, 경과규정, 일몰·유예 종료일과 양도·취득 시점별 적용 여부를 확인하라.
             특히 지방세법 제11조·제13조의2와 시행령 제28조의4·제109조, 지방세법 제111조,
             종합부동산세법 제8조·제9조·제10조의2와 시행령 제5조의2,
-            소득세법 제89조·제95조·제104조와 시행령 제154조·제156조의3·제159조의4·제167조의3·제167조의10·제167조의11 및 최신 개정·부칙을 점검하라.
+            소득세법 제89조·제95조·제104조와 시행령 제154조·제156조의2·제156조의3·제159조의4·제162조·제167조의3·제167조의10·제167조의11 및 최신 개정·부칙을 점검하라.
 
             아래 숫자는 버전형 Tax Engine이 계산한 값이다. 공식 최신 법령과 일치할 때만 설명의 source of truth로 사용한다.
             계산식·세율·공제·특례·유예기간에 실질적 불일치가 있으면 status를 CHANGE_DETECTED, calculationSafe를 false로 반환하고 현재 계산값을 확정적으로 해석하지 말라.
@@ -57,8 +57,9 @@ internal class OpenAiPropertyTaxAnalyzer(context: Context) {
             취득세는 전체 주택가액으로 1~3% 세율 구간을 정하고 지분가액을 과세표준으로 사용하며, 취득세상 주택 수 제외 선택과 일시적 2주택의 3년 처분기한을 검증한다.
             보유세는 도시지역분을 지정 여부에 따라 적용하고 입력된 지역자원시설세를 포함한다. 종부세는 납세의무자별 주택 수와 법정 재산세 공제 산식으로 계산하며 공동명의 특례는 신청 선택이 있을 때만 실제 합계에 반영한다.
             양도세는 일 단위 날짜로 보유·거주기간을 판정하고 과세연도별 기본공제 기사용액을 차감한다. 완공 후 분양권 특례와 2026년 다주택 중과 유예는 체크값 하나가 아니라 각 법정 날짜와 증빙 입력을 검증한다.
+            재개발 전 기존 주택을 취득한 원조합원 자산은 기존 주택 취득가+추가분담금-청산금 환급을 취득원가 후보로 사용하고 실제 취득세와 증빙 필요경비를 별도 가산했다. 이 단순 합산이 해당 사실관계에 맞는지, 관리처분인가·멸실·준공 전후 보유기간과 거주기간을 어떻게 보아야 하는지는 공식 자료로 반드시 재검증하라.
 
-            부동산: ${property.name}, 유형=${property.propertyType.label}, 취득일=${property.acquisitionDate}, 취득계약일=${property.acquisitionContractDate}, 취득가=${property.acquisitionPrice}, 본인지분=${property.ownershipRatio}, 배우자지분=${property.spouseOwnershipRatio}, 본인생년월일=${property.ownerBirthDate}, 배우자생년월일=${property.spouseBirthDate}, 취득당시조정대상=${property.regulatedAreaAtAcquisition}, 거주요건면제확인=${property.residenceRequirementExempt}, 취득세주택수처리=${property.acquisitionHouseCountTreatment}, 양도세주택수처리=${property.capitalGainsHouseCountTreatment}, 종부세처리=${property.comprehensiveTaxTreatment}, 중과대상처리=${property.capitalGainsSurchargeTreatment}
+            부동산: ${property.name}, 유형=${property.propertyType.label}, 취득일=${property.acquisitionDate}, 취득계약일=${property.acquisitionContractDate}, 취득가=${property.acquisitionPrice}, 본인지분=${property.ownershipRatio}, 배우자지분=${property.spouseOwnershipRatio}, 본인생년월일=${property.ownerBirthDate}, 배우자생년월일=${property.spouseBirthDate}, 취득당시조정대상=${property.regulatedAreaAtAcquisition}, 거주요건면제확인=${property.residenceRequirementExempt}, 취득세주택수처리=${property.acquisitionHouseCountTreatment}, 양도세주택수처리=${property.capitalGainsHouseCountTreatment}, 종부세처리=${property.comprehensiveTaxTreatment}, 중과대상처리=${property.capitalGainsSurchargeTreatment}, 재개발승계=${property.redevelopmentHistory}, 관리처분인가일=${property.managementDispositionApprovalDate}, 철거멸실일=${property.demolitionDate}, 신축준공일=${property.redevelopmentCompletionDate}, 추가분담금=${property.additionalContribution}, 청산금환급=${property.settlementRefund}, 재개발필요경비=${property.redevelopmentNecessaryExpenses}, 실제취득세=${property.actualAcquisitionTax}
             시뮬레이션: 매도일=${simulation.expectedSaleDate}, 매도가=${simulation.expectedSalePrice}, 양도당시조정대상=${simulation.regulatedAreaAtSale}, 매매계약일=${simulation.saleContractDate}, 계약금증빙=${simulation.depositReceived}, 토지거래허가대상=${simulation.landTransactionPermitRequired}, 허가신청일=${simulation.landTransactionPermitApplicationDate}, 허가승인=${simulation.landTransactionPermitApproved}, 6개월연장지역=${simulation.extendedSurchargeGraceRegion}, 신축주택이사일=${simulation.completedHomeMoveInDate}, 1년거주확인일=${simulation.completedHomeResidenceEndDate}, 본인기본공제기사용=${simulation.ownerBasicDeductionUsed}, 배우자기본공제기사용=${simulation.spouseBasicDeductionUsed}, 양도차익=${simulation.capitalGain}, 장기보유공제=${simulation.longTermDeduction}, 과세표준=${simulation.taxBase}, 국세=${simulation.nationalCapitalGainsTax}, 지방소득세=${simulation.localIncomeTax}, 총예상세금=${simulation.totalEstimatedTax}
             적용 세법=${simulation.taxRuleVersionId}
             누락 정보=${simulation.missingInputsJson}

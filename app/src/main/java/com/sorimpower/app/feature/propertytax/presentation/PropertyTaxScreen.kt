@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,27 +41,27 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
 
-private enum class PropertyTaxTab(val label: String) { PORTFOLIO("포트폴리오"), SIMULATIONS("매도 계산"), IMPACT("거래 영향"), RULES("세법 기준") }
+private enum class PropertyTaxTab(val label: String) { AI_PLAN("AI 계획"), PORTFOLIO("자산"), SIMULATIONS("상세 계산"), RULES("세법") }
 
 @Composable
 fun PropertyTaxAnalysisInfoDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("세금은 이렇게 분석해요", fontWeight = FontWeight.Black) },
+        title = { Text("AI 분석 결과에 포함되는 내용", fontWeight = FontWeight.Black) },
         text = {
             LazyColumn(
                 modifier = Modifier.heightIn(max = 520.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item { AnalysisGuideStep("1", "Rule Engine 계산", "입력한 주택·분양권·지분·취득가·매도가를 기준으로 취득세, 보유세, 양도세 예상값을 먼저 계산해요.") }
-                item { AnalysisGuideStep("2", "공식 법령 실시간 확인", "분석 버튼을 누를 때마다 국가법령정보센터·국세청 등 공식 자료에서 시행일, 부칙, 경과규정과 유예기간을 다시 확인해요.") }
-                item { AnalysisGuideStep("3", "현재 계산 기준과 비교", "GPT-5.6 Sol(max)이 최신 공식 법령과 앱의 Rule Engine을 비교해 일치, 법령 변경 감지, 검증 불완전으로 구분해요.") }
-                item { AnalysisGuideStep("4", "직전 분석 재검증", "같은 매도 시뮬레이션의 이전 성공 분석과 비교해 잘못된 판단, 새로 생긴 차이, 그대로 유효한 판단을 따로 보여줘요.") }
-                item { AnalysisGuideStep("5", "근거와 안전 상태 표시", "확인에 사용한 공식 링크를 제공하고, 변경이나 출처 부족이 있으면 계산값을 안전하다고 표시하지 않아요.") }
+                item { AnalysisGuideStep("1", "정리된 자산 타임라인", "주택 매수, 관리처분인가, 분양권 취득, 준공, 입주와 매도계획을 날짜순으로 구분해 보여줘요.") }
+                item { AnalysisGuideStep("2", "추천 매도 순서", "현재 계획 중 가장 현실적인 순서를 추천하고 왜 유리한지 핵심 이유를 설명해요.") }
+                item { AnalysisGuideStep("3", "대안 시나리오 비교", "매도 순서별 일반과세·비과세 가능성, 장점, 위험과 중요 기한을 나누어 비교해요.") }
+                item { AnalysisGuideStep("4", "최소 추가 확인 정보", "결론을 바꿀 가능성이 큰 취득일, 잔금일, 명의, 거주기간과 금액만 최대 6개까지 질문해요.") }
+                item { AnalysisGuideStep("5", "다음 행동과 공식 근거", "확인할 계약서·등기·전입 자료와 실행 순서를 안내하고 국가법령정보센터·국세청 공식 링크를 함께 제공해요.") }
                 item {
                     Card(colors = CardDefaults.cardColors(containerColor = AppOrange.copy(alpha = .09f))) {
                         Text(
-                            "AI가 세율이나 계산식을 자동으로 바꾸지는 않아요. 법령 변경이 발견되면 Rule Engine 검토와 업데이트가 필요하며, 실제 신고·거래 전에는 세무 전문가 확인이 필요해요.",
+                            "금액 정보가 없으면 AI가 임의 세액을 만들지 않아요. 미래 매도계획과 비과세 여부는 현재 법령 기준의 조건부 분석이며 실제 거래 전에는 당시 법령과 세무 전문가 확인이 필요해요.",
                             modifier = Modifier.padding(12.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -91,7 +92,7 @@ private fun AnalysisGuideStep(number: String, title: String, description: String
 @Composable
 fun PropertyTaxScreen(padding: PaddingValues, viewModel: PropertyTaxViewModel, onSwipeEdgeLeft: () -> Unit = {}, onSwipeEdgeRight: () -> Unit = {}) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var tab by remember { mutableStateOf(PropertyTaxTab.PORTFOLIO) }
+    var tab by remember { mutableStateOf(PropertyTaxTab.AI_PLAN) }
     var propertyDialog by remember { mutableStateOf(false) }
     var editingProperty by remember { mutableStateOf<PropertyEntity?>(null) }
     var simulationDialog by remember { mutableStateOf(false) }
@@ -107,9 +108,9 @@ fun PropertyTaxScreen(padding: PaddingValues, viewModel: PropertyTaxViewModel, o
             onSwipeRight = { val index = PropertyTaxTab.entries.indexOf(tab); if (index == 0) onSwipeEdgeRight() else tab = PropertyTaxTab.entries[index - 1] },
         )) {
             when (tab) {
+                PropertyTaxTab.AI_PLAN -> AiTaxPlanContent(state, viewModel::analyzePlan, viewModel::clearPlan)
                 PropertyTaxTab.PORTFOLIO -> PortfolioContent(state, { propertyDialog = true }, { editingProperty = it }, viewModel::deleteProperty, viewModel::setTaxYear)
                 PropertyTaxTab.SIMULATIONS -> SimulationContent(state, { simulationDialog = true }, viewModel::recalculate, viewModel::analyze, viewModel::deleteSimulation)
-                PropertyTaxTab.IMPACT -> ScenarioContent(state, { scenarioDialog = true }, { acquisitionScenarioId = it }, { saleScenarioId = it }, viewModel::deleteScenario)
                 PropertyTaxTab.RULES -> RuleContent(state)
             }
             if (state.working) Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = .55f)), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = AppCobalt) }
@@ -124,6 +125,151 @@ fun PropertyTaxScreen(padding: PaddingValues, viewModel: PropertyTaxViewModel, o
     state.aiAnalysis?.let { AiAnalysisDialog(it, viewModel::dismissAnalysis) }
     state.message?.let { AlertDialog(onDismissRequest = viewModel::clearMessage, title = { Text("부동산 세금") }, text = { Text(it) }, confirmButton = { TextButton(viewModel::clearMessage) { Text("확인") } }) }
 }
+
+@Composable
+private fun AiTaxPlanContent(
+    state: PropertyTaxUiState,
+    onAnalyze: (String) -> Unit,
+    onClear: () -> Unit,
+) {
+    var input by remember { mutableStateOf(state.planInput) }
+    LaunchedEffect(state.planInput) {
+        if (input.isBlank() && state.planInput.isNotBlank()) input = state.planInput
+    }
+    val analysis = state.planAnalysis
+    val uriHandler = LocalUriHandler.current
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(13.dp),
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("상황과 계획만 적어주세요", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                Text("AI가 자산·명의·날짜를 정리하고 최신 공식 법령을 찾아 매도 순서를 비교해요. 모르는 세금 항목은 입력하지 않아도 됩니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        item {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it.take(20_000) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("현재 상황과 매도·입주 계획") },
+                placeholder = { Text("예) 2020년 1월 청량리 주택 매수\n2024년 9월 배우자 명의 분양권 당첨\n2029년까지 두 주택을 순서대로 매도하고 싶음") },
+                minLines = 8,
+                maxLines = 16,
+                supportingText = { Text("날짜, 명의, 규제지역, 재개발·분양권, 거주 계획을 아는 만큼만 적으세요. ${input.length}/20,000") },
+            )
+        }
+        item {
+            Button(
+                onClick = { onAnalyze(input) },
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                enabled = input.trim().length >= 20 && !state.working,
+            ) {
+                Icon(Icons.Rounded.AutoAwesome, null)
+                Spacer(Modifier.width(7.dp))
+                Text(if (analysis == null) "AI 매도계획 분석" else "최신 법령으로 다시 분석", fontWeight = FontWeight.Bold)
+            }
+        }
+        if (analysis != null) {
+            item {
+                val color = when (analysis.verificationStatus) {
+                    TaxLawVerificationStatus.CURRENT -> AppGreen
+                    TaxLawVerificationStatus.CHANGE_DETECTED -> MaterialTheme.colorScheme.error
+                    TaxLawVerificationStatus.INCONCLUSIVE -> AppOrange
+                }
+                Card(colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .09f)), border = BorderStroke(1.dp, color.copy(alpha = .3f)), shape = RoundedCornerShape(18.dp)) {
+                    Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Icon(Icons.Rounded.Verified, null, tint = color)
+                            Text("AI 추천 계획", fontWeight = FontWeight.Black, color = color)
+                        }
+                        Text(analysis.summary, style = MaterialTheme.typography.bodyMedium)
+                        if (analysis.recommendedScenario.isNotBlank()) Text(analysis.recommendedScenario, fontWeight = FontWeight.Black, color = AppCobalt)
+                        analysis.checkedAt?.let { Text("공식 법령 확인 ${formatAnalysisTime(it)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                }
+            }
+            if (analysis.timeline.isNotEmpty()) item {
+                PlanSection("정리된 타임라인", Icons.Rounded.Timeline) {
+                    analysis.timeline.forEachIndexed { index, event ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(Modifier.size(10.dp).background(if (event.status == "DEADLINE") AppOrange else AppCobalt, CircleShape))
+                                if (index < analysis.timeline.lastIndex) VerticalDivider(Modifier.height(42.dp), color = AppCobalt.copy(alpha = .2f))
+                            }
+                            Column(Modifier.padding(start = 10.dp, bottom = 8.dp)) {
+                                Text("${event.date} · ${event.title}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                                if (event.detail.isNotBlank()) Text(event.detail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+            items(analysis.scenarios, key = { it.name }) { scenario -> TaxPlanScenarioCard(scenario) }
+            if (analysis.keyFindings.isNotEmpty()) item { PlanListSection("핵심 판단", Icons.Rounded.Gavel, analysis.keyFindings, AppCobalt) }
+            if (analysis.missingInformation.isNotEmpty()) item { PlanListSection("결론을 위해 필요한 최소 정보", Icons.AutoMirrored.Rounded.HelpOutline, analysis.missingInformation, AppOrange) }
+            if (analysis.nextActions.isNotEmpty()) item { PlanListSection("다음 할 일", Icons.Rounded.TaskAlt, analysis.nextActions, AppGreen) }
+            if (analysis.assumptions.isNotEmpty()) item { PlanListSection("현재 분석의 가정", Icons.Rounded.Info, analysis.assumptions, MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (analysis.officialSources.isNotEmpty()) item {
+                PlanSection("공식 근거", Icons.Rounded.Link) {
+                    analysis.officialSources.forEach { source ->
+                        Text("• ${source.title}", Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri(source.url) } }.padding(vertical = 3.dp), color = AppCobalt, textDecoration = TextDecoration.Underline, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            item {
+                TextButton(onClear, Modifier.fillMaxWidth()) { Icon(Icons.Rounded.DeleteOutline, null); Text(" 분석 내용 삭제") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlanSection(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, content: @Composable ColumnScope.() -> Unit) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) { Icon(icon, null, tint = AppCobalt); Text(title, fontWeight = FontWeight.Black) }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun PlanListSection(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, values: List<String>, color: Color) {
+    PlanSection(title, icon) { PlanBullets(values, color) }
+}
+
+@Composable
+private fun PlanBullets(values: List<String>, color: Color = MaterialTheme.colorScheme.onSurface) {
+    values.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, color = color) }
+}
+
+@Composable
+private fun TaxPlanScenarioCard(scenario: TaxPlanScenario) {
+    val verdictColor = when (scenario.verdict) {
+        "권장" -> AppGreen
+        "위험", "비권장" -> MaterialTheme.colorScheme.error
+        else -> AppOrange
+    }
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, verdictColor.copy(alpha = .25f)), shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(scenario.name, Modifier.weight(1f), fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+                Surface(color = verdictColor.copy(alpha = .12f), shape = RoundedCornerShape(50)) { Text(scenario.verdict, Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = verdictColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall) }
+            }
+            if (scenario.saleOrder.isNotEmpty()) { Text("매도 순서", fontWeight = FontWeight.Bold, color = AppCobalt); PlanBullets(scenario.saleOrder) }
+            if (scenario.taxTreatment.isNotEmpty()) { Text("예상 세금 처리", fontWeight = FontWeight.Bold, color = AppCobalt); PlanBullets(scenario.taxTreatment) }
+            if (scenario.advantages.isNotEmpty()) { Text("장점", fontWeight = FontWeight.Bold, color = AppGreen); PlanBullets(scenario.advantages) }
+            if (scenario.risks.isNotEmpty()) { Text("주의", fontWeight = FontWeight.Bold, color = AppOrange); PlanBullets(scenario.risks) }
+            if (scenario.deadlines.isNotEmpty()) { Text("중요 기한", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error); PlanBullets(scenario.deadlines) }
+        }
+    }
+}
+
+private fun formatAnalysisTime(value: Long): String = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm")
+    .withZone(ZoneId.of("Asia/Seoul"))
+    .format(Instant.ofEpochMilli(value))
 
 @Composable
 private fun ScenarioContent(
@@ -193,7 +339,7 @@ private fun PortfolioContent(state: PropertyTaxUiState, onAdd: () -> Unit, onEdi
                 Button(onAdd) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("추가") }
             }
         }
-        if (state.properties.isEmpty()) item { EmptyCard("등록된 부동산이 없습니다.", "취득가·공시가격을 입력하면 예상 취득세와 보유세를 계산합니다.") }
+        if (state.properties.isEmpty()) item { EmptyCard("상세 계산용 자산이 없습니다.", "AI 계획만 이용해도 됩니다. 정확한 세액이 필요할 때 이름·유형·취득일·취득가만 간편 등록하세요.") }
         items(state.properties, key = { it.id }) { property ->
             val acquisition = state.acquisitionTaxes[property.id]
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
@@ -205,10 +351,22 @@ private fun PortfolioContent(state: PropertyTaxUiState, onAdd: () -> Unit, onEdi
                         IconButton({ onDelete(property.id) }) { Icon(Icons.Rounded.DeleteOutline, "삭제") }
                     }
                     TaxRow("취득가", won(property.acquisitionPrice))
+                    if (property.redevelopmentHistory) {
+                        TaxRow("취득 이력", "재개발 전 주택 승계")
+                        property.redevelopmentCompletionDate?.let { TaxRow("재개발 준공", it) }
+                        TaxRow("추가분담금", won(property.additionalContribution))
+                        if (property.settlementRefund > 0) TaxRow("청산금 환급", "-${won(property.settlementRefund)}")
+                    }
                     if (property.spouseOwnershipRatio > 0) TaxRow("부부 공동명의", "본인 ${(property.ownershipRatio * 100).toInt()}% · 배우자 ${(property.spouseOwnershipRatio * 100).toInt()}%")
                     if (property.propertyType == PropertyType.PRESALE_RIGHT.name) TaxRow("입주 예정", property.expectedCompletionDate ?: "미입력") else TaxRow("공시가격", property.officialAssessedValue?.let(::won) ?: "미입력")
-                    TaxRow("예상 취득 단계 세금", when { acquisition == null -> "계산 대기"; !acquisition.calculationAvailable -> "지원 세법 없음"; else -> won(acquisition.result.totalTax) })
-                    acquisition?.missingInputs?.firstOrNull()?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = AppOrange) }
+                    TaxRow(if (property.redevelopmentHistory) "신축 주택 취득세" else "예상 취득 단계 세금", when {
+                        property.redevelopmentHistory && property.actualAcquisitionTax == null -> "실제 납부액 미입력"
+                        property.redevelopmentHistory -> won(property.actualAcquisitionTax ?: 0L)
+                        acquisition == null -> "계산 대기"
+                        !acquisition.calculationAvailable -> "지원 세법 없음"
+                        else -> won(acquisition.result.totalTax)
+                    })
+                    RegistrationStatus(property)
                 }
             }
         }
@@ -337,7 +495,7 @@ private fun ScenarioSaleDialog(properties: List<PropertyEntity>, onDismiss: () -
 }
 
 @Composable
-private fun PropertyDialog(title: String = "내 부동산 추가", initial: PropertyDraft? = null, onDismiss: () -> Unit, onSave: (PropertyDraft) -> Unit) {
+private fun PropertyDialog(title: String = "부동산 간편 등록", initial: PropertyDraft? = null, onDismiss: () -> Unit, onSave: (PropertyDraft) -> Unit) {
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
     var address by remember { mutableStateOf(initial?.address.orEmpty()) }
     var date by remember { mutableStateOf(initial?.acquisitionDate?.toString() ?: LocalDate.now().toString()) }
@@ -365,41 +523,120 @@ private fun PropertyDialog(title: String = "내 부동산 추가", initial: Prop
     var residenceExempt by remember { mutableStateOf(initial?.residenceRequirementExempt == true) }
     var jointSpecial by remember { mutableStateOf(initial?.jointComprehensiveTaxSpecialRequested == true) }
     var specialTaxpayer by remember { mutableStateOf(initial?.jointSpecialTaxpayer) }
+    var redevelopment by remember { mutableStateOf(initial?.redevelopmentHistory == true) }
+    var managementApproval by remember { mutableStateOf(initial?.managementDispositionApprovalDate?.toString().orEmpty()) }
+    var demolition by remember { mutableStateOf(initial?.demolitionDate?.toString().orEmpty()) }
+    var redevelopmentCompletion by remember { mutableStateOf(initial?.redevelopmentCompletionDate?.toString().orEmpty()) }
+    var additionalContribution by remember { mutableStateOf(initial?.additionalContribution?.toString().orEmpty()) }
+    var settlementRefund by remember { mutableStateOf(initial?.settlementRefund?.toString().orEmpty()) }
+    var redevelopmentExpenses by remember { mutableStateOf(initial?.redevelopmentNecessaryExpenses?.toString().orEmpty()) }
+    var actualAcquisitionTax by remember { mutableStateOf(initial?.actualAcquisitionTax?.toString().orEmpty()) }
+    var brokerageFee by remember { mutableStateOf(initial?.brokerageFee?.toString().orEmpty()) }
+    var legalFee by remember { mutableStateOf(initial?.legalFee?.toString().orEmpty()) }
+    var renovationCost by remember { mutableStateOf(initial?.renovationCost?.toString().orEmpty()) }
+    var otherExpenses by remember { mutableStateOf(initial?.otherNecessaryExpenses?.toString().orEmpty()) }
+    var propertyDetailsExpanded by remember { mutableStateOf(false) }
+    var redevelopmentDetailsExpanded by remember { mutableStateOf(false) }
+    var ownershipDetailsExpanded by remember { mutableStateOf(false) }
+    var holdingDetailsExpanded by remember { mutableStateOf(false) }
+    var expenseDetailsExpanded by remember { mutableStateOf(false) }
+    var taxDetailsExpanded by remember { mutableStateOf(false) }
+    val redevelopmentSelected = redevelopment && type in setOf(PropertyType.APARTMENT, PropertyType.HOUSE)
+    val hasPropertyDetails = address.isNotBlank() || contractDate.isNotBlank() || completion.isNotBlank()
+    val hasRedevelopmentDetails = managementApproval.isNotBlank() || demolition.isNotBlank() || redevelopmentCompletion.isNotBlank() ||
+        listOf(additionalContribution, settlementRefund, redevelopmentExpenses, actualAcquisitionTax).any { (it.toLongOrNull() ?: 0L) > 0L }
+    val hasOwnershipDetails = ratio != "100" || (spouseRatio.toDoubleOrNull() ?: 0.0) > 0.0 || ownerBirthDate.isNotBlank() ||
+        spouseBirthDate.isNotBlank() || regulated != null || residenceStart.isNotBlank() || residenceEnd.isNotBlank() || residenceExempt || jointSpecial
+    val hasHoldingDetails = (assessed.toLongOrNull() ?: 0L) > 0L || urban != null || (regionalTax.toLongOrNull() ?: 0L) > 0L
+    val hasExpenseDetails = listOf(brokerageFee, legalFee, renovationCost, otherExpenses).any { (it.toLongOrNull() ?: 0L) > 0L }
+    val hasTaxDetails = (ruralTax.toLongOrNull() ?: 0L) > 0L || acquisitionCount != TaxTreatment.AUTO ||
+        capitalCount != TaxTreatment.AUTO || comprehensive != TaxTreatment.AUTO ||
+        surchargeTreatment != TaxTreatment.AUTO || acquisitionRelief != AcquisitionSurchargeRelief.NONE
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.heightIn(max = 560.dp)) {
-            item { OutlinedTextField(name, { name = it }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(address, { address = it }, label = { Text("주소") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            item { PropertyType.entries.chunked(4).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) { row.forEach { FilterChip(type == it, { type = it }, { Text(it.label) }) } } } }
-            item { OutlinedTextField(date, { date = it }, label = { Text("취득일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(contractDate, { contractDate = it }, label = { Text("취득 계약일 YYYY-MM-DD (경과규정용)") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            item { NumberField("전체 주택 취득가 (원)", price) { price = it } }
-            if (type !in setOf(PropertyType.PRESALE_RIGHT, PropertyType.ASSOCIATION_RIGHT)) item { NumberField("공시가격 (원)", assessed) { assessed = it } }
-            if (type in setOf(PropertyType.PRESALE_RIGHT, PropertyType.ASSOCIATION_RIGHT)) item { OutlinedTextField(completion, { completion = it }, label = { Text("완공 예정일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            item { NumberField("본인 소유 지분 (%)", ratio) { ratio = it } }
-            item { NumberField("배우자 소유 지분 (%)", spouseRatio) { spouseRatio = it } }
-            if ((spouseRatio.toDoubleOrNull() ?: 0.0) > 0) item { OutlinedTextField(ownerBirthDate, { ownerBirthDate = it }, label = { Text("본인 생년월일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            if ((spouseRatio.toDoubleOrNull() ?: 0.0) > 0) item { OutlinedTextField(spouseBirthDate, { spouseBirthDate = it }, label = { Text("배우자 생년월일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            item { BooleanSelector("취득 당시 조정대상지역", regulated) { regulated = it } }
-            item { BooleanSelector("재산세 도시지역분 대상", urban) { urban = it } }
-            item { NumberField("연간 지역자원시설세 (고지서 금액)", regionalTax) { regionalTax = it } }
-            item { NumberField("취득 농어촌특별세 (확인된 금액)", ruralTax) { ruralTax = it } }
-            item { TreatmentSelector("취득세 주택 수", acquisitionCount) { acquisitionCount = it } }
-            item { TreatmentSelector("양도세 주택 수", capitalCount) { capitalCount = it } }
-            item { TreatmentSelector("종부세 합산", comprehensive) { comprehensive = it } }
-            item { TreatmentSelector("다주택 중과 대상 주택", surchargeTreatment) { surchargeTreatment = it } }
-            item { Text("취득세 중과 특례", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall); Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { AcquisitionSurchargeRelief.entries.forEach { FilterChip(acquisitionRelief == it, { acquisitionRelief = it }, { Text(it.label) }) } } }
-            if (acquisitionRelief == AcquisitionSurchargeRelief.TEMPORARY_TWO_HOME) item { OutlinedTextField(priorDisposal, { priorDisposal = it }, label = { Text("종전주택 처분일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            if (type !in setOf(PropertyType.PRESALE_RIGHT, PropertyType.ASSOCIATION_RIGHT)) {
-                item { OutlinedTextField(residenceStart, { residenceStart = it }, label = { Text("실거주 시작일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-                item { OutlinedTextField(residenceEnd, { residenceEnd = it }, label = { Text("실거주 종료일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-                item { LabeledCheckbox("계약일 등 법정 사유로 2년 거주요건 면제 확인", residenceExempt) { residenceExempt = it } }
+            item {
+                Surface(color = AppCobalt.copy(alpha = .08f), shape = RoundedCornerShape(14.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.Top) {
+                        Icon(Icons.Rounded.CheckCircle, null, tint = AppCobalt, modifier = Modifier.size(20.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("4가지만 입력하면 저장할 수 있어요", fontWeight = FontWeight.Black, color = AppCobalt, style = MaterialTheme.typography.bodyMedium)
+                            Text("이름·유형·취득일·취득가 외 정보는 나중에 수정해도 됩니다.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
             }
-            if ((spouseRatio.toDoubleOrNull() ?: 0.0) > 0) {
-                item { LabeledCheckbox("공동명의 1주택 특례 신청/신청 예정", jointSpecial) { jointSpecial = it } }
-                if (jointSpecial && ratio.toDoubleOrNull() == spouseRatio.toDoubleOrNull()) item { Text("특례 납세의무자", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall); Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { OwnerRole.entries.forEach { FilterChip(specialTaxpayer == it, { specialTaxpayer = it }, { Text(it.label) }) } } }
+            item { OutlinedTextField(name, { name = it }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+            item { PropertyType.entries.chunked(4).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) { row.forEach { FilterChip(type == it, { type = it }, { Text(it.label) }) } } } }
+            item { OutlinedTextField(date, { date = it }, label = { Text(if (redevelopmentSelected) "기존 주택 취득일 YYYY-MM-DD" else "취득일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+            item { NumberField(if (redevelopmentSelected) "기존 주택 취득가 (원)" else "전체 주택 취득가 (원)", price) { price = it } }
+
+            item { OptionalInputSection("부동산 추가 정보", "주소·계약일·입주 예정일", propertyDetailsExpanded, hasPropertyDetails) { propertyDetailsExpanded = !propertyDetailsExpanded } }
+            if (propertyDetailsExpanded) {
+                item { OutlinedTextField(address, { address = it }, label = { Text("주소 (선택)") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                item { OutlinedTextField(contractDate, { contractDate = it }, label = { Text(if (redevelopmentSelected) "기존 주택 계약일 YYYY-MM-DD" else "취득 계약일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                if (type in setOf(PropertyType.PRESALE_RIGHT, PropertyType.ASSOCIATION_RIGHT)) item { OutlinedTextField(completion, { completion = it }, label = { Text("완공 예정일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+            }
+
+            if (type in setOf(PropertyType.APARTMENT, PropertyType.HOUSE)) item { LabeledCheckbox("재개발·재건축 전 기존 주택을 매수했어요", redevelopment) { redevelopment = it } }
+            if (redevelopmentSelected) {
+                item { OptionalInputSection("재개발 상세정보", "서류를 찾은 뒤 하나씩 보완 가능", redevelopmentDetailsExpanded, hasRedevelopmentDetails) { redevelopmentDetailsExpanded = !redevelopmentDetailsExpanded } }
+                if (redevelopmentDetailsExpanded) {
+                    item { Text("관리처분계획서·등기자료·취득세 고지서에서 확인할 수 있어요. 모르는 값은 비워두세요.", style = MaterialTheme.typography.labelSmall, color = AppCobalt) }
+                    item { OutlinedTextField(managementApproval, { managementApproval = it }, label = { Text("관리처분계획 인가일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(demolition, { demolition = it }, label = { Text("기존 주택 철거·멸실일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(redevelopmentCompletion, { redevelopmentCompletion = it }, label = { Text("신축 주택 사용승인·준공일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                    item { NumberField("추가분담금 납부액 (원)", additionalContribution) { additionalContribution = it } }
+                    item { NumberField("청산금 환급액 (원)", settlementRefund) { settlementRefund = it } }
+                    item { NumberField("재개발 관련 증빙 필요경비 (원)", redevelopmentExpenses) { redevelopmentExpenses = it } }
+                    item { NumberField("신축 주택 취득세 실제 납부액 (원)", actualAcquisitionTax) { actualAcquisitionTax = it } }
+                }
+            }
+
+            item { OptionalInputSection("소유·거주 정보", "공동명의·실거주인 경우 입력", ownershipDetailsExpanded, hasOwnershipDetails) { ownershipDetailsExpanded = !ownershipDetailsExpanded } }
+            if (ownershipDetailsExpanded) {
+                item { NumberField("본인 소유 지분 (%)", ratio, showWon = false) { ratio = it } }
+                item { NumberField("배우자 소유 지분 (%)", spouseRatio, showWon = false) { spouseRatio = it } }
+                if ((spouseRatio.toDoubleOrNull() ?: 0.0) > 0) item { OutlinedTextField(ownerBirthDate, { ownerBirthDate = it }, label = { Text("본인 생년월일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                if ((spouseRatio.toDoubleOrNull() ?: 0.0) > 0) item { OutlinedTextField(spouseBirthDate, { spouseBirthDate = it }, label = { Text("배우자 생년월일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                item { BooleanSelector("취득 당시 조정대상지역", regulated) { regulated = it } }
+                if (type !in setOf(PropertyType.PRESALE_RIGHT, PropertyType.ASSOCIATION_RIGHT)) {
+                    item { OutlinedTextField(residenceStart, { residenceStart = it }, label = { Text("실거주 시작일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(residenceEnd, { residenceEnd = it }, label = { Text("실거주 종료일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                    item { LabeledCheckbox("법정 사유로 2년 거주요건 면제 확인", residenceExempt) { residenceExempt = it } }
+                }
+                if ((spouseRatio.toDoubleOrNull() ?: 0.0) > 0) {
+                    item { LabeledCheckbox("공동명의 1주택 특례 신청/신청 예정", jointSpecial) { jointSpecial = it } }
+                    if (jointSpecial && ratio.toDoubleOrNull() == spouseRatio.toDoubleOrNull()) item { Text("특례 납세의무자", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall); Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { OwnerRole.entries.forEach { FilterChip(specialTaxpayer == it, { specialTaxpayer = it }, { Text(it.label) }) } } }
+                }
+            }
+
+            if (type !in setOf(PropertyType.PRESALE_RIGHT, PropertyType.ASSOCIATION_RIGHT)) {
+                item { OptionalInputSection("보유세 정보", "공시가격·재산세 고지서가 있을 때 입력", holdingDetailsExpanded, hasHoldingDetails) { holdingDetailsExpanded = !holdingDetailsExpanded } }
+                if (holdingDetailsExpanded) {
+                    item { NumberField("공시가격 (원)", assessed) { assessed = it } }
+                    item { BooleanSelector("재산세 도시지역분 대상", urban) { urban = it } }
+                    item { NumberField("연간 지역자원시설세 (고지서 금액)", regionalTax) { regionalTax = it } }
+                }
+            }
+            item { OptionalInputSection("양도세 필요경비", "증빙이 있을 때만 입력", expenseDetailsExpanded, hasExpenseDetails) { expenseDetailsExpanded = !expenseDetailsExpanded } }
+            if (expenseDetailsExpanded) {
+                item { NumberField("취득 중개보수 (원)", brokerageFee) { brokerageFee = it } }
+                item { NumberField("법무·등기 비용 (원)", legalFee) { legalFee = it } }
+                item { NumberField("증빙된 자본적 지출 (원)", renovationCost) { renovationCost = it } }
+                item { NumberField("기타 증빙 필요경비 (원)", otherExpenses) { otherExpenses = it } }
+            }
+            item { OptionalInputSection("세부 세금정보", "고지서나 세무자료가 있을 때만 입력", taxDetailsExpanded, hasTaxDetails) { taxDetailsExpanded = !taxDetailsExpanded } }
+            if (taxDetailsExpanded) {
+                item { NumberField("취득 농어촌특별세 (확인된 금액)", ruralTax) { ruralTax = it } }
+                item { TreatmentSelector("취득세 주택 수", acquisitionCount) { acquisitionCount = it } }
+                item { TreatmentSelector("양도세 주택 수", capitalCount) { capitalCount = it } }
+                item { TreatmentSelector("종부세 합산", comprehensive) { comprehensive = it } }
+                item { TreatmentSelector("다주택 중과 대상 주택", surchargeTreatment) { surchargeTreatment = it } }
+                item { Text("취득세 중과 특례", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall); Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { AcquisitionSurchargeRelief.entries.forEach { FilterChip(acquisitionRelief == it, { acquisitionRelief = it }, { Text(it.label) }) } } }
+                if (acquisitionRelief == AcquisitionSurchargeRelief.TEMPORARY_TWO_HOME) item { OutlinedTextField(priorDisposal, { priorDisposal = it }, label = { Text("종전주택 처분일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
             }
         } },
         confirmButton = { Button({
@@ -414,9 +651,9 @@ private fun PropertyDialog(title: String = "내 부동산 추가", initial: Prop
                 id = initial?.id, name = name, propertyType = type, address = address,
                 acquisitionDate = parsedDate, acquisitionPrice = parsedPrice, ownershipRatio = own,
                 officialAssessedValue = assessed.toLongOrNull(), currentEstimatedValue = initial?.currentEstimatedValue,
-                actualAcquisitionTax = initial?.actualAcquisitionTax, brokerageFee = initial?.brokerageFee ?: 0,
-                legalFee = initial?.legalFee ?: 0, renovationCost = initial?.renovationCost ?: 0,
-                otherNecessaryExpenses = initial?.otherNecessaryExpenses ?: 0,
+                actualAcquisitionTax = actualAcquisitionTax.toLongOrNull(), brokerageFee = brokerageFee.toLongOrNull() ?: 0,
+                legalFee = legalFee.toLongOrNull() ?: 0, renovationCost = renovationCost.toLongOrNull() ?: 0,
+                otherNecessaryExpenses = otherExpenses.toLongOrNull() ?: 0,
                 residenceStartDate = parseOptionalDate(residenceStart), residenceEndDate = parseOptionalDate(residenceEnd),
                 spouseOwnershipRatio = spouse, regulatedAreaAtAcquisition = regulated,
                 expectedCompletionDate = parseOptionalDate(completion), ownerBirthYear = ownerBirth?.year,
@@ -428,8 +665,15 @@ private fun PropertyDialog(title: String = "내 부동산 추가", initial: Prop
                 acquisitionSurchargeRelief = acquisitionRelief, previousHomeDispositionDate = parseOptionalDate(priorDisposal),
                 residenceRequirementExempt = residenceExempt, jointComprehensiveTaxSpecialRequested = jointSpecial,
                 jointSpecialTaxpayer = specialTaxpayer,
+                redevelopmentHistory = redevelopmentSelected,
+                managementDispositionApprovalDate = parseOptionalDate(managementApproval),
+                demolitionDate = parseOptionalDate(demolition),
+                redevelopmentCompletionDate = parseOptionalDate(redevelopmentCompletion),
+                additionalContribution = additionalContribution.toLongOrNull() ?: 0,
+                settlementRefund = settlementRefund.toLongOrNull() ?: 0,
+                redevelopmentNecessaryExpenses = redevelopmentExpenses.toLongOrNull() ?: 0,
             ))
-        }, enabled = name.isNotBlank() && price.toLongOrNull() != null && parseDate(date) != null) { Text("저장") } },
+        }, enabled = name.isNotBlank() && price.toLongOrNull() != null && parseDate(date) != null) { Text(if (initial == null) "간편 등록" else "저장") } },
         dismissButton = { TextButton(onDismiss) { Text("취소") } },
     )
 }
@@ -513,6 +757,76 @@ private fun TreatmentSelector(label: String, value: TaxTreatment, onChange: (Tax
 private fun LabeledCheckbox(label: String, checked: Boolean, onChange: (Boolean) -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) {
     Checkbox(checked, onChange)
     Text(label, style = MaterialTheme.typography.bodySmall)
+}
+
+@Composable
+private fun OptionalInputSection(
+    title: String,
+    description: String,
+    expanded: Boolean,
+    hasValue: Boolean,
+    onToggle: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f)),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("$title (선택)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                    if (hasValue) Text("입력됨", color = AppCobalt, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                }
+                Text(description, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, if (expanded) "접기" else "펼치기", tint = AppCobalt)
+        }
+    }
+}
+
+@Composable
+private fun RegistrationStatus(property: PropertyEntity) {
+    val (complete, message) = when {
+        property.redevelopmentHistory -> {
+            val entered = listOf(
+                property.managementDispositionApprovalDate != null,
+                property.demolitionDate != null,
+                property.redevelopmentCompletionDate != null,
+                property.additionalContribution > 0L,
+                property.actualAcquisitionTax != null,
+            ).count { it }
+            (entered == 5) to if (entered == 5) {
+                "재개발 주요 정보 입력 완료"
+            } else {
+                "기본 등록 완료 · 재개발 자료는 나중에 보완 가능 ($entered/5)"
+            }
+        }
+        property.spouseOwnershipRatio > 0 && (property.ownerBirthDate == null || property.spouseBirthDate == null) ->
+            false to "기본 등록 완료 · 생년월일을 추가하면 공동명의 세금 비교가 정확해져요"
+        property.officialAssessedValue == null ->
+            false to "기본 등록 완료 · 공시가격을 추가하면 보유세도 계산할 수 있어요"
+        property.regulatedAreaAtAcquisition == null ->
+            false to "기본 등록 완료 · 취득 당시 조정대상지역 여부는 나중에 확인해도 돼요"
+        else -> true to "주요 정보 입력 완료"
+    }
+    Surface(
+        color = (if (complete) AppGreen else AppCobalt).copy(alpha = .08f),
+        shape = RoundedCornerShape(11.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 11.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (complete) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
+                null,
+                tint = if (complete) AppGreen else AppCobalt,
+                modifier = Modifier.size(17.dp),
+            )
+            Text(message, Modifier.padding(start = 7.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 private fun parseDate(value: String): LocalDate? = runCatching { LocalDate.parse(value) }.getOrNull()
@@ -643,5 +957,8 @@ private fun PropertyEntity.screenDraft() = PropertyDraft(
     runCatching { AcquisitionSurchargeRelief.valueOf(acquisitionSurchargeRelief) }.getOrDefault(AcquisitionSurchargeRelief.NONE),
     previousHomeDispositionDate?.let(LocalDate::parse), residenceRequirementExempt,
     jointComprehensiveTaxSpecialRequested, jointSpecialTaxpayer?.let { runCatching { OwnerRole.valueOf(it) }.getOrNull() },
+    redevelopmentHistory, managementDispositionApprovalDate?.let(LocalDate::parse),
+    demolitionDate?.let(LocalDate::parse), redevelopmentCompletionDate?.let(LocalDate::parse),
+    additionalContribution, settlementRefund, redevelopmentNecessaryExpenses,
 )
 private fun Modifier.horizontalSwipe(onSwipeLeft: () -> Unit, onSwipeRight: () -> Unit): Modifier = pointerInput(Unit) { awaitPointerEventScope { while (true) { val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial); var dx = 0f; var dy = 0f; while (true) { val event = awaitPointerEvent(PointerEventPass.Initial); val change = event.changes.firstOrNull { it.id == down.id } ?: break; if (!change.pressed) { if (abs(dx) > 100f && abs(dx) > abs(dy) * 1.2f) { if (dx < 0) onSwipeLeft() else onSwipeRight() }; break }; val delta = change.positionChange(); dx += delta.x; dy += delta.y } } } }

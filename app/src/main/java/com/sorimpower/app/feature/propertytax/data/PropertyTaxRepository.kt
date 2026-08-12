@@ -1,6 +1,7 @@
 package com.sorimpower.app.feature.propertytax.data
 
 import android.content.Context
+import com.sorimpower.app.core.ai.AiModelId
 import com.sorimpower.app.feature.propertytax.domain.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -15,12 +16,14 @@ class PropertyTaxRepository(context: Context) {
     private val dao = PropertyTaxDatabase.get(context).dao()
     private val engine = PropertyTaxEngine()
     private val analyzer = OpenAiPropertyTaxAnalyzer(context)
+    private val planAnalyzer = OpenAiPropertyTaxPlanAnalyzer(context)
     val properties = dao.observeProperties()
     val simulations = dao.observeSimulations()
     val revisions = dao.observeRevisions()
     val activeRule = dao.observeActiveRule()
     val scenarios = dao.observeScenarios()
     val scenarioTransactions = dao.observeScenarioTransactions()
+    val latestPlan = dao.observeLatestTaxPlan()
 
     suspend fun initialize() = withContext(Dispatchers.IO) {
         val rule = KoreanPropertyTaxRules2026.version
@@ -166,6 +169,30 @@ class PropertyTaxRepository(context: Context) {
         analysis
     }
 
+    suspend fun analyzePlan(input: String): PropertyTaxPlanAnalysis = withContext(Dispatchers.IO) {
+        val cleanInput = input.trim()
+        require(cleanInput.length >= 20) { "현재 상황과 매도계획을 조금 더 자세히 적어주세요." }
+        val previous = dao.latestTaxPlan()?.let { runCatching { planAnalyzer.parseStored(it.resultJson) }.getOrNull() }
+        val analysis = planAnalyzer.analyze(cleanInput, previous)
+        val now = System.currentTimeMillis()
+        dao.insertTaxPlan(
+            PropertyTaxAiPlanEntity(
+                id = UUID.randomUUID().toString(),
+                inputText = cleanInput,
+                resultJson = planAnalyzer.toJson(analysis).toString(),
+                model = AiModelId.OPENAI_DEEP.apiModelName,
+                checkedAt = analysis.checkedAt,
+                createdAt = now,
+            ),
+        )
+        analysis
+    }
+
+    suspend fun clearPlans() = withContext(Dispatchers.IO) { dao.deleteTaxPlans() }
+
+    fun parsePlan(entity: PropertyTaxAiPlanEntity?): PropertyTaxPlanAnalysis? =
+        entity?.let { runCatching { planAnalyzer.parseStored(it.resultJson) }.getOrNull() }
+
     private fun TaxCalculation<SaleTaxResult>.totalTaxJson() = JSONObject().put("totalEstimatedTax", result.totalEstimatedTax).put("ruleVersion", ruleVersion.id).put("traces", JSONArray(traces.map { JSONObject().put("label", it.label).put("amount", it.amount).put("operation", it.operation) })).toString()
     private fun simulationResultJson(value: SaleSimulationEntity) = JSONObject().put("simulationId", value.id).put("saleDate", value.expectedSaleDate).put("salePrice", value.expectedSalePrice).put("regulatedAreaAtSale", value.regulatedAreaAtSale).put("saleContractDate", value.saleContractDate).put("depositReceived", value.depositReceived).put("landTransactionPermitRequired", value.landTransactionPermitRequired).put("landTransactionPermitApplicationDate", value.landTransactionPermitApplicationDate).put("landTransactionPermitApproved", value.landTransactionPermitApproved).put("extendedSurchargeGraceRegion", value.extendedSurchargeGraceRegion).put("completedHomeMoveInDate", value.completedHomeMoveInDate).put("completedHomeResidenceEndDate", value.completedHomeResidenceEndDate).put("ownerBasicDeductionUsed", value.ownerBasicDeductionUsed).put("spouseBasicDeductionUsed", value.spouseBasicDeductionUsed).put("capitalGain", value.capitalGain).put("longTermDeduction", value.longTermDeduction).put("taxBase", value.taxBase).put("nationalTax", value.nationalCapitalGainsTax).put("localTax", value.localIncomeTax).put("totalEstimatedTax", value.totalEstimatedTax).put("ruleVersion", value.taxRuleVersionId).put("missingInputs", JSONArray(value.missingInputsJson)).put("appliedRules", JSONArray(value.appliedRulesJson)).put("trace", JSONArray(value.calculationTraceJson)).toString()
     private fun jsonArray(values: List<String>) = JSONArray(values).toString()
@@ -210,6 +237,13 @@ data class PropertyDraft(
     val residenceRequirementExempt: Boolean = false,
     val jointComprehensiveTaxSpecialRequested: Boolean = false,
     val jointSpecialTaxpayer: OwnerRole? = null,
+    val redevelopmentHistory: Boolean = false,
+    val managementDispositionApprovalDate: LocalDate? = null,
+    val demolitionDate: LocalDate? = null,
+    val redevelopmentCompletionDate: LocalDate? = null,
+    val additionalContribution: Long = 0,
+    val settlementRefund: Long = 0,
+    val redevelopmentNecessaryExpenses: Long = 0,
 ) {
     fun domain() = PropertyAsset(
         id ?: "preview", name, propertyType, address, acquisitionDate, acquisitionPrice, ownershipRatio,
@@ -220,7 +254,9 @@ data class PropertyDraft(
         annualRegionalResourceTax, acquisitionRuralSpecialTax, acquisitionHouseCountTreatment,
         capitalGainsHouseCountTreatment, comprehensiveTaxTreatment, capitalGainsSurchargeTreatment,
         acquisitionSurchargeRelief, previousHomeDispositionDate, residenceRequirementExempt,
-        jointComprehensiveTaxSpecialRequested, jointSpecialTaxpayer,
+        jointComprehensiveTaxSpecialRequested, jointSpecialTaxpayer, redevelopmentHistory,
+        managementDispositionApprovalDate, demolitionDate, redevelopmentCompletionDate,
+        additionalContribution, settlementRefund, redevelopmentNecessaryExpenses,
     )
 }
 
@@ -297,7 +333,15 @@ private fun PropertyDraft.entity(now: Long) = PropertyEntity(
     previousHomeDispositionDate = previousHomeDispositionDate?.toString(),
     residenceRequirementExempt = residenceRequirementExempt,
     jointComprehensiveTaxSpecialRequested = jointComprehensiveTaxSpecialRequested,
-    jointSpecialTaxpayer = jointSpecialTaxpayer?.name, createdAt = now, updatedAt = now,
+    jointSpecialTaxpayer = jointSpecialTaxpayer?.name,
+    redevelopmentHistory = redevelopmentHistory,
+    managementDispositionApprovalDate = managementDispositionApprovalDate?.toString(),
+    demolitionDate = demolitionDate?.toString(),
+    redevelopmentCompletionDate = redevelopmentCompletionDate?.toString(),
+    additionalContribution = additionalContribution,
+    settlementRefund = settlementRefund,
+    redevelopmentNecessaryExpenses = redevelopmentNecessaryExpenses,
+    createdAt = now, updatedAt = now,
 )
 
 private fun PropertyDraft.toJson() = JSONObject()
@@ -328,6 +372,13 @@ private fun PropertyDraft.toJson() = JSONObject()
     .put("residenceRequirementExempt", residenceRequirementExempt)
     .put("jointComprehensiveTaxSpecialRequested", jointComprehensiveTaxSpecialRequested)
     .put("jointSpecialTaxpayer", jointSpecialTaxpayer?.name)
+    .put("redevelopmentHistory", redevelopmentHistory)
+    .put("managementDispositionApprovalDate", managementDispositionApprovalDate?.toString())
+    .put("demolitionDate", demolitionDate?.toString())
+    .put("redevelopmentCompletionDate", redevelopmentCompletionDate?.toString())
+    .put("additionalContribution", additionalContribution)
+    .put("settlementRefund", settlementRefund)
+    .put("redevelopmentNecessaryExpenses", redevelopmentNecessaryExpenses)
     .put("officialAssessedValue", officialAssessedValue)
     .put("currentEstimatedValue", currentEstimatedValue)
     .put("actualAcquisitionTax", actualAcquisitionTax)
@@ -380,6 +431,13 @@ private fun ScenarioTransactionEntity.domain(): ScenarioTransaction? = runCatchi
             residenceRequirementExempt = value.optBoolean("residenceRequirementExempt", false),
             jointComprehensiveTaxSpecialRequested = value.optBoolean("jointComprehensiveTaxSpecialRequested", false),
             jointSpecialTaxpayer = value.optString("jointSpecialTaxpayer").takeIf(String::isNotBlank)?.let { runCatching { OwnerRole.valueOf(it) }.getOrNull() },
+            redevelopmentHistory = value.optBoolean("redevelopmentHistory", false),
+            managementDispositionApprovalDate = value.optDate("managementDispositionApprovalDate"),
+            demolitionDate = value.optDate("demolitionDate"),
+            redevelopmentCompletionDate = value.optDate("redevelopmentCompletionDate"),
+            additionalContribution = value.optLong("additionalContribution"),
+            settlementRefund = value.optLong("settlementRefund"),
+            redevelopmentNecessaryExpenses = value.optLong("redevelopmentNecessaryExpenses"),
         )
     }
     ScenarioTransaction(id, sequence, typeValue, LocalDate.parse(transactionDate), transactionPrice, propertyId, draft)
@@ -406,4 +464,7 @@ fun PropertyEntity.domain() = PropertyAsset(
     runCatching { AcquisitionSurchargeRelief.valueOf(acquisitionSurchargeRelief) }.getOrDefault(AcquisitionSurchargeRelief.NONE),
     previousHomeDispositionDate?.let(LocalDate::parse), residenceRequirementExempt,
     jointComprehensiveTaxSpecialRequested, jointSpecialTaxpayer?.let { runCatching { OwnerRole.valueOf(it) }.getOrNull() },
+    redevelopmentHistory, managementDispositionApprovalDate?.let(LocalDate::parse),
+    demolitionDate?.let(LocalDate::parse), redevelopmentCompletionDate?.let(LocalDate::parse),
+    additionalContribution, settlementRefund, redevelopmentNecessaryExpenses,
 )

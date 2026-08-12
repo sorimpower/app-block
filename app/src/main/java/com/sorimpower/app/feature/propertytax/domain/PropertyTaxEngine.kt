@@ -11,8 +11,8 @@ import kotlin.math.roundToLong
 object KoreanPropertyTaxRules2026 {
     private const val LAW_BASE = "https://www.law.go.kr"
     val version = TaxRuleVersion(
-        id = "KR_PROPERTY_TAX_2026_08_CORRECTED",
-        name = "대한민국 개인 주택·분양권·공동명의 2026.08 교정판",
+        id = "KR_PROPERTY_TAX_2026_08_REDEVELOPMENT",
+        name = "대한민국 개인 주택·분양권·공동명의·정비사업 2026.08 교정판",
         effectiveFrom = LocalDate.of(2026, 7, 1),
         effectiveUntil = LocalDate.of(2026, 12, 31),
         sourceUpdatedAt = LocalDate.of(2026, 8, 12),
@@ -27,6 +27,7 @@ object KoreanPropertyTaxRules2026 {
             TaxSourceReference("소득세법 시행령 제156조의3", "국가법령정보센터", "$LAW_BASE/법령/소득세법시행령/제156조의3", listOf("ONE_HOME_PRESALE_SPECIAL")),
             TaxSourceReference("소득세법 시행령 제167조의10", "국가법령정보센터", "$LAW_BASE/법령/소득세법시행령/제167조의10", listOf("MULTI_HOME_SURCHARGE")),
             TaxSourceReference("종합부동산세법 제10조의2", "국가법령정보센터", "$LAW_BASE/법령/종합부동산세법/제10조의2", listOf("JOINT_ONE_HOME_SPECIAL")),
+            TaxSourceReference("소득세법 시행령 제162조 양도·취득 시기", "국가법령정보센터", "$LAW_BASE/법령/소득세법시행령/제162조", listOf("REDEVELOPMENT_ORIGINAL_MEMBER")),
         ),
     )
 }
@@ -124,6 +125,25 @@ class PropertyTaxEngine(private val ruleVersion: TaxRuleVersion = KoreanProperty
 
     /** 2026 Rule은 포트폴리오의 실제 자산 유형·법정 제외 선택을 직접 판정한다. */
     fun acquisition(property: PropertyAsset, portfolioBeforeAcquisition: List<PropertyAsset>): TaxCalculation<AcquisitionTaxResult> {
+        if (property.redevelopmentHistory) {
+            val actual = property.actualAcquisitionTax?.coerceAtLeast(0L)
+            return TaxCalculation(
+                result = AcquisitionTaxResult(0, 0, 0, actual ?: 0L, 0.0),
+                rules = listOf(
+                    AppliedTaxRule(
+                        "REDEVELOPMENT_ACQUISITION_REVIEW",
+                        true,
+                        "재개발 신축주택의 취득세는 종전 토지·건축물, 증가 면적, 청산금과 감면 자료가 필요해 일반 주택 매수가로 재계산하지 않았습니다.",
+                        ruleVersion.sources[0].url,
+                    ),
+                ),
+                traces = listOf(CalculationTrace("신축 주택 취득세 실제 납부액", actual ?: 0L, if (actual == null) "미입력" else "고지서 입력")),
+                missingInputs = if (actual == null) listOf("재개발 신축주택 취득세는 실제 고지서 납부액을 입력해야 합니다.") else listOf("입력한 실제 취득세의 세목별 구성과 감면 적정성은 별도 확인이 필요합니다."),
+                confidence = CalculationConfidence.NEEDS_REVIEW,
+                ruleVersion = ruleVersion,
+                calculationAvailable = actual != null,
+            )
+        }
         if (!supports(property.acquisitionDate)) return unavailableAcquisition(property.acquisitionDate)
         if (property.propertyType == PropertyType.PRESALE_RIGHT || property.propertyType == PropertyType.ASSOCIATION_RIGHT) {
             return TaxCalculation(
@@ -384,9 +404,13 @@ class PropertyTaxEngine(private val ruleVersion: TaxRuleVersion = KoreanProperty
         val missing = mutableListOf<String>()
         val shares = ownerShares(property)
         val householdRatio = shares.sumOf(OwnerShare::ratio).coerceAtMost(1.0)
-        val acquisition = (property.acquisitionPrice * householdRatio).roundToLong()
+        val redevelopmentBasis = if (property.redevelopmentHistory) {
+            max(0L, property.acquisitionPrice + property.additionalContribution - property.settlementRefund)
+        } else property.acquisitionPrice
+        val acquisition = (redevelopmentBasis * householdRatio).roundToLong()
         val sale = (input.expectedSalePrice * householdRatio).roundToLong()
-        val expenses = ((property.brokerageFee + property.legalFee + property.renovationCost + property.otherNecessaryExpenses + input.additionalNecessaryExpenses) * householdRatio).roundToLong()
+        val expenses = (((property.actualAcquisitionTax ?: 0L) + property.brokerageFee + property.legalFee + property.renovationCost +
+            property.otherNecessaryExpenses + property.redevelopmentNecessaryExpenses + input.additionalNecessaryExpenses) * householdRatio).roundToLong()
         val gain = max(0L, sale - acquisition - expenses)
         val holdingYears = fullYears(property.acquisitionDate, input.expectedSaleDate)
         val assets = input.portfolioAssets.ifEmpty { listOf(property) }.filter { it.status == PropertyStatus.OWNED && it.acquisitionDate <= input.expectedSaleDate }
@@ -475,6 +499,17 @@ class PropertyTaxEngine(private val ruleVersion: TaxRuleVersion = KoreanProperty
         val local = (national * .10).roundToLong()
         if (rights.isNotEmpty() && !presaleSpecial) missing += "분양권이 주택 수에 포함되며 1주택+1분양권 비과세 특례의 양도 또는 완공 후 입주·계속 거주 요건을 충족하지 못했습니다."
         if (property.regulatedAreaAtAcquisition == null) missing += "취득 당시 조정대상지역 여부를 입력해야 1세대 1주택 거주요건을 판정할 수 있습니다."
+        if (property.redevelopmentHistory) {
+            missing += "재개발 양도 취득원가의 추가분담금·청산금 안분은 관리처분계획과 조합 정산서 원본을 기준으로 최종 세무 검증이 필요합니다."
+            if (property.managementDispositionApprovalDate == null) missing += "재개발 관리처분계획 인가일이 없어 기존 주택에서 조합원입주권으로 전환된 시점을 검증하지 못했습니다."
+            if (property.demolitionDate == null) missing += "기존 주택 철거·멸실일이 없어 주택과 조합원입주권의 기간 구분을 검증하지 못했습니다."
+            if (property.redevelopmentCompletionDate == null) missing += "신축 주택 사용승인·준공일이 없어 신축주택 취득 시점과 입주 기간을 검증하지 못했습니다."
+            if (property.actualAcquisitionTax == null) missing += "신축 주택의 실제 취득세가 없어 양도세 필요경비에서 제외했습니다."
+            if (property.settlementRefund > property.acquisitionPrice + property.additionalContribution) missing += "청산금 환급액이 기존 주택 취득가와 추가분담금 합계를 초과합니다. 입력값을 확인하세요."
+            if (property.managementDispositionApprovalDate?.isBefore(property.acquisitionDate) == true) missing += "기존 주택 취득일보다 관리처분계획 인가일이 빠릅니다. 원조합원이 아니라 승계 조합원입주권 취득인지 확인하세요."
+            if (property.demolitionDate?.isBefore(property.acquisitionDate) == true) missing += "기존 주택 취득일보다 철거·멸실일이 빠릅니다. 자산 유형과 취득일을 확인하세요."
+            if (property.demolitionDate != null && property.redevelopmentCompletionDate?.isBefore(property.demolitionDate) == true) missing += "신축 주택 준공일이 철거·멸실일보다 빠릅니다. 날짜를 확인하세요."
+        }
         if (residenceRequirementApplies && property.residenceStartDate == null) missing += "실거주 시작일이 없어 조정대상지역 취득 주택의 2년 거주요건을 충족하지 못한 것으로 계산했습니다."
         if (!residenceRequirementApplies && property.residenceStartDate == null && oneHomeCandidate && input.expectedSalePrice > 1_200_000_000L) missing += "실거주기간을 입력하면 고가 1주택 장기보유특별공제율이 달라질 수 있습니다."
         if (expenses == 0L) missing += "증빙 가능한 필요경비가 입력되지 않았습니다."
@@ -487,12 +522,15 @@ class PropertyTaxEngine(private val ruleVersion: TaxRuleVersion = KoreanProperty
                 AppliedTaxRule("MULTI_HOME_SURCHARGE_GRACE", grace.eligible, if (grace.eligible) "계약·계약금·허가 및 법정 양도기한을 검증해 2026년 중과 유예를 적용했습니다." else "다주택 중과 유예를 적용하지 않았습니다.", ruleVersion.sources[8].url),
                 AppliedTaxRule("MULTI_HOME_SURCHARGE", surchargePercent > 0, if (surchargePercent > 0) "조정대상지역 다주택 중과 +${surchargePercent}%p를 적용하고 장기보유특별공제를 배제했습니다." else "다주택 중과를 적용하지 않았습니다.", ruleVersion.sources[8].url),
                 AppliedTaxRule("LONG_TERM_DEDUCTION", deductionRate > 0, if (oneHomeExemption) "정확한 보유·거주기간으로 1세대 1주택 공제율을 계산했습니다." else "정확한 보유기간으로 일반 장기보유특별공제를 계산했습니다.", ruleVersion.sources[5].url),
+                AppliedTaxRule("REDEVELOPMENT_ORIGINAL_MEMBER", property.redevelopmentHistory, if (property.redevelopmentHistory) "기존 주택 취득가에 추가분담금을 더하고 청산금 환급액을 차감해 양도세 취득원가를 구성했습니다. 관리처분·멸실·준공일의 법적 효과는 AI 공식 법령 검증 대상으로 남겼습니다." else "재개발 승계 이력이 없는 일반 주택입니다.", ruleVersion.sources[10].url),
             ),
             listOf(
                 CalculationTrace("세대 주택·분양권 수", houseCount.toLong()),
                 CalculationTrace("정확한 보유연수", holdingYears.toLong()),
                 CalculationTrace("부부 지분 반영 양도가", sale),
                 CalculationTrace("부부 지분 반영 취득가", acquisition, "차감"),
+                CalculationTrace("재개발 추가분담금", if (property.redevelopmentHistory) (property.additionalContribution * householdRatio).roundToLong() else 0L, "취득원가 가산"),
+                CalculationTrace("재개발 청산금 환급", if (property.redevelopmentHistory) (property.settlementRefund * householdRatio).roundToLong() else 0L, "취득원가 차감"),
                 CalculationTrace("필요경비", expenses, "차감"),
                 CalculationTrace("전체 양도차익", gain),
                 CalculationTrace("12억원 초과 과세대상 양도차익", taxableRawGain, if (oneHomeExemption) "고가주택 안분" else "비과세 미적용"),

@@ -24,6 +24,9 @@ data class PropertyTaxUiState(
     val working: Boolean = false,
     val message: String? = null,
     val aiAnalysis: PropertyTaxAiAnalysis? = null,
+    val planInput: String = "",
+    val planAnalysis: PropertyTaxPlanAnalysis? = null,
+    val planCheckedAt: Long? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -33,6 +36,7 @@ class PropertyTaxViewModel(application: Application) : AndroidViewModel(applicat
     private val message = MutableStateFlow<String?>(null)
     private val analysis = MutableStateFlow<PropertyTaxAiAnalysis?>(null)
     private val taxYear = MutableStateFlow(LocalDate.now().year)
+    private val plan = repository.latestPlan.map { entity -> entity to repository.parsePlan(entity) }
     private val calculations = combine(repository.properties, taxYear) { values, year ->
         val owned = values.filter { it.status == PropertyStatus.OWNED.name }
         val holding = repository.dashboard(values, year)
@@ -45,16 +49,20 @@ class PropertyTaxViewModel(application: Application) : AndroidViewModel(applicat
         Triple(scenarios, transactions, repository.evaluateScenarios(properties, scenarios, transactions, year))
     }
     @Suppress("UNCHECKED_CAST")
-    val state = combine(repository.properties, repository.simulations, repository.revisions, repository.activeRule, calculations, scenarioCalculations, taxYear, working, message, analysis) { values ->
+    val state = combine(repository.properties, repository.simulations, repository.revisions, repository.activeRule, calculations, scenarioCalculations, taxYear, working, message, analysis, plan) { values ->
         @Suppress("UNCHECKED_CAST")
         val calculationsValue = values[4] as Pair<TaxCalculation<HoldingTaxResult>, Map<String, TaxCalculation<AcquisitionTaxResult>>>
         @Suppress("UNCHECKED_CAST")
         val scenarioValue = values[5] as Triple<List<PropertyTaxScenarioEntity>, List<ScenarioTransactionEntity>, Map<String, PortfolioImpactResult>>
+        @Suppress("UNCHECKED_CAST")
+        val planValue = values[10] as Pair<PropertyTaxAiPlanEntity?, PropertyTaxPlanAnalysis?>
         PropertyTaxUiState(
             properties = values[0] as List<PropertyEntity>, simulations = values[1] as List<SaleSimulationEntity>, revisions = values[2] as List<SimulationRevisionEntity>,
             scenarios = scenarioValue.first, scenarioTransactions = scenarioValue.second, scenarioImpacts = scenarioValue.third,
             taxYear = values[6] as Int, activeRule = values[3] as TaxRuleVersionEntity?, holding = calculationsValue.first, acquisitionTaxes = calculationsValue.second,
             working = values[7] as Boolean, message = values[8] as String?, aiAnalysis = values[9] as PropertyTaxAiAnalysis?,
+            planInput = planValue.first?.inputText.orEmpty(), planAnalysis = planValue.second,
+            planCheckedAt = planValue.first?.checkedAt,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PropertyTaxUiState())
 
@@ -70,6 +78,8 @@ class PropertyTaxViewModel(application: Application) : AndroidViewModel(applicat
     fun setTaxYear(year: Int) { taxYear.value = year.coerceIn(2000, LocalDate.now().year + 20) }
     fun recalculate(id: String) = work("최신 활성 세법 버전으로 재계산했습니다. 기존 결과는 Revision에 보존됩니다.") { repository.recalculate(id) }
     fun analyze(id: String) = work { analysis.value = repository.analyze(id) }
+    fun analyzePlan(input: String) = work { repository.analyzePlan(input) }
+    fun clearPlan() = work("AI 계획 분석을 삭제했습니다.") { repository.clearPlans() }
     fun dismissAnalysis() { analysis.value = null }
     fun clearMessage() { message.value = null }
     private fun work(success: String? = null, block: suspend () -> Unit) {
@@ -96,4 +106,7 @@ private fun PropertyEntity.draft() = PropertyDraft(
     runCatching { AcquisitionSurchargeRelief.valueOf(acquisitionSurchargeRelief) }.getOrDefault(AcquisitionSurchargeRelief.NONE),
     previousHomeDispositionDate?.let(LocalDate::parse), residenceRequirementExempt,
     jointComprehensiveTaxSpecialRequested, jointSpecialTaxpayer?.let { runCatching { OwnerRole.valueOf(it) }.getOrNull() },
+    redevelopmentHistory, managementDispositionApprovalDate?.let(LocalDate::parse),
+    demolitionDate?.let(LocalDate::parse), redevelopmentCompletionDate?.let(LocalDate::parse),
+    additionalContribution, settlementRefund, redevelopmentNecessaryExpenses,
 )

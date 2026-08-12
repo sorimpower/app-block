@@ -45,6 +45,13 @@ data class PropertyEntity(
     val residenceRequirementExempt: Boolean,
     val jointComprehensiveTaxSpecialRequested: Boolean,
     val jointSpecialTaxpayer: String?,
+    val redevelopmentHistory: Boolean,
+    val managementDispositionApprovalDate: String?,
+    val demolitionDate: String?,
+    val redevelopmentCompletionDate: String?,
+    val additionalContribution: Long,
+    val settlementRefund: Long,
+    val redevelopmentNecessaryExpenses: Long,
     val createdAt: Long,
     val updatedAt: Long,
 )
@@ -101,6 +108,16 @@ data class ScenarioTransactionEntity(@PrimaryKey val id: String, val scenarioId:
 @Entity(tableName = "property_tax_ai_cache", indices = [Index("simulationId")])
 data class PropertyTaxAiCacheEntity(@PrimaryKey val cacheKey: String, val simulationId: String, val model: String, val promptVersion: String, val resultJson: String, val createdAt: Long)
 
+@Entity(tableName = "property_tax_ai_plans", indices = [Index("createdAt")])
+data class PropertyTaxAiPlanEntity(
+    @PrimaryKey val id: String,
+    val inputText: String,
+    val resultJson: String,
+    val model: String,
+    val checkedAt: Long?,
+    val createdAt: Long,
+)
+
 @Dao
 interface PropertyTaxDao {
     @Query("SELECT * FROM property_tax_properties ORDER BY status, acquisitionDate") fun observeProperties(): Flow<List<PropertyEntity>>
@@ -114,11 +131,14 @@ interface PropertyTaxDao {
     @Query("SELECT * FROM property_tax_simulations WHERE id=:id LIMIT 1") suspend fun simulation(id: String): SaleSimulationEntity?
     @Query("SELECT * FROM property_tax_simulation_revisions WHERE simulationId=:simulationId ORDER BY calculatedAt DESC LIMIT 1") suspend fun latestRevision(simulationId: String): SimulationRevisionEntity?
     @Query("SELECT * FROM property_tax_ai_cache WHERE simulationId=:simulationId AND promptVersion=:promptVersion ORDER BY createdAt DESC LIMIT 1") suspend fun latestTaxAnalysis(simulationId: String, promptVersion: String): PropertyTaxAiCacheEntity?
+    @Query("SELECT * FROM property_tax_ai_plans ORDER BY createdAt DESC LIMIT 1") fun observeLatestTaxPlan(): Flow<PropertyTaxAiPlanEntity?>
+    @Query("SELECT * FROM property_tax_ai_plans ORDER BY createdAt DESC LIMIT 1") suspend fun latestTaxPlan(): PropertyTaxAiPlanEntity?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertProperty(value: PropertyEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertSimulation(value: SaleSimulationEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertRevision(value: SimulationRevisionEntity)
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertRule(value: TaxRuleVersionEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertTaxAnalysis(value: PropertyTaxAiCacheEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertTaxPlan(value: PropertyTaxAiPlanEntity)
     @Query("UPDATE property_tax_rule_versions SET status='ARCHIVED' WHERE id != :activeId") suspend fun archiveRulesExcept(activeId: String)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertScenario(value: PropertyTaxScenarioEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertScenarioTransaction(value: ScenarioTransactionEntity)
@@ -127,11 +147,12 @@ interface PropertyTaxDao {
     @Query("DELETE FROM property_tax_simulations WHERE id=:id") suspend fun deleteSimulation(id: String)
     @Query("DELETE FROM property_tax_scenario_transactions WHERE scenarioId=:scenarioId") suspend fun deleteScenarioTransactions(scenarioId: String)
     @Query("DELETE FROM property_tax_scenarios WHERE id=:scenarioId") suspend fun deleteScenarioOnly(scenarioId: String)
+    @Query("DELETE FROM property_tax_ai_plans") suspend fun deleteTaxPlans()
 }
 
 @Database(
-    entities = [PropertyEntity::class, TaxRuleVersionEntity::class, SaleSimulationEntity::class, SimulationRevisionEntity::class, PropertyTaxScenarioEntity::class, ScenarioTransactionEntity::class, PropertyTaxAiCacheEntity::class],
-    version = 3,
+    entities = [PropertyEntity::class, TaxRuleVersionEntity::class, SaleSimulationEntity::class, SimulationRevisionEntity::class, PropertyTaxScenarioEntity::class, ScenarioTransactionEntity::class, PropertyTaxAiCacheEntity::class, PropertyTaxAiPlanEntity::class],
+    version = 5,
     exportSchema = false,
 )
 abstract class PropertyTaxDatabase : RoomDatabase() {
@@ -139,7 +160,7 @@ abstract class PropertyTaxDatabase : RoomDatabase() {
     companion object {
         @Volatile private var instance: PropertyTaxDatabase? = null
         fun get(context: Context) = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, PropertyTaxDatabase::class.java, "property_tax.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+            instance ?: Room.databaseBuilder(context.applicationContext, PropertyTaxDatabase::class.java, "property_tax.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
         }
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -181,6 +202,23 @@ abstract class PropertyTaxDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE property_tax_simulations ADD COLUMN completedHomeResidenceEndDate TEXT")
                 db.execSQL("ALTER TABLE property_tax_simulations ADD COLUMN ownerBasicDeductionUsed INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE property_tax_simulations ADD COLUMN spouseBasicDeductionUsed INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE property_tax_properties ADD COLUMN redevelopmentHistory INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE property_tax_properties ADD COLUMN managementDispositionApprovalDate TEXT")
+                db.execSQL("ALTER TABLE property_tax_properties ADD COLUMN demolitionDate TEXT")
+                db.execSQL("ALTER TABLE property_tax_properties ADD COLUMN redevelopmentCompletionDate TEXT")
+                db.execSQL("ALTER TABLE property_tax_properties ADD COLUMN additionalContribution INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE property_tax_properties ADD COLUMN settlementRefund INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE property_tax_properties ADD COLUMN redevelopmentNecessaryExpenses INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS property_tax_ai_plans (id TEXT NOT NULL, inputText TEXT NOT NULL, resultJson TEXT NOT NULL, model TEXT NOT NULL, checkedAt INTEGER, createdAt INTEGER NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_property_tax_ai_plans_createdAt ON property_tax_ai_plans(createdAt)")
             }
         }
     }

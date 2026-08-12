@@ -196,15 +196,6 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel, onSwipeEd
                     )
                 }
             }
-
-            item {
-                Text(
-                    "이 목록은 간편 확인용입니다. 입찰 전 매각기일과 사건 상태를 법원 경매정보에서 다시 확인하세요.",
-                    Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
         }
     }
