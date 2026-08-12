@@ -202,7 +202,7 @@ internal fun SorimPowerApp(
                 title = {
                     Column {
                         Text(when (screen) {
-                            Screen.HOME -> "소림파워 전용"
+                            Screen.HOME -> "소림파워 비서"
                             Screen.BLOCKER -> "앱 차단"
                             Screen.BODY_LOG -> "건강 기록"
                             Screen.AUCTION -> "부동산 경매"
@@ -511,7 +511,7 @@ private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
                     }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text("앱 정보", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                        Text("소림파워 v0.7.5", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
+                        Text("소림파워 v0.7.7", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
                         Text("집중을 위한 개인용 시스템", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }

@@ -57,29 +57,11 @@ internal fun HomeScreen(
     ) {
         item {
             FeatureCard(
-                title = "부동산 세금",
-                description = "보유 자산의 취득·보유·양도세와 거래 시나리오 계산",
-                icon = Icons.Rounded.AccountBalance,
-                accent = AppCobalt,
-                onClick = openPropertyTax,
-            )
-        }
-        item {
-            FeatureCard(
                 title = "AI 챙김",
                 description = "문자에서 기한, 예약, 쿠폰과 중요한 안내를 확인",
                 icon = Icons.Rounded.NotificationsNone,
                 accent = AppCobalt,
                 onClick = openPhoneInsight,
-            )
-        }
-        item {
-            FeatureCard(
-                title = "앱 차단",
-                description = if (state.enabled) "집중 모드 실행 중" else "방해되는 앱을 조건에 맞게 차단",
-                icon = Icons.Rounded.Lock,
-                accent = AppCobalt,
-                onClick = openBlocker,
             )
         }
         item {
@@ -95,10 +77,27 @@ internal fun HomeScreen(
             FeatureCard(
                 title = "부동산 경매",
                 description = "서울·감정가 10억 이상 진행 중 아파트",
-                badge = "NEW",
                 icon = Icons.Rounded.Gavel,
                 accent = AppGreen,
                 onClick = openAuction,
+            )
+        }
+        item {
+            FeatureCard(
+                title = "부동산 세금",
+                description = "보유 자산의 취득·보유·양도세와 거래 시나리오 계산",
+                icon = Icons.Rounded.AccountBalance,
+                accent = AppCobalt,
+                onClick = openPropertyTax,
+            )
+        }
+        item {
+            FeatureCard(
+                title = "앱 차단",
+                description = if (state.enabled) "집중 모드 실행 중" else "방해되는 앱을 조건에 맞게 차단",
+                icon = Icons.Rounded.Lock,
+                accent = AppCobalt,
+                onClick = openBlocker,
             )
         }
         if (!serviceEnabled) {

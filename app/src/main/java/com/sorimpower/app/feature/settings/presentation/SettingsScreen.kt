@@ -163,13 +163,11 @@ internal fun SettingsScreen(
                 Column(Modifier.padding(18.dp)) {
                     SectionTitle("시작 화면", "앱을 열었을 때 먼저 표시할 기능")
                     Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DestinationCard(Icons.Rounded.Home, "홈", "전체 기능을 한눈에 보기", state.startDestination == StartDestination.HOME) { viewModel.setStartDestination(StartDestination.HOME) }
-                        DestinationCard(Icons.Rounded.NotificationsNone, "챙김", "AI가 찾은 일정과 할 일로 바로 시작", state.startDestination == StartDestination.PHONE_INSIGHT) { viewModel.setStartDestination(StartDestination.PHONE_INSIGHT) }
-                        DestinationCard(Icons.Rounded.Block, "앱 차단", "차단 설정으로 바로 시작", state.startDestination == StartDestination.APP_BLOCKER) { viewModel.setStartDestination(StartDestination.APP_BLOCKER) }
+                        DestinationCard(Icons.Rounded.NotificationsNone, "AI 챙김", "AI가 찾은 일정과 할 일로 바로 시작", state.startDestination == StartDestination.PHONE_INSIGHT) { viewModel.setStartDestination(StartDestination.PHONE_INSIGHT) }
                         DestinationCard(Icons.Rounded.FavoriteBorder, "건강 기록", "체중과 식사 기록으로 바로 시작", state.startDestination == StartDestination.BODY_LOG) { viewModel.setStartDestination(StartDestination.BODY_LOG) }
                         DestinationCard(Icons.Rounded.Gavel, "부동산 경매", "관심 조건 경매 목록으로 바로 시작", state.startDestination == StartDestination.REAL_ESTATE_AUCTION) { viewModel.setStartDestination(StartDestination.REAL_ESTATE_AUCTION) }
                         DestinationCard(Icons.Rounded.AccountBalance, "부동산 세금", "세금 포트폴리오로 바로 시작", state.startDestination == StartDestination.PROPERTY_TAX) { viewModel.setStartDestination(StartDestination.PROPERTY_TAX) }
-                        DestinationCard(Icons.Rounded.MoreHoriz, "더보기", "추가 메뉴와 설정 화면으로 바로 시작", state.startDestination == StartDestination.MORE) { viewModel.setStartDestination(StartDestination.MORE) }
+                        DestinationCard(Icons.Rounded.Block, "앱 차단", "차단 설정으로 바로 시작", state.startDestination == StartDestination.APP_BLOCKER) { viewModel.setStartDestination(StartDestination.APP_BLOCKER) }
                     }
                 }
             }
