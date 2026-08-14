@@ -167,7 +167,7 @@ private object AuctionAiRecommendationNotifier {
         manager.notify(
             NOTIFICATION_ID,
             NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setSmallIcon(com.sorimpower.app.R.drawable.ic_notification_najalal)
                 .setContentTitle(title)
                 .setContentText(lines.first())
                 .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n") + "\n입찰 전 등기와 법원 원문을 확인하세요."))

@@ -50,5 +50,9 @@ internal class InsightSourceCollector(private val context:Context){
 
     private fun hasPermission(value:String)=ContextCompat.checkSelfPermission(context,value)==PackageManager.PERMISSION_GRANTED
     private fun hasFolderAccess(values:Set<String>):Boolean{if(values.isEmpty())return false;val granted=context.contentResolver.persistedUriPermissions.filter{it.isReadPermission}.map{it.uri.toString()}.toSet();return values.all{it in granted}}
-    private fun resolveContact(sender:String,names:Map<String,String>):String{val normalized=sender.filter(Char::isDigit).takeLast(10);return names[normalized]?:names.entries.firstOrNull{it.key.endsWith(normalized)||normalized.endsWith(it.key)}?.value?:sender}
+    /** Only resolve a full mobile number. Short codes and alphanumeric sender IDs must stay untouched. */
+    private fun resolveContact(sender:String,names:Map<String,String>):String{
+        val normalized=sender.filter(Char::isDigit).takeLast(10)
+        return if(normalized.length==10) names[normalized]?:sender else sender
+    }
 }

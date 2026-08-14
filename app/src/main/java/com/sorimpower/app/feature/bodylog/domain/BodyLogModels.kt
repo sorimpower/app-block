@@ -5,6 +5,8 @@ import com.sorimpower.app.feature.bodylog.data.MealQuickTemplate
 import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
 import com.sorimpower.app.feature.bodylog.data.WeightGoalEntity
 import com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity
+import com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity
+import com.sorimpower.app.feature.bodylog.data.MealCalorieEstimateEntity
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -26,6 +28,8 @@ data class BodyLogState(
     val mounjaroInjections: List<MounjaroInjectionEntity> = emptyList(),
     val weightsHidden: Boolean = false,
     val quickMealTemplates: List<MealQuickTemplate> = emptyList(),
+    val dailyCalories: List<DailyCalorieSummaryEntity> = emptyList(),
+    val mealCalories: List<MealCalorieEstimateEntity> = emptyList(),
     val loaded: Boolean = false,
 ) {
     val latestWeight get() = weights.maxByOrNull(WeightEntryEntity::measuredAt)

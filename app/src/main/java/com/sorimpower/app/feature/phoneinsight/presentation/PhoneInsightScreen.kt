@@ -7,6 +7,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
@@ -32,6 +33,7 @@ import com.sorimpower.app.feature.phoneinsight.data.*
 import com.sorimpower.app.feature.phoneinsight.domain.*
 import java.time.*
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.launch
 
 private enum class InsightTab(val label:String){HOME("챙길 항목"),SOURCES("분석 데이터")}
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,33 +90,40 @@ private fun InsightHome(values: List<PhoneInsightEntity>, sms: InsightSourceConf
 
 private fun Modifier.horizontalSwipe(onSwipeLeft:()->Unit,onSwipeRight:()->Unit):Modifier=pointerInput(Unit){awaitPointerEventScope{while(true){val down=awaitFirstDown(requireUnconsumed=false,pass=PointerEventPass.Initial);var dx=0f;var dy=0f;while(true){val event=awaitPointerEvent(PointerEventPass.Initial);val change=event.changes.firstOrNull{it.id==down.id}?:break;if(!change.pressed){if(abs(dx)>100f&&abs(dx)>abs(dy)*1.2f){if(dx<0)onSwipeLeft() else onSwipeRight()};break};val delta=change.positionChange();dx+=delta.x;dy+=delta.y}}}}
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InsightItemCard(value:PhoneInsightEntity,onStatus:(String,InsightStatus)->Unit){
     val dayLabel=PhoneInsightVisibility.dayLabel(value)?:"기한 없음";val days=PhoneInsightVisibility.daysUntil(value);val isToday=days==0L;val isImminent=days!=null&&days in 1L..2L;val isImportant=value.importance==InsightImportance.HIGH;val accent=when{isToday->MaterialTheme.colorScheme.error;isImminent||isImportant->AppOrange;else->AppCobalt};val emphasisLabel=when{isToday->"가장 먼저";isImminent->"임박";isImportant->"중요";value.status==InsightStatus.REVIEW->"확인 필요";else->null}
-    val typeLabel=value.type.label;val sourceLabel=value.sourceType.label
+    val sourceLabel=value.sourceType.label
+    val sourceTooltipState=rememberTooltipState()
+    val scope=rememberCoroutineScope()
     Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface),border=BorderStroke(1.dp,accent.copy(alpha=if(emphasisLabel!=null).5f else .2f)),elevation=CardDefaults.cardElevation(defaultElevation=if(emphasisLabel!=null)3.dp else 1.dp),shape=RoundedCornerShape(20.dp)){
         Column(Modifier.padding(horizontal=16.dp,vertical=15.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)){
                 Surface(color=accent,shape=RoundedCornerShape(50)){Text(dayLabel,Modifier.padding(horizontal=10.dp,vertical=5.dp),color=Color.White,fontWeight=FontWeight.Black,style=MaterialTheme.typography.labelMedium)}
-                Text(typeLabel,color=MaterialTheme.colorScheme.onSurfaceVariant,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelMedium)
-                Spacer(Modifier.weight(1f))
                 emphasisLabel?.let{Surface(color=accent.copy(alpha=.14f),shape=RoundedCornerShape(50)){Text(it,Modifier.padding(horizontal=9.dp,vertical=5.dp),color=accent,fontWeight=FontWeight.Black,style=MaterialTheme.typography.labelMedium)}}
-            }
-            Text(value.title,fontWeight=FontWeight.Black,style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onSurface)
-            if(value.description.isNotBlank())Text(value.description,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            value.dueAt?.let{
-                Surface(color=accent.copy(alpha=.08f),shape=RoundedCornerShape(12.dp)){
-                    Row(Modifier.fillMaxWidth().padding(horizontal=11.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                        Icon(Icons.Rounded.Schedule,contentDescription=null,tint=accent,modifier=Modifier.size(18.dp))
-                        Text(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("M월 d일 HH:mm 알림")),color=accent,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.weight(1f))
+                value.dueAt?.let{
+                    Surface(color=accent.copy(alpha=.08f),shape=RoundedCornerShape(12.dp)){
+                        Row(Modifier.padding(horizontal=8.dp,vertical=5.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)){
+                            Icon(Icons.Rounded.Schedule,contentDescription=null,tint=accent,modifier=Modifier.size(15.dp))
+                            Text(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("M월 d일 HH:mm · 30분 전 알림")),color=accent,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }
-            Text(sourceDisplayLabel(sourceLabel,value.senderOrApp),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            TooltipBox(
+                positionProvider=TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                tooltip={PlainTooltip{Text(sourceDisplayLabel(sourceLabel,value.senderOrApp))}},
+                state=sourceTooltipState,
+            ){
+                Text(value.title,Modifier.clickable{scope.launch{sourceTooltipState.show()}},fontWeight=FontWeight.Black,style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.onSurface)
+            }
+            if(value.description.isNotBlank())Text(value.description,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
             HorizontalDivider(color=accent.copy(alpha=.14f))
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(9.dp)){
                 Button({onStatus(value.id,InsightStatus.COMPLETED)},Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=accent)){Text("완료")}
-                OutlinedButton({onStatus(value.id,InsightStatus.DISMISSED)},Modifier.weight(1f),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outline.copy(alpha=.55f))){Text("필요 없음")}
+                OutlinedButton({onStatus(value.id,InsightStatus.DISMISSED)},Modifier.weight(1f),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outline.copy(alpha=.55f))){Text("넘기기")}
             }
         }
     }

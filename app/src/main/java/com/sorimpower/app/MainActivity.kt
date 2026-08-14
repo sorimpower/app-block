@@ -19,6 +19,7 @@ import com.sorimpower.app.feature.auction.presentation.AuctionViewModel
 import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupViewModel
 import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightViewModel
 import com.sorimpower.app.feature.propertytax.presentation.PropertyTaxViewModel
+import com.sorimpower.app.feature.perspective.presentation.PerspectiveViewModel
 import com.sorimpower.app.core.ui.SorimPowerTheme
 
 class MainActivity : ComponentActivity() {
@@ -28,13 +29,17 @@ class MainActivity : ComponentActivity() {
     private val healthCheckupViewModel: HealthCheckupViewModel by viewModels()
     private val phoneInsightViewModel: PhoneInsightViewModel by viewModels()
     private val propertyTaxViewModel: PropertyTaxViewModel by viewModels()
+    private val perspectiveViewModel: PerspectiveViewModel by viewModels()
     private var openAuctionAnalysesRequest by mutableIntStateOf(0)
     private var openPhoneInsightRequest by mutableIntStateOf(0)
+    private var openPerspectiveRequest by mutableIntStateOf(0)
+    private var openPerspectiveTopicsRequest by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         handleAuctionAnalysisIntent(intent)
         handlePhoneInsightIntent(intent)
+        handlePerspectiveTopicIntent(intent)
         enableEdgeToEdge()
         setContent {
             SorimPowerTheme {
@@ -45,10 +50,13 @@ class MainActivity : ComponentActivity() {
                     healthCheckupViewModel,
                     phoneInsightViewModel,
                     propertyTaxViewModel,
+                    perspectiveViewModel,
                     ::isAccessibilityServiceEnabled,
                     ::openAccessibilitySettings,
                     openAuctionAnalysesRequest,
                     openPhoneInsightRequest,
+                    openPerspectiveRequest,
+                    openPerspectiveTopicsRequest,
                 )
             }
         }
@@ -60,6 +68,7 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         handleAuctionAnalysisIntent(intent)
         handlePhoneInsightIntent(intent)
+        handlePerspectiveTopicIntent(intent)
     }
 
     private fun handleAuctionAnalysisIntent(intent: Intent?) {
@@ -68,7 +77,14 @@ class MainActivity : ComponentActivity() {
         }
     }
     private fun handlePhoneInsightIntent(intent: Intent?) { if (intent?.getBooleanExtra(EXTRA_OPEN_PHONE_INSIGHT, false) == true) openPhoneInsightRequest++ }
-
+    private fun handlePerspectiveTopicIntent(intent: Intent?) {
+        if (
+            intent?.getBooleanExtra(EXTRA_OPEN_PERSPECTIVE_TOPICS, false) == true ||
+            intent?.action == ACTION_OPEN_PERSPECTIVE_TOPICS
+        ) {
+            openPerspectiveTopicsRequest++
+        }
+    }
     private fun isAccessibilityServiceEnabled(): Boolean {
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
         return enabled?.let {
@@ -83,5 +99,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_OPEN_AUCTION_ANALYSES = "open_auction_analyses"
         const val EXTRA_OPEN_PHONE_INSIGHT = "open_phone_insight"
+        const val EXTRA_OPEN_PERSPECTIVE_TOPICS = "open_perspective_topics"
+        const val ACTION_OPEN_PERSPECTIVE_TOPICS = "com.sorimpower.app.action.OPEN_PERSPECTIVE_TOPICS"
     }
 }

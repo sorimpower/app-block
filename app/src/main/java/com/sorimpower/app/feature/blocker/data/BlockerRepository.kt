@@ -171,13 +171,18 @@ class BlockerRepository(private val context: Context) {
         it[bottomNavigationOrderKey] = BottomNavigationTab.normalize(order).joinToString(",") { tab -> tab.name }
     }
 
-    /** 기존 설치에도 새 세금 탭을 한 번만 추가하고, 이후 사용자의 탭 숨김 설정은 존중한다. */
+    /** 새 기능 탭을 기존 설치에 한 번만 추가하고 이후 사용자의 숨김 설정은 존중한다. */
     suspend fun migrateBottomNavigation() = context.blockerDataStore.edit { preferences ->
         if ((preferences[bottomNavigationSchemaVersionKey] ?: 0) >= BOTTOM_NAVIGATION_SCHEMA_VERSION) return@edit
         val tabs = BottomNavigationTab.from(preferences[bottomNavigationOrderKey]).toMutableList()
         if (BottomNavigationTab.PROPERTY_TAX !in tabs) {
             val moreIndex = tabs.indexOf(BottomNavigationTab.MORE).let { if (it < 0) tabs.size else it }
             tabs.add(moreIndex, BottomNavigationTab.PROPERTY_TAX)
+            preferences[bottomNavigationOrderKey] = BottomNavigationTab.normalize(tabs).joinToString(",") { it.name }
+        }
+        if (BottomNavigationTab.PERSPECTIVE !in tabs) {
+            val phoneIndex = tabs.indexOf(BottomNavigationTab.PHONE_INSIGHT)
+            tabs.add(if (phoneIndex >= 0) phoneIndex + 1 else 1.coerceAtMost(tabs.size), BottomNavigationTab.PERSPECTIVE)
             preferences[bottomNavigationOrderKey] = BottomNavigationTab.normalize(tabs).joinToString(",") { it.name }
         }
         preferences[bottomNavigationSchemaVersionKey] = BOTTOM_NAVIGATION_SCHEMA_VERSION
@@ -352,7 +357,7 @@ class BlockerRepository(private val context: Context) {
     companion object {
         const val DEFAULT_BLOCK_MESSAGE = "지금은 잠시 멈춰갈 시간이에요."
         private const val LEGACY_SCHEDULE_ID = "legacy-default"
-        private const val BOTTOM_NAVIGATION_SCHEMA_VERSION = 1
+        private const val BOTTOM_NAVIGATION_SCHEMA_VERSION = 2
     }
 }
 
@@ -364,6 +369,7 @@ enum class StartDestination {
     BODY_LOG,
     REAL_ESTATE_AUCTION,
     PHONE_INSIGHT,
+    PERSPECTIVE,
     PROPERTY_TAX,
     MORE;
 
@@ -373,7 +379,7 @@ enum class StartDestination {
 }
 
 enum class BottomNavigationTab(val label: String) {
-    HOME("홈"), PHONE_INSIGHT("챙김"), BLOCKER("차단"), BODY_LOG("기록"), AUCTION("경매"), PROPERTY_TAX("세금"), MORE("더보기");
+    HOME("홈"), PHONE_INSIGHT("챙김"), PERSPECTIVE("관점"), BLOCKER("차단"), BODY_LOG("기록"), AUCTION("경매"), PROPERTY_TAX("세금"), MORE("더보기");
 
     companion object {
         val defaultOrder = entries.toList()

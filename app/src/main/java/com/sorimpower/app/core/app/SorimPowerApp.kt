@@ -18,6 +18,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -74,6 +75,7 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.AccountBalance
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -89,7 +91,9 @@ import kotlin.math.abs
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -97,6 +101,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sorimpower.app.R
 import com.sorimpower.app.feature.blocker.data.BlockerState
 import com.sorimpower.app.feature.blocker.data.BottomNavigationTab
 import com.sorimpower.app.feature.blocker.data.StartDestination
@@ -117,6 +122,8 @@ import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightViewMode
 import com.sorimpower.app.feature.propertytax.presentation.PropertyTaxScreen
 import com.sorimpower.app.feature.propertytax.presentation.PropertyTaxAnalysisInfoDialog
 import com.sorimpower.app.feature.propertytax.presentation.PropertyTaxViewModel
+import com.sorimpower.app.feature.perspective.presentation.PerspectiveScreen
+import com.sorimpower.app.feature.perspective.presentation.PerspectiveViewModel
 import com.sorimpower.app.core.ui.AppCobalt
 import com.sorimpower.app.core.ui.AppLilac
 import com.sorimpower.app.core.ui.AppNavy
@@ -135,7 +142,7 @@ import com.sorimpower.app.feature.blocker.presentation.ScheduleScreen
 import com.sorimpower.app.feature.settings.presentation.SettingsScreen
 
 private enum class Screen(val label: String) {
-    HOME("홈"), BLOCKER("차단"), BODY_LOG("기록"), AUCTION("경매"), PHONE_INSIGHT("챙김"), PROPERTY_TAX("세금"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
+    HOME("홈"), PERSPECTIVE("관점"), BLOCKER("차단"), BODY_LOG("기록"), AUCTION("경매"), PHONE_INSIGHT("챙김"), PROPERTY_TAX("세금"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
 }
 
 private enum class HealthRecordTab(val label: String) { DAILY("데일리 기록"), CHECKUP("건강검진") }
@@ -149,14 +156,29 @@ internal fun SorimPowerApp(
     healthCheckupViewModel: HealthCheckupViewModel,
     phoneInsightViewModel: PhoneInsightViewModel,
     propertyTaxViewModel: PropertyTaxViewModel,
+    perspectiveViewModel: PerspectiveViewModel,
     accessibilityEnabled: () -> Boolean,
     openAccessibilitySettings: () -> Unit,
     openAuctionAnalysesRequest: Int = 0,
     openPhoneInsightRequest: Int = 0,
+    openPerspectiveRequest: Int = 0,
+    openPerspectiveTopicsRequest: Int = 0,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val phoneLatestRun by phoneInsightViewModel.latestRun.collectAsStateWithLifecycle()
-    var screen by remember { mutableStateOf(Screen.HOME) }
+    // Compose 효과가 실행되기 전 첫 프레임부터 알림 목적지를 그린다.
+    // 이렇게 해야 시작 화면 설정이 있는 경우에도 알림 대상이 잠깐 다른 화면으로
+    // 보이거나 덮어써지지 않는다.
+    var screen by remember {
+        mutableStateOf(
+            when {
+                openPerspectiveTopicsRequest > 0 || openPerspectiveRequest > 0 -> Screen.PERSPECTIVE
+                openAuctionAnalysesRequest > 0 -> Screen.AUCTION
+                openPhoneInsightRequest > 0 -> Screen.PHONE_INSIGHT
+                else -> Screen.HOME
+            },
+        )
+    }
     var editingSchedule by remember { mutableStateOf<BlockSchedule?>(null) }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
     var healthRecordTab by remember { mutableStateOf(HealthRecordTab.DAILY) }
@@ -164,9 +186,16 @@ internal fun SorimPowerApp(
     var showAuctionCollectionInfo by remember { mutableStateOf(false) }
     var showPhoneInsightScheduleInfo by remember { mutableStateOf(false) }
     var showPropertyTaxAnalysisInfo by remember { mutableStateOf(false) }
+    // 알림으로 진입한 화면은 사용자가 설정한 시작 화면보다 항상 우선한다.
+    // AI 챙김을 시작 화면으로 설정한 경우 관점 확장 알림이 로딩 뒤 AI 챙김으로
+    // 다시 덮어써지던 경쟁 상태를 막는다.
+    val hasNotificationDeepLink = openAuctionAnalysesRequest > 0 ||
+        openPhoneInsightRequest > 0 ||
+        openPerspectiveRequest > 0 ||
+        openPerspectiveTopicsRequest > 0
 
-    LaunchedEffect(state.loaded, state.startDestination) {
-        if (state.loaded) {
+    LaunchedEffect(state.loaded, state.startDestination, hasNotificationDeepLink) {
+        if (state.loaded && !hasNotificationDeepLink) {
             screen = when (state.startDestination) {
                 StartDestination.HOME -> Screen.HOME
                 StartDestination.APP_BLOCKER -> Screen.BLOCKER
@@ -174,6 +203,7 @@ internal fun SorimPowerApp(
                 StartDestination.REAL_ESTATE_AUCTION -> Screen.AUCTION
                 StartDestination.PHONE_INSIGHT -> Screen.PHONE_INSIGHT
                 StartDestination.PROPERTY_TAX -> Screen.PROPERTY_TAX
+                StartDestination.PERSPECTIVE -> Screen.PERSPECTIVE
                 StartDestination.MORE -> Screen.MORE
             }
         }
@@ -186,41 +216,58 @@ internal fun SorimPowerApp(
         }
     }
     LaunchedEffect(openPhoneInsightRequest) { if (openPhoneInsightRequest > 0) screen = Screen.PHONE_INSIGHT }
+    LaunchedEffect(openPerspectiveRequest) { if (openPerspectiveRequest > 0) screen = Screen.PERSPECTIVE }
+    LaunchedEffect(openPerspectiveTopicsRequest) { if (openPerspectiveTopicsRequest > 0) screen = Screen.PERSPECTIVE }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    Box(
-                        Modifier.padding(start = 18.dp, end = 10.dp).size(42.dp)
-                            .clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(AppCobalt, AppOrange))),
-                        contentAlignment = Alignment.Center,
-                    ) { Text("S", color = Color.White, fontWeight = FontWeight.Black) }
+                    Image(
+                        painter = painterResource(R.drawable.najalal_logo),
+                        contentDescription = "나잘알 로고",
+                        modifier = Modifier
+                            .padding(start = 18.dp, end = 10.dp)
+                            .size(42.dp)
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
                 },
                 title = {
                     Column {
                         Text(when (screen) {
-                            Screen.HOME -> "일당백"
+                            Screen.HOME -> "나잘알"
                             Screen.BLOCKER -> "앱 차단"
                             Screen.BODY_LOG -> "건강 기록"
                             Screen.AUCTION -> "부동산 경매"
                             Screen.MORE -> "더보기"
                             Screen.PHONE_INSIGHT -> "AI 챙김"
                             Screen.PROPERTY_TAX -> "부동산 세금"
+                            Screen.PERSPECTIVE -> "관점 확장"
                             Screen.SCHEDULE -> "조건 편집"
                             Screen.APP_RULES -> "앱별 조건"
                             Screen.SETTINGS -> "설정"
                         }, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)
-                        if (screen == Screen.HOME) Text(
-                            LocalDate.now().format(DateTimeFormatter.ofPattern("M월 d일 EEEE", Locale.KOREAN)),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        if (screen == Screen.HOME) Text("오늘의 개인 대시보드", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 actions = {
+                    if (screen == Screen.HOME) {
+                        Surface(
+                            modifier = Modifier.padding(end = 18.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            color = AppLilac.copy(alpha = .65f),
+                        ) {
+                            Text(
+                                LocalDate.now().format(DateTimeFormatter.ofPattern("M.d E", Locale.KOREAN)),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                color = AppCobalt,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
                     if (screen == Screen.AUCTION) {
                         IconButton(onClick = { showAuctionCollectionInfo = true }) {
                             Icon(Icons.Rounded.Info, contentDescription = "법원 경매 수집 조건")
@@ -250,14 +297,14 @@ internal fun SorimPowerApp(
         Box(
                 Modifier.fillMaxSize().horizontalSwipe(
                 onSwipeLeft = {
-                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PROPERTY_TAX) {
+                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PROPERTY_TAX && screen != Screen.PERSPECTIVE) {
                         val tabs = state.bottomNavigationOrder.map(BottomNavigationTab::screen)
                         val index = tabs.indexOf(screen)
                         if (index >= 0 && index < tabs.lastIndex) screen = tabs[index + 1]
                     }
                 },
                 onSwipeRight = {
-                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PROPERTY_TAX) {
+                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PROPERTY_TAX && screen != Screen.PERSPECTIVE) {
                         val tabs = state.bottomNavigationOrder.map(BottomNavigationTab::screen)
                         val index = tabs.indexOf(screen)
                         if (index > 0) screen = tabs[index - 1]
@@ -287,6 +334,7 @@ internal fun SorimPowerApp(
                 { screen = Screen.AUCTION },
                 { screen = Screen.PHONE_INSIGHT },
                 { screen = Screen.PROPERTY_TAX },
+                { screen = Screen.PERSPECTIVE },
                 openAccessibilitySettings,
             )
             Screen.BODY_LOG -> Column(Modifier.fillMaxSize().padding(padding)) {
@@ -307,6 +355,14 @@ internal fun SorimPowerApp(
             Screen.AUCTION -> AuctionScreen(padding, auctionViewModel, onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } }, onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } })
             Screen.PHONE_INSIGHT -> PhoneInsightScreen(padding, phoneInsightViewModel, onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } }, onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } })
             Screen.PROPERTY_TAX -> PropertyTaxScreen(padding, propertyTaxViewModel, onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } }, onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } })
+            Screen.PERSPECTIVE -> PerspectiveScreen(
+                padding = padding,
+                viewModel = perspectiveViewModel,
+                openExploreRequest = openPerspectiveRequest,
+                openTopicsRequest = openPerspectiveTopicsRequest,
+                onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } },
+                onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } },
+            )
             Screen.MORE -> MoreMenuScreen(padding, onOpenSettings = { screen = Screen.SETTINGS })
             Screen.BLOCKER -> BlockerScreen(
                 padding,
@@ -370,7 +426,7 @@ internal fun SorimPowerApp(
             text = {
                 val run = phoneLatestRun
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("매일 오전 8시 · 오후 7시 새로운 일정 확인")
+                    Text("매일 오전 8시 새로운 일정 확인")
                     Text(
                         run?.let { latest ->
                             val timestamp = latest.finishedAt ?: latest.startedAt
@@ -470,6 +526,7 @@ private fun BottomNavigationTab.screen() = when (this) {
     BottomNavigationTab.BODY_LOG -> Screen.BODY_LOG
     BottomNavigationTab.AUCTION -> Screen.AUCTION
     BottomNavigationTab.PROPERTY_TAX -> Screen.PROPERTY_TAX
+    BottomNavigationTab.PERSPECTIVE -> Screen.PERSPECTIVE
     BottomNavigationTab.MORE -> Screen.MORE
 }
 
@@ -511,8 +568,8 @@ private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
                     }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text("앱 정보", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                        Text("일당백 v0.8.4", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
-                        Text("소림파워 개인용 시스템", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("나잘알 v0.13.5", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
+                        Text("나잘알 개인용 시스템", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -529,6 +586,7 @@ private fun NavIcon(screen: Screen, selected: Boolean) {
         Screen.AUCTION -> Icons.Rounded.Gavel
         Screen.PHONE_INSIGHT -> Icons.Rounded.NotificationsNone
         Screen.PROPERTY_TAX -> Icons.Rounded.AccountBalance
+        Screen.PERSPECTIVE -> Icons.Rounded.Psychology
         Screen.MORE -> Icons.Rounded.MoreHoriz
         else -> Icons.Rounded.Settings
     }

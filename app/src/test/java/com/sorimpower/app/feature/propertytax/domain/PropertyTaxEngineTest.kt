@@ -149,6 +149,37 @@ class PropertyTaxEngineTest {
         assertEquals(0, sale.result.totalEstimatedTax)
     }
 
+    @Test fun `재개발 원조합원 자산은 기존 주택가와 분담금 청산금을 분리해 양도차익을 계산한다`() {
+        val home = property(price = 500_000_000, acquired = LocalDate.of(2010, 3, 2)).copy(
+            regulatedAreaAtAcquisition = false,
+            redevelopmentHistory = true,
+            managementDispositionApprovalDate = LocalDate.of(2018, 5, 1),
+            demolitionDate = LocalDate.of(2019, 2, 1),
+            redevelopmentCompletionDate = LocalDate.of(2022, 8, 1),
+            additionalContribution = 200_000_000,
+            settlementRefund = 20_000_000,
+            redevelopmentNecessaryExpenses = 30_000_000,
+            actualAcquisitionTax = 10_000_000,
+        )
+
+        val calculation = engine.capitalGains(SaleSimulationInput(home, LocalDate.of(2026, 8, 1), 1_000_000_000, 0, 1))
+
+        assertEquals(680_000_000, calculation.result.acquisitionPrice)
+        assertEquals(40_000_000, calculation.result.necessaryExpenses)
+        assertEquals(280_000_000, calculation.result.capitalGain)
+        assertTrue(calculation.rules.any { it.ruleId == "REDEVELOPMENT_ORIGINAL_MEMBER" && it.applied })
+    }
+
+    @Test fun `재개발 신축주택 취득세는 일반 매수가로 추정하지 않고 실제 납부액을 사용한다`() {
+        val withoutNotice = property(acquired = LocalDate.of(2010, 3, 2)).copy(redevelopmentHistory = true)
+        assertFalse(engine.acquisition(withoutNotice, emptyList()).calculationAvailable)
+
+        val withNotice = withoutNotice.copy(actualAcquisitionTax = 12_300_000)
+        val calculation = engine.acquisition(withNotice, emptyList())
+        assertTrue(calculation.calculationAvailable)
+        assertEquals(12_300_000, calculation.result.totalTax)
+    }
+
     private fun property(
         price: Long = 500_000_000,
         assessed: Long? = null,

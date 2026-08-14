@@ -73,7 +73,11 @@ internal class DeviceInsightSources(private val context: Context) {
         return values.filter{(pkg,s)->pkg in selected&&s.totalTimeInForeground>=TimeUnit.MINUTES.toMillis(5)}.map{(pkg,s)->val label=runCatching{context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(pkg,0)).toString()}.getOrDefault(pkg);RawInsightItem(InsightSourceType.APP_USAGE,"usage:$pkg:${System.currentTimeMillis()/TimeUnit.DAYS.toMillis(1)}",label,"$label 사용 ${TimeUnit.MILLISECONDS.toMinutes(s.totalTimeInForeground)}분",System.currentTimeMillis())}
     }
     private fun normalize(value:String)=value.filter(Char::isDigit).takeLast(10)
-    private fun resolveName(number:String,names:Map<String,String>):String{val normalized=normalize(number);return names[normalized]?:names.entries.firstOrNull{it.key.endsWith(normalized)||normalized.endsWith(it.key)}?.value.orEmpty()}
+    /** Never infer a contact from a partial number: that can map a short code to an unrelated person. */
+    private fun resolveName(number:String,names:Map<String,String>):String{
+        val normalized=normalize(number)
+        return if(normalized.length==10) names[normalized].orEmpty() else ""
+    }
     private fun walk(root:DocumentFile,maxDepth:Int=4):Sequence<DocumentFile> = sequence{val pending=java.util.ArrayDeque<Pair<DocumentFile,Int>>();pending.add(root to 0);while(pending.isNotEmpty()){val(node,depth)=pending.removeFirst();for(child in node.listFiles()){if(child.isDirectory&&depth<maxDepth)pending.add(child to depth+1)else if(child.isFile)yield(child)}}}
     companion object{const val DOWNLOADS_ROOT="downloads://root";private const val MAX_SOURCE_ITEMS=5_000}
 }

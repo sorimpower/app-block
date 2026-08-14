@@ -60,7 +60,7 @@ object MounjaroReminder {
         manager.notify(
             NOTIFICATION_ID,
             NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setSmallIcon(com.sorimpower.app.R.drawable.ic_notification_najalal)
                 .setContentTitle("마운자로 기록 알림")
                 .setContentText("투여 기록과 의료진의 안내를 확인해 주세요.")
                 .setContentIntent(openApp)

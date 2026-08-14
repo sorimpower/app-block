@@ -18,9 +18,9 @@
     <application
         android:name=".SorimPowerApplication"
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/najalal_logo"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/najalal_logo"
         android:supportsRtl="true"
         android:theme="@style/Theme.SorimPower">
         <activity
@@ -40,7 +40,7 @@
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" />
         </service>
-        <service android:name=".feature.phoneinsight.service.PhoneInsightNotificationListenerService" android:label="AI 챙김 알림 접근" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="false">
+        <service android:name=".feature.phoneinsight.service.PhoneInsightNotificationListenerService" android:label="나잘알 알림·YouTube 재생 감지" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="false">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
         </service>
         <provider
@@ -64,6 +64,7 @@
             </intent-filter>
         </receiver>
         <receiver android:name=".feature.phoneinsight.reminder.InsightDueReceiver" android:exported="false" />
+        <receiver android:name=".feature.perspective.reminder.TopicSuggestionActionReceiver" android:exported="false" />
         <receiver android:name=".feature.phoneinsight.reminder.MorningDigestReceiver" android:exported="false" />
         <receiver android:name=".feature.phoneinsight.reminder.PhoneInsightBootReceiver" android:enabled="true" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>

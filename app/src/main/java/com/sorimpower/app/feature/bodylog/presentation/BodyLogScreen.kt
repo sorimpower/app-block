@@ -4,6 +4,7 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Paint
 import android.net.Uri
 import android.os.Build
 import android.widget.Toast
@@ -62,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -92,6 +94,7 @@ import coil.compose.AsyncImage
 import com.sorimpower.app.feature.bodylog.data.MealItemInput
 import com.sorimpower.app.feature.bodylog.data.MealQuickTemplate
 import com.sorimpower.app.feature.bodylog.data.MealWithDetails
+import com.sorimpower.app.feature.bodylog.data.MealCalorieEstimateEntity
 import com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity
 import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
 import com.sorimpower.app.feature.bodylog.domain.BodyLogState
@@ -118,8 +121,6 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 
-private enum class DailyRecordSection(val label: String) { WEIGHT("체중 관리"), LOG("식사 · 주사") }
-
 @Composable
 fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -127,9 +128,10 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     val isAiAnalyzing by viewModel.isAiAnalyzing.collectAsStateWithLifecycle()
     val aiAnalysisError by viewModel.aiAnalysisError.collectAsStateWithLifecycle()
     val period = ChartPeriod.MONTH
-    var dailyRecordSection by remember { mutableStateOf(DailyRecordSection.WEIGHT) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
-    var mealFilterDate by remember { mutableStateOf<LocalDate?>(null) }
+    var mealFilterDate by remember { mutableStateOf<LocalDate?>(LocalDate.now()) }
+    var showDailyEntry by remember { mutableStateOf(false) }
+    var showAllRecordHistory by remember { mutableStateOf(false) }
     var showWeightInput by remember { mutableStateOf(false) }
     var showMealInput by remember { mutableStateOf(false) }
     var showQuickMealTemplateInput by remember { mutableStateOf(false) }
@@ -162,6 +164,8 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             .mapValues { (_, injections) -> injections.sortedByDescending { it.injectedAt } }
     }
     val recordDates = remember(mealsByDate, injectionsByDate) { (mealsByDate.keys + injectionsByDate.keys).distinct().sortedDescending() }
+    val dailyCaloriesByDate = remember(state.dailyCalories) { state.dailyCalories.associateBy { LocalDate.ofEpochDay(it.dateEpochDay) } }
+    val mealCaloriesById = remember(state.mealCalories) { state.mealCalories.associateBy(MealCalorieEstimateEntity::mealId) }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(padding),
@@ -170,38 +174,8 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
-            Card(
-                Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(1.dp),
-            ) {
-                Row(Modifier.fillMaxWidth().padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DailyRecordSection.entries.forEach { section ->
-                        val selected = dailyRecordSection == section
-                        Box(
-                            Modifier.weight(1f)
-                                .clip(RoundedCornerShape(13.dp))
-                                .background(if (selected) AppCobalt else Color.Transparent)
-                                .clickable { dailyRecordSection = section }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                section.label,
-                                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        if (dailyRecordSection == DailyRecordSection.WEIGHT) {
-        item {
             BodySummaryCard(
                 state,
-                onWeight = { showWeightInput = true },
                 onGoal = { showGoalInput = true },
                 onWeightsHiddenChange = viewModel::setWeightsHidden,
             )
@@ -217,25 +191,42 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
         item {
             PeriodNavigation(period, selectedDate, onDateChange = {
                 selectedDate = it
+                if (!showAllRecordHistory) mealFilterDate = it
             })
-            WeightChart(points, weightsHidden = state.weightsHidden)
+            WeightChart(
+                points = points,
+                selectedMonth = selectedDate,
+                dailyCalories = state.dailyCalories,
+                latestWeightKg = state.latestWeight?.weightKg,
+                targetWeightKg = state.activeGoal?.targetWeightKg,
+                weightsHidden = state.weightsHidden,
+            )
         }
         item {
             MonthCalendar(
                 date = selectedDate,
                 state = state,
-                onSelect = { selectedDate = it },
+                onSelect = {
+                    selectedDate = it
+                    if (!showAllRecordHistory) mealFilterDate = it
+                },
                 weightsHidden = state.weightsHidden,
             )
         }
-        }
-        if (dailyRecordSection == DailyRecordSection.LOG) {
-        item { MonthCalendar(selectedDate, state, onSelect = {
-                selectedDate = it
-                mealFilterDate = it
-                scope.launch { listState.animateScrollToItem(2) }
-            }, weightsHidden = state.weightsHidden) }
         item {
+            OutlinedButton(
+                onClick = { showDailyEntry = !showDailyEntry },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
+                Icon(Icons.Rounded.Add, null, Modifier.size(18.dp), tint = AppCobalt)
+                Text(
+                    if (showDailyEntry) "기록 추가 닫기" else "${selectedDate.monthValue}월 ${selectedDate.dayOfMonth}일 기록 추가",
+                    Modifier.padding(start = 7.dp),
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        if (showDailyEntry) item {
             Card(
                 Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(22.dp),
@@ -252,18 +243,28 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                     )
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton(
+                            onClick = { showWeightInput = true },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                        ) {
+                            Icon(Icons.Rounded.MonitorWeight, null, Modifier.size(17.dp), tint = AppCobalt)
+                            Text("체중", Modifier.padding(start = 4.dp), fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
                             onClick = { showMealInput = true },
                             modifier = Modifier.weight(1f).height(48.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
                         ) {
                             Icon(Icons.Rounded.Restaurant, null, Modifier.size(18.dp), tint = AppCobalt)
-                            Text("식사 기록", Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
+                            Text("식사", Modifier.padding(start = 4.dp), fontWeight = FontWeight.Bold)
                         }
                         OutlinedButton(
                             onClick = { showMounjaroInput = true },
                             modifier = Modifier.weight(1f).height(48.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
                         ) {
                             Icon(Icons.Rounded.Medication, null, Modifier.size(18.dp), tint = AppCobalt)
-                            Text("주사 기록", Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
+                            Text("주사", Modifier.padding(start = 4.dp), fontWeight = FontWeight.Bold)
                         }
                     }
                 if (state.quickMealTemplates.isNotEmpty()) {
@@ -325,9 +326,18 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 }
             }
         }
-        if (recordDates.isEmpty()) {
-            item { EmptyBodyCard(if (mealFilterDate == null) "아직 기록이 없어요." else "선택한 날짜의 기록이 없어요.") }
-        } else recordDates.forEach { date ->
+        item {
+            OutlinedButton(
+                onClick = {
+                    showAllRecordHistory = !showAllRecordHistory
+                    mealFilterDate = if (showAllRecordHistory) null else selectedDate
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (showAllRecordHistory) "선택 날짜 기록만 보기" else "전체 식사 · 주사 기록 보기")
+            }
+        }
+        if (recordDates.isNotEmpty()) recordDates.forEach { date ->
             val injections = injectionsByDate[date].orEmpty()
             val meals = mealsByDate[date].orEmpty()
             item(key = "record-date-$date") {
@@ -335,7 +345,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                     date,
                     injections.size,
                     meals.size,
-                    onShowAll = mealFilterDate?.let { { mealFilterDate = null } },
+                    dailyCaloriesByDate[date],
                 )
             }
             items(injections, key = { it.id }) { injection ->
@@ -350,12 +360,12 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             items(meals, key = { it.meal.id }) { meal ->
                 MealCard(
                     meal,
+                    calorieEstimate = mealCaloriesById[meal.meal.id],
                     onPhotoClick = { expandedPhotoPath = it },
                     onEdit = { editingMeal = meal },
                     onDelete = { deletingMeal = meal },
                 )
             }
-        }
         }
     }
 
@@ -498,7 +508,6 @@ private fun QuickMealTemplateManagerDialog(templates: List<MealQuickTemplate>, o
 @Composable
 private fun BodySummaryCard(
     state: BodyLogState,
-    onWeight: () -> Unit,
     onGoal: () -> Unit,
     onWeightsHiddenChange: (Boolean) -> Unit,
 ) {
@@ -549,18 +558,13 @@ private fun BodySummaryCard(
             if (state.latestWeight != null) {
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BodyMetric(if (state.weightsHidden) HIDDEN_WEIGHT else "${signed(state.startChange)} kg", "시작 대비", Modifier.weight(1f))
-                    BodyMetric(if (state.weightsHidden) HIDDEN_WEIGHT else state.goalRemaining?.let { "${signed(it)} kg" } ?: "—", "목표까지", Modifier.weight(1f))
+                    Column(
+                        Modifier.weight(1f).clickable(onClick = onGoal).background(Color(0xFFF5F4F6), RoundedCornerShape(16.dp)).padding(10.dp),
+                    ) {
+                        Text(if (state.weightsHidden) HIDDEN_WEIGHT else state.goalRemaining?.let { "${signed(it)} kg" } ?: "—", color = AppNavy, fontWeight = FontWeight.Black)
+                        Text("목표까지 · 설정", color = AppCobalt, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
                     BodyMetric(if (state.weightsHidden) HIDDEN_WEIGHT else state.sevenDayAverage?.let { "${formatWeight(it)} kg" } ?: "—", "7일 평균", Modifier.weight(1f))
-                }
-            }
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onWeight, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Rounded.MonitorWeight, null, Modifier.size(18.dp))
-                    Text("체중 기록", Modifier.padding(start = 5.dp))
-                }
-                OutlinedButton(onClick = onGoal, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Rounded.Flag, null, Modifier.size(18.dp))
-                    Text("목표 설정", Modifier.padding(start = 5.dp))
                 }
             }
         }
@@ -593,7 +597,7 @@ private fun WeightProgressAiCard(
                 Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = AppCobalt)
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
                     Text("AI 건강 경과 분석", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
-                    Text("마운자로 주사·식단·체중 추세를 함께 검토해요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("마운자로·식단·섭취 칼로리·체중 추세를 함께 검토해요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Button(
@@ -610,7 +614,7 @@ private fun WeightProgressAiCard(
                 }
             }
             Text(
-                "버튼을 누를 때에만 최근 기록이 ChatGPT Luna에 전송됩니다.",
+                "버튼을 누를 때에만 최근 기록이 ChatGPT Terra(high)에 전송됩니다.",
                 Modifier.padding(top = 10.dp),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -623,6 +627,14 @@ private fun WeightProgressAiCard(
                 Text(result.trendSummary, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium)
                 Text("핵심 판단", Modifier.padding(top = 14.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                 Text(result.encouragement, Modifier.padding(top = 6.dp), color = AppCobalt, style = MaterialTheme.typography.bodyMedium)
+                result.mealAssessment.takeIf(String::isNotBlank)?.let {
+                    Text("식사 평가", Modifier.padding(top = 14.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                    Text(it, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium)
+                }
+                result.calorieAssessment.takeIf(String::isNotBlank)?.let {
+                    Text("섭취 칼로리 평가", Modifier.padding(top = 14.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                    Text(it, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium)
+                }
                 if (result.nextSteps.isNotEmpty()) {
                     Text("다음 관리 포인트", Modifier.padding(top = 14.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                     result.nextSteps.forEach { step ->
@@ -696,8 +708,19 @@ private fun moveMonthWeek(date: LocalDate, direction: Int): LocalDate {
 }
 
 @Composable
-private fun WeightChart(points: List<ChartPoint>, weightsHidden: Boolean) {
+private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dailyCalories: List<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity>, latestWeightKg: Double?, targetWeightKg: Double?, weightsHidden: Boolean) {
     var selectedPoint by remember(points) { mutableStateOf<ChartPoint?>(null) }
+    val zone = ZoneId.systemDefault()
+    val month = YearMonth.from(selectedMonth)
+    val minTimestamp = remember(month) { month.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli() }
+    val maxTimestamp = remember(month) { month.atEndOfMonth().atTime(LocalTime.MAX).atZone(zone).toInstant().toEpochMilli() }
+    val timestampRange = maxTimestamp - minTimestamp
+    val xAxisLabels = remember(month) {
+        List(7) { index ->
+            val day = 1 + ((month.lengthOfMonth() - 1) * index / 6)
+            day.toString() + "일"
+        }.distinct()
+    }
     Card(Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(16.dp)) {
             if (points.isEmpty()) {
@@ -705,26 +728,28 @@ private fun WeightChart(points: List<ChartPoint>, weightsHidden: Boolean) {
             } else {
                 val minValue = points.minOf(ChartPoint::value)
                 val maxValue = points.maxOf(ChartPoint::value)
-                val valuePadding = maxOf((maxValue - minValue) * .15, .5)
-                val displayMin = minValue - valuePadding
-                val displayRange = maxValue - minValue + valuePadding * 2
-                val minTimestamp = points.minOf(ChartPoint::timestamp)
-                val maxTimestamp = points.maxOf(ChartPoint::timestamp)
-                val timestampRange = maxTimestamp - minTimestamp
-                Row(
-                    Modifier.fillMaxWidth().background(Color(0xFFF5F4F6), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val point = selectedPoint
-                    Text(point?.label ?: "그래프의 점을 눌러 기록을 확인하세요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (point != null) Text(if (weightsHidden) HIDDEN_WEIGHT else "${formatWeight(point.value)} kg", color = AppCobalt, fontWeight = FontWeight.Black)
+                val displayMin = kotlin.math.floor(minOf(60.0, minValue) / 5.0) * 5.0
+                val displayMax = kotlin.math.ceil(maxOf(100.0, maxValue) / 5.0) * 5.0
+                val displayRange = displayMax - displayMin
+                val yAxisValues = generateSequence(displayMin) { it + 5.0 }
+                    .takeWhile { it <= displayMax + 0.001 }
+                    .toList()
+                selectedPoint?.let { point ->
+                    Row(
+                        Modifier.fillMaxWidth().background(Color(0xFFF5F4F6), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(point.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (weightsHidden) HIDDEN_WEIGHT else "${formatWeight(point.value)} kg", color = AppCobalt, fontWeight = FontWeight.Black)
+                    }
                 }
                 Canvas(
                     Modifier.fillMaxWidth().height(210.dp).pointerInput(points) {
                         detectTapGestures { tap ->
-                            val left = 12.dp.toPx()
-                            val usableWidth = size.width - left * 2
+                            val left = 38.dp.toPx()
+                            val right = 8.dp.toPx()
+                            val usableWidth = size.width - left - right
                             val tapped = points.minByOrNull { point ->
                                 val x = if (timestampRange == 0L) size.width / 2f
                                 else left + usableWidth * ((point.timestamp - minTimestamp).toFloat() / timestampRange.toFloat())
@@ -734,15 +759,26 @@ private fun WeightChart(points: List<ChartPoint>, weightsHidden: Boolean) {
                         }
                     },
                 ) {
-                    val left = 12.dp.toPx(); val top = 20.dp.toPx(); val bottom = size.height - 20.dp.toPx()
-                    val usableWidth = size.width - left * 2
+                    val left = 38.dp.toPx(); val right = 8.dp.toPx(); val top = 12.dp.toPx(); val bottom = size.height - 12.dp.toPx()
+                    val usableWidth = size.width - left - right
                     fun xFor(point: ChartPoint): Float = if (timestampRange == 0L) size.width / 2f
                     else left + usableWidth * ((point.timestamp - minTimestamp).toFloat() / timestampRange.toFloat())
-                    fun yFor(point: ChartPoint): Float = bottom - ((point.value - displayMin) / displayRange).toFloat() * (bottom - top)
+                    fun yForValue(value: Double): Float = bottom - ((value - displayMin) / displayRange).toFloat() * (bottom - top)
+                    fun yFor(point: ChartPoint): Float = yForValue(point.value)
 
-                    repeat(4) { index ->
-                        val y = top + (bottom - top) * index / 3f
-                        drawLine(Color(0xFFE8E5EC), Offset(left, y), Offset(size.width - left, y), strokeWidth = 1.dp.toPx())
+                    val axisLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = android.graphics.Color.rgb(105, 102, 110)
+                        textSize = 10.dp.toPx()
+                        textAlign = Paint.Align.RIGHT
+                    }
+                    yAxisValues.forEach { value ->
+                        val y = yForValue(value)
+                        drawLine(Color(0xFFE8E5EC), Offset(left, y), Offset(size.width - right, y), strokeWidth = 1.dp.toPx())
+                        drawContext.canvas.nativeCanvas.drawText(formatWeight(value), left - 6.dp.toPx(), y + 4.dp.toPx(), axisLabelPaint)
+                    }
+                    xAxisLabels.indices.forEach { index ->
+                        val x = left + usableWidth * index / (xAxisLabels.size - 1).toFloat()
+                        drawLine(Color(0xFFF1EEF3), Offset(x, top), Offset(x, bottom), strokeWidth = 1.dp.toPx())
                     }
                     val path = Path()
                     points.forEachIndexed { index, point ->
@@ -750,28 +786,166 @@ private fun WeightChart(points: List<ChartPoint>, weightsHidden: Boolean) {
                         val y = yFor(point)
                         if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
                     }
-                    drawPath(path, AppCobalt, style = Stroke(4.dp.toPx(), cap = StrokeCap.Round))
+                    drawPath(path, AppCobalt, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
                     selectedPoint?.let { point ->
                         val x = xFor(point)
-                        drawLine(AppCobalt.copy(alpha = .25f), Offset(x, top), Offset(x, bottom), strokeWidth = 2.dp.toPx())
+                        drawLine(AppCobalt.copy(alpha = .25f), Offset(x, top), Offset(x, bottom), strokeWidth = 1.dp.toPx())
                     }
                     points.forEach { point ->
                         val x = xFor(point)
                         val y = yFor(point)
-                        drawCircle(if (point == selectedPoint) AppCobalt else AppOrange, if (point == selectedPoint) 8.dp.toPx() else 5.dp.toPx(), Offset(x, y))
+                        drawCircle(if (point == selectedPoint) AppCobalt else AppOrange, if (point == selectedPoint) 5.dp.toPx() else 3.dp.toPx(), Offset(x, y))
                     }
                 }
-                if (points.size == 1) {
-                    Text(points.single().label, Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
-                } else {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(points.first().label, style = MaterialTheme.typography.labelSmall)
-                        Text(points.last().label, style = MaterialTheme.typography.labelSmall)
+                Row(Modifier.fillMaxWidth().padding(start = 32.dp, end = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    xAxisLabels.forEach { label ->
+                        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+                DailyCalorieBarChart(
+                    selectedMonth = month,
+                    dailyCalories = dailyCalories,
+                    latestWeightKg = latestWeightKg,
+                    targetWeightKg = targetWeightKg,
+                )
             }
         }
     }
+}
+
+@Composable
+private fun DailyCalorieBarChart(
+    selectedMonth: YearMonth,
+    dailyCalories: List<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity>,
+    latestWeightKg: Double?,
+    targetWeightKg: Double?,
+) {
+    val values = remember(selectedMonth, dailyCalories) {
+        dailyCalories.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == selectedMonth }
+            .sortedBy { it.dateEpochDay }
+    }
+    if (values.isEmpty()) return
+    val calorieReference = remember(latestWeightKg, targetWeightKg) {
+        latestWeightKg?.let { dailyCalorieReference(it, targetWeightKg) }
+    }
+    val maxCalories = remember(values, calorieReference) {
+        val highestReference = calorieReference?.maintenanceCalories ?: 0
+        (kotlin.math.ceil(maxOf(values.maxOf { it.estimatedCalories }, highestReference) / 500.0) * 500.0).toInt().coerceAtLeast(1_500)
+    }
+    val xAxisDays = remember(selectedMonth) {
+        List(7) { index ->
+            1 + ((selectedMonth.lengthOfMonth() - 1) * index / 6)
+        }.distinct()
+    }
+    var selectedSummary by remember(values) { mutableStateOf<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity?>(null) }
+    Text("일별 섭취 칼로리 · AI 추정", Modifier.padding(top = 16.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+    calorieReference?.let { reference ->
+        Text(
+            "현재 체중 기준 · 최소 " + reference.minimumCalories + " / 감량 " + reference.dietCalories + " / 유지 " + reference.maintenanceCalories + " kcal",
+            Modifier.padding(top = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    selectedSummary?.let { summary ->
+        val date = LocalDate.ofEpochDay(summary.dateEpochDay)
+        Text(
+            date.format(DateTimeFormatter.ofPattern("M월 d일", Locale.KOREAN)) + " · AI 추정 " + summary.estimatedCalories + " kcal",
+            Modifier.padding(top = 4.dp),
+            color = AppCobalt,
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+    Canvas(
+        Modifier.fillMaxWidth().height(126.dp).padding(top = 6.dp).pointerInput(values, selectedMonth) {
+            detectTapGestures { tap ->
+                val left = 70.dp.toPx()
+                val right = 8.dp.toPx()
+                val usableWidth = size.width - left - right
+                selectedSummary = values.minByOrNull { summary ->
+                    val day = LocalDate.ofEpochDay(summary.dateEpochDay).dayOfMonth
+                    val x = left + usableWidth * (day - 1).toFloat() / (selectedMonth.lengthOfMonth() - 1).coerceAtLeast(1)
+                    abs(tap.x - x)
+                }
+            }
+        },
+    ) {
+        val left = 70.dp.toPx()
+        val right = 8.dp.toPx()
+        val top = 5.dp.toPx()
+        val bottom = size.height - 22.dp.toPx()
+        val usableWidth = size.width - left - right
+        val axisLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(105, 102, 110)
+            textSize = 10.dp.toPx()
+            textAlign = Paint.Align.RIGHT
+        }
+        listOf(0, maxCalories / 2, maxCalories).distinct().forEach { calories ->
+            val y = bottom - (calories.toFloat() / maxCalories) * (bottom - top)
+            drawLine(Color(0xFFE8E5EC), Offset(left, y), Offset(size.width - right, y), strokeWidth = 1.dp.toPx())
+            drawContext.canvas.nativeCanvas.drawText(calories.toString(), left - 6.dp.toPx(), y + 4.dp.toPx(), axisLabelPaint)
+        }
+        calorieReference?.let { reference ->
+            listOf("최소" to reference.minimumCalories, "감량" to reference.dietCalories, "유지" to reference.maintenanceCalories).forEach { (label, calories) ->
+                val y = bottom - (calories.toFloat() / maxCalories).coerceIn(0f, 1f) * (bottom - top)
+                val color = when (label) {
+                    "최소" -> Color(0xFFD14343)
+                    "감량" -> AppOrange
+                    else -> AppCobalt
+                }
+                drawLine(color.copy(alpha = .72f), Offset(left, y), Offset(size.width - right, y), strokeWidth = 1.5.dp.toPx())
+                axisLabelPaint.color = when (label) {
+                    "최소" -> android.graphics.Color.rgb(209, 67, 67)
+                    "감량" -> android.graphics.Color.rgb(216, 116, 36)
+                    else -> android.graphics.Color.rgb(41, 92, 176)
+                }
+                drawContext.canvas.nativeCanvas.drawText(label + " " + calories, left - 6.dp.toPx(), y + 4.dp.toPx(), axisLabelPaint)
+                axisLabelPaint.color = android.graphics.Color.rgb(105, 102, 110)
+            }
+        }
+        values.forEach { summary ->
+            val day = LocalDate.ofEpochDay(summary.dateEpochDay).dayOfMonth
+            val x = left + usableWidth * (day - 1).toFloat() / (selectedMonth.lengthOfMonth() - 1).coerceAtLeast(1)
+            val y = bottom - (summary.estimatedCalories.toFloat() / maxCalories).coerceIn(0f, 1f) * (bottom - top)
+            val isSelected = summary.dateEpochDay == selectedSummary?.dateEpochDay
+            drawLine(
+                if (isSelected) AppCobalt else AppOrange,
+                Offset(x, bottom),
+                Offset(x, y),
+                strokeWidth = if (isSelected) 7.dp.toPx() else 5.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+        }
+        val dateLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(105, 102, 110)
+            textSize = 10.dp.toPx()
+            textAlign = Paint.Align.CENTER
+        }
+        xAxisDays.forEach { day ->
+            val x = left + usableWidth * (day - 1).toFloat() / (selectedMonth.lengthOfMonth() - 1).coerceAtLeast(1)
+            drawContext.canvas.nativeCanvas.drawText("${day}일", x, size.height - 3.dp.toPx(), dateLabelPaint)
+        }
+    }
+}
+
+private data class DailyCalorieReference(
+    val minimumCalories: Int,
+    val maintenanceCalories: Int,
+    val dietCalories: Int,
+)
+
+private fun dailyCalorieReference(currentWeightKg: Double, targetWeightKg: Double?): DailyCalorieReference {
+    // Mifflin–St Jeor: 1989년생, 171cm 남성. 활동량이 미입력인 현재는 가벼운 활동(1.35)을 적용한다.
+    val age = LocalDate.now().year - 1989
+    val basalMetabolicRate = 10.0 * currentWeightKg + 6.25 * 171.0 - 5.0 * age + 5.0
+    val maintenance = ((basalMetabolicRate * 1.35) / 10.0).toInt() * 10
+    val deficit = if (targetWeightKg != null && currentWeightKg > targetWeightKg) 500 else 0
+    return DailyCalorieReference(
+        minimumCalories = 1_500,
+        maintenanceCalories = maintenance,
+        dietCalories = (maintenance - deficit).coerceAtLeast(1_500),
+    )
 }
 
 @Composable
@@ -781,6 +955,7 @@ private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (Local
     val weights = state.weights.dailyRepresentatives()
     val mealDates = state.meals.map { it.meal.localDate() }.toSet()
     val injectionDates = state.mounjaroInjections.map { it.localDate() }.toSet()
+    val calories = state.dailyCalories.associateBy { LocalDate.ofEpochDay(it.dateEpochDay) }
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -801,6 +976,7 @@ private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (Local
                         ) {
                             Text("${current.dayOfMonth}", color = if (current.month == date.month) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
                             weight?.let { Text(if (weightsHidden) "•••" else formatWeight(it.weightKg), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                            calories[current]?.let { Text("${it.estimatedCalories / 100}k", style = MaterialTheme.typography.labelSmall, color = AppOrange, fontWeight = FontWeight.Bold) }
                             Row(Modifier.height(13.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                                 if (current in mealDates) Box(Modifier.size(5.dp).background(AppOrange, CircleShape))
                                 if (current in injectionDates) {
@@ -818,7 +994,7 @@ private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (Local
 }
 
 @Composable
-private fun MealCard(meal: MealWithDetails, onPhotoClick: (String) -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun MealCard(meal: MealWithDetails, calorieEstimate: MealCalorieEstimateEntity?, onPhotoClick: (String) -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             val photo = meal.photos.minByOrNull { it.sortOrder }
@@ -840,6 +1016,13 @@ private fun MealCard(meal: MealWithDetails, onPhotoClick: (String) -> Unit, onEd
                 Text("${MealType.from(meal.meal.mealType).label} · ${formatRecordTime(meal.meal.eatenAt)}", color = AppCobalt, fontWeight = FontWeight.Black)
                 Text(meal.items.sortedBy { it.sortOrder }.joinToString(" · ") { it.name }, fontWeight = FontWeight.Bold)
                 meal.meal.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                Text(
+                    calorieEstimate?.let { "AI 추정 ${it.estimatedCalories} kcal" } ?: "AI 칼로리 분석 대기",
+                    Modifier.padding(top = 4.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (calorieEstimate != null) AppOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold,
+                )
             }
             Row {
                 IconButton(onClick = onEdit) { Icon(Icons.Rounded.Edit, "수정", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -915,7 +1098,7 @@ private fun DeleteRecordDialog(title: String, message: String, onDismiss: () -> 
 }
 
 @Composable
-private fun RecordDateHeader(date: LocalDate, injectionCount: Int, mealCount: Int, onShowAll: (() -> Unit)? = null) {
+private fun RecordDateHeader(date: LocalDate, injectionCount: Int, mealCount: Int, calorieSummary: com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity?, onShowAll: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(36.dp).background(Color(0xFFF2E7FC), CircleShape), contentAlignment = Alignment.Center) {
             Icon(Icons.Rounded.CalendarMonth, null, tint = AppCobalt, modifier = Modifier.size(19.dp))
@@ -930,6 +1113,7 @@ private fun RecordDateHeader(date: LocalDate, injectionCount: Int, mealCount: In
                 listOfNotNull(
                     injectionCount.takeIf { it > 0 }?.let { "주사 ${it}회" },
                     mealCount.takeIf { it > 0 }?.let { "식사 ${it}개" },
+                    calorieSummary?.let { "AI 추정 ${it.estimatedCalories} kcal" },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -10,6 +10,7 @@ internal class AiModelRouter(context: Context) {
     /** AI 분석은 현재 GPT-5.6 Luna를 기본 모델로 사용한다. */
     suspend fun generate(request: AiRequest, model: AiModelId = AiModelId.OPENAI_FAST): AiResponse = when (request.taskType) {
         AiTaskType.BODY_LOG_PROGRESS_ANALYSIS,
+        AiTaskType.BODY_LOG_DAILY_CALORIE_ANALYSIS,
         AiTaskType.HEALTH_CHECKUP_PAGE_SELECTION,
         AiTaskType.HEALTH_CHECKUP_EXTRACTION,
         AiTaskType.HEALTH_TREND_ANALYSIS,
@@ -19,6 +20,8 @@ internal class AiModelRouter(context: Context) {
         AiTaskType.PROPERTY_TAX_DEEP_ANALYSIS,
         AiTaskType.PROPERTY_TAX_RULE_CHANGE_ANALYSIS,
         AiTaskType.PROPERTY_TAX_SCENARIO_COMPARISON,
+        AiTaskType.PERSPECTIVE_VIDEO_ANALYSIS,
+        AiTaskType.PERSPECTIVE_TOPIC_SUGGESTION,
         -> openAi.generate(model, request)
     }
 }

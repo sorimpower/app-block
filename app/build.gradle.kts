@@ -14,8 +14,8 @@ android {
         applicationId = "com.sorimpower.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 29
-        versionName = "0.8.4"
+        versionCode = 68
+        versionName = "0.13.5"
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -50,6 +50,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.functions)
+    implementation("com.google.firebase:firebase-ai")
     implementation(libs.kotlinx.coroutines.play.services)
     debugImplementation(libs.firebase.appcheck.debug)
     releaseImplementation(libs.firebase.appcheck.playintegrity)

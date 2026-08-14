@@ -21,12 +21,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
+import com.sorimpower.app.feature.bodylog.domain.localDate
 
 private val Context.bodyLogDataStore by preferencesDataStore("body_log_settings")
 
@@ -37,7 +39,11 @@ data class BodyLogData(
     val mounjaroInjections: List<MounjaroInjectionEntity>,
     val weightsHidden: Boolean,
     val quickMealTemplates: List<MealQuickTemplate>,
+    val dailyCalories: List<DailyCalorieSummaryEntity>,
+    val mealCalories: List<MealCalorieEstimateEntity>,
 )
+
+data class SavedMealResult(val mealId: String, val calorieAnalysisMealIds: List<String>)
 
 data class MealItemInput(val name: String, val amount: String = "")
 data class MealQuickTemplate(
@@ -64,8 +70,10 @@ class BodyLogRepository(private val context: Context) {
         dao.observeMounjaroInjections(),
         weightsHidden,
     ) { weights, meals, goal, injections, hidden ->
-        BodyLogData(weights, meals, goal, injections, hidden, emptyList())
+        BodyLogData(weights, meals, goal, injections, hidden, emptyList(), emptyList(), emptyList())
     }.combine(quickMealTemplates) { data, templates -> data.copy(quickMealTemplates = templates) }
+        .combine(dao.observeDailyCalorieSummaries()) { data, calories -> data.copy(dailyCalories = calories) }
+        .combine(dao.observeMealCalorieEstimates()) { data, calories -> data.copy(mealCalories = calories) }
 
     init {
         CoroutineScope(Dispatchers.IO).launch { cleanupOrphanedMealPhotos() }
@@ -73,6 +81,10 @@ class BodyLogRepository(private val context: Context) {
 
     suspend fun setWeightsHidden(hidden: Boolean) {
         context.bodyLogDataStore.edit { preferences -> preferences[weightsHiddenKey] = hidden }
+    }
+
+    suspend fun mealIdsWithoutCalorieEstimate(): List<String> = withContext(Dispatchers.IO) {
+        dao.mealIdsWithoutCalorieEstimate()
     }
 
     suspend fun saveQuickMealTemplate(mealType: String, items: List<String>, note: String?, tags: Set<String>) {
@@ -179,9 +191,10 @@ class BodyLogRepository(private val context: Context) {
         tags: Set<String>,
         photoUris: List<Uri>,
         retainedPhotoIds: Set<String> = emptySet(),
-    ) = withContext(Dispatchers.IO) {
+    ): SavedMealResult = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val mealId = existing?.meal?.id ?: UUID.randomUUID().toString()
+        val previousDate = existing?.meal?.localDate()
         val meal = MealEntryEntity(
             id = mealId,
             mealType = mealType,
@@ -206,14 +219,73 @@ class BodyLogRepository(private val context: Context) {
         } finally {
             cleanupOrphanedMealPhotos()
         }
+        val affectedDates = setOfNotNull(previousDate, meal.localDate())
+        affectedDates.forEach { rebuildDailyCalorieSummary(it) }
+        val missing = affectedDates.flatMap { date ->
+            val meals = mealsForDate(date)
+            val estimatedIds = if (meals.isEmpty()) emptySet() else dao.mealCalorieEstimates(meals.map { it.meal.id }).mapTo(mutableSetOf(), MealCalorieEstimateEntity::mealId)
+            meals.map { it.meal.id }.filterNot { it in estimatedIds }
+        }.distinct()
+        SavedMealResult(mealId, missing)
     }
 
     suspend fun deleteMeal(meal: MealWithDetails) = withContext(Dispatchers.IO) {
+        val date = meal.meal.localDate()
         dao.deleteMealById(meal.meal.id)
         meal.photos.forEach { photo ->
             deletePhotoFiles(photo)
         }
         cleanupOrphanedMealPhotos()
+        rebuildDailyCalorieSummary(date)
+    }
+
+    suspend fun analyzeMealCalories(mealId: String): MealCalorieEstimateEntity? = withContext(Dispatchers.IO) {
+        val meal = dao.meal(mealId) ?: return@withContext null
+        val sourceHash = meal.calorieSourceHash()
+        dao.mealCalorieEstimate(mealId)?.takeIf { it.sourceHash == sourceHash }?.let { return@withContext it }
+        val result = OpenAiMealCalorieAnalyzer(context).analyze(meal)
+        val latest = dao.meal(mealId) ?: return@withContext null
+        if (latest.calorieSourceHash() != sourceHash) return@withContext null
+        val estimate = MealCalorieEstimateEntity(
+            mealId = mealId,
+            estimatedCalories = result.estimatedCalories,
+            summary = result.summary,
+            sourceHash = sourceHash,
+            analyzedAt = System.currentTimeMillis(),
+        )
+        dao.upsertMealCalorieEstimate(estimate)
+        rebuildDailyCalorieSummary(latest.meal.localDate())
+        estimate
+    }
+
+    private suspend fun rebuildDailyCalorieSummary(date: LocalDate): DailyCalorieSummaryEntity? {
+        val meals = mealsForDate(date)
+        if (meals.isEmpty()) {
+            dao.deleteDailyCalorieSummary(date.toEpochDay())
+            return null
+        }
+        val estimates = dao.mealCalorieEstimates(meals.map { it.meal.id })
+        if (estimates.isEmpty()) {
+            dao.deleteDailyCalorieSummary(date.toEpochDay())
+            return null
+        }
+        val coverage = if (estimates.size == meals.size) "${meals.size}건" else "${estimates.size}/${meals.size}건"
+        val summary = DailyCalorieSummaryEntity(
+            dateEpochDay = date.toEpochDay(),
+            estimatedCalories = estimates.sumOf(MealCalorieEstimateEntity::estimatedCalories),
+            summary = "개별 식사 AI 추정값 $coverage 합산",
+            mealCount = meals.size,
+            analyzedAt = System.currentTimeMillis(),
+        )
+        dao.upsertDailyCalorieSummary(summary)
+        return summary
+    }
+
+    private suspend fun mealsForDate(date: LocalDate): List<MealWithDetails> {
+        val zone = ZoneId.systemDefault()
+        val from = date.atStartOfDay(zone).toInstant().toEpochMilli()
+        val until = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        return dao.mealsBetween(from, until)
     }
 
     fun createCameraUri(): Pair<Uri, File> {
@@ -326,3 +398,11 @@ private fun List<MealQuickTemplate>.quickMealTemplatesJson(): String = JSONArray
         put("id", template.id); put("mealType", template.mealType); put("items", JSONArray(template.items)); put("note", template.note); put("tags", JSONArray(template.tags.toList()))
     }) }
 }.toString()
+
+private fun MealWithDetails.calorieSourceHash(): String {
+    val source = buildString {
+        append(meal.mealType).append('|').append(meal.eatenAt).append('|').append(meal.note.orEmpty()).append('|').append(meal.tags)
+        items.sortedBy(MealItemEntity::sortOrder).forEach { append('|').append(it.name).append(':').append(it.amount.orEmpty()) }
+    }
+    return MessageDigest.getInstance("SHA-256").digest(source.toByteArray()).joinToString("") { "%02x".format(it) }
+}

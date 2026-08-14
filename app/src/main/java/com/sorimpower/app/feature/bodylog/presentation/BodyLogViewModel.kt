@@ -14,6 +14,7 @@ import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
 import com.sorimpower.app.feature.bodylog.domain.BodyLogState
 import com.sorimpower.app.feature.bodylog.domain.BodyLogAiAnalysis
 import com.sorimpower.app.feature.bodylog.reminder.MounjaroReminder
+import com.sorimpower.app.feature.bodylog.reminder.MealCalorieAnalysisScheduler
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,7 +36,7 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
     private val _aiAnalysisError = MutableStateFlow<String?>(null)
     val aiAnalysisError = _aiAnalysisError.asStateFlow()
     val state = repository.data.map {
-        BodyLogState(it.weights, it.meals, it.goal, it.mounjaroInjections, it.weightsHidden, it.quickMealTemplates, loaded = true)
+        BodyLogState(it.weights, it.meals, it.goal, it.mounjaroInjections, it.weightsHidden, it.quickMealTemplates, dailyCalories = it.dailyCalories, mealCalories = it.mealCalories, loaded = true)
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BodyLogState())
 
@@ -117,11 +118,15 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
         retainedPhotoIds: Set<String> = emptySet(),
         onSaved: () -> Unit,
     ) = viewModelScope.launch {
-        repository.saveMeal(existing, mealType, eatenAt, items, note, tags, photoUris, retainedPhotoIds)
+        val result = repository.saveMeal(existing, mealType, eatenAt, items, note, tags, photoUris, retainedPhotoIds)
         onSaved()
+        result.calorieAnalysisMealIds.forEach { MealCalorieAnalysisScheduler.enqueue(getApplication(), it) }
     }
 
-    fun deleteMeal(meal: MealWithDetails) = viewModelScope.launch { repository.deleteMeal(meal) }
+    fun deleteMeal(meal: MealWithDetails) = viewModelScope.launch {
+        MealCalorieAnalysisScheduler.cancel(getApplication(), meal.meal.id)
+        repository.deleteMeal(meal)
+    }
     fun saveQuickMealTemplate(mealType: String, items: List<String>, note: String?, tags: Set<String>, onSaved: () -> Unit) = viewModelScope.launch {
         repository.saveQuickMealTemplate(mealType, items, note, tags)
         onSaved()

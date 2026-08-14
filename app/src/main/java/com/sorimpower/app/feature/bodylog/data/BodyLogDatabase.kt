@@ -115,6 +115,33 @@ data class MealWithDetails(
 
 data class MealPhotoPaths(val localPath: String, val thumbnailPath: String)
 
+@Entity(
+    tableName = "meal_calorie_estimates",
+    foreignKeys = [ForeignKey(
+        entity = MealEntryEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["mealId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("mealId")],
+)
+data class MealCalorieEstimateEntity(
+    @androidx.room.PrimaryKey val mealId: String,
+    val estimatedCalories: Int,
+    val summary: String,
+    val sourceHash: String,
+    val analyzedAt: Long,
+)
+
+@Entity(tableName = "daily_calorie_summaries")
+data class DailyCalorieSummaryEntity(
+    @androidx.room.PrimaryKey val dateEpochDay: Long,
+    val estimatedCalories: Int,
+    val summary: String,
+    val mealCount: Int,
+    val analyzedAt: Long,
+)
+
 @Dao
 interface BodyLogDao {
     @Query("SELECT * FROM weight_entries ORDER BY measuredAt ASC")
@@ -132,6 +159,38 @@ interface BodyLogDao {
     @Transaction
     @Query("SELECT * FROM meal_entries ORDER BY eatenAt ASC")
     fun observeMeals(): Flow<List<MealWithDetails>>
+
+    @Query("SELECT * FROM daily_calorie_summaries ORDER BY dateEpochDay ASC")
+    fun observeDailyCalorieSummaries(): Flow<List<DailyCalorieSummaryEntity>>
+
+    @Query("SELECT * FROM meal_calorie_estimates ORDER BY analyzedAt ASC")
+    fun observeMealCalorieEstimates(): Flow<List<MealCalorieEstimateEntity>>
+
+    @Transaction
+    @Query("SELECT * FROM meal_entries WHERE eatenAt >= :from AND eatenAt < :until ORDER BY eatenAt ASC")
+    suspend fun mealsBetween(from: Long, until: Long): List<MealWithDetails>
+
+    @Transaction
+    @Query("SELECT * FROM meal_entries WHERE id = :mealId LIMIT 1")
+    suspend fun meal(mealId: String): MealWithDetails?
+
+    @Query("SELECT * FROM meal_calorie_estimates WHERE mealId IN (:mealIds)")
+    suspend fun mealCalorieEstimates(mealIds: List<String>): List<MealCalorieEstimateEntity>
+
+    @Query("SELECT * FROM meal_calorie_estimates WHERE mealId = :mealId LIMIT 1")
+    suspend fun mealCalorieEstimate(mealId: String): MealCalorieEstimateEntity?
+
+    @Query("SELECT id FROM meal_entries WHERE id NOT IN (SELECT mealId FROM meal_calorie_estimates) ORDER BY eatenAt ASC")
+    suspend fun mealIdsWithoutCalorieEstimate(): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMealCalorieEstimate(value: MealCalorieEstimateEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDailyCalorieSummary(value: DailyCalorieSummaryEntity)
+
+    @Query("DELETE FROM daily_calorie_summaries WHERE dateEpochDay = :dateEpochDay")
+    suspend fun deleteDailyCalorieSummary(dateEpochDay: Long)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertWeight(entry: WeightEntryEntity)
@@ -176,8 +235,8 @@ interface BodyLogDao {
 }
 
 @Database(
-    entities = [WeightEntryEntity::class, WeightGoalEntity::class, MounjaroInjectionEntity::class, MealEntryEntity::class, MealItemEntity::class, MealPhotoEntity::class],
-    version = 3,
+    entities = [WeightEntryEntity::class, WeightGoalEntity::class, MounjaroInjectionEntity::class, MealEntryEntity::class, MealItemEntity::class, MealPhotoEntity::class, MealCalorieEstimateEntity::class, DailyCalorieSummaryEntity::class],
+    version = 5,
     exportSchema = false,
 )
 abstract class BodyLogDatabase : RoomDatabase() {
@@ -207,6 +266,27 @@ abstract class BodyLogDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE `mounjaro_injections` ADD COLUMN `reminderIntervalWeeks` INTEGER NOT NULL DEFAULT 1")
             }
         }
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS daily_calorie_summaries (dateEpochDay INTEGER NOT NULL, estimatedCalories INTEGER NOT NULL, summary TEXT NOT NULL, mealCount INTEGER NOT NULL, analyzedAt INTEGER NOT NULL, PRIMARY KEY(dateEpochDay))")
+            }
+        }
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `meal_calorie_estimates` (
+                        `mealId` TEXT NOT NULL,
+                        `estimatedCalories` INTEGER NOT NULL,
+                        `summary` TEXT NOT NULL,
+                        `sourceHash` TEXT NOT NULL,
+                        `analyzedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`mealId`),
+                        FOREIGN KEY(`mealId`) REFERENCES `meal_entries`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_meal_calorie_estimates_mealId` ON `meal_calorie_estimates` (`mealId`)")
+            }
+        }
         @Volatile private var instance: BodyLogDatabase? = null
 
         fun get(context: Context): BodyLogDatabase = instance ?: synchronized(this) {
@@ -214,7 +294,7 @@ abstract class BodyLogDatabase : RoomDatabase() {
                 context.applicationContext,
                 BodyLogDatabase::class.java,
                 "body_log.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
         }
     }
 }

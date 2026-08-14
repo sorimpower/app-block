@@ -8,7 +8,7 @@ const MODELS = Object.freeze({
   OPENAI_SMART: "gpt-5.6-terra",
   OPENAI_DEEP: "gpt-5.6-sol",
 });
-const TASKS = new Set(["BODY_LOG_PROGRESS_ANALYSIS", "HEALTH_CHECKUP_PAGE_SELECTION", "HEALTH_CHECKUP_EXTRACTION", "HEALTH_TREND_ANALYSIS", "HEALTH_SCREENING_OPTION_RECOMMENDATION", "AUCTION_RIGHTS_ANALYSIS", "PHONE_INSIGHT_BATCH", "PROPERTY_TAX_DEEP_ANALYSIS", "PROPERTY_TAX_RULE_CHANGE_ANALYSIS", "PROPERTY_TAX_SCENARIO_COMPARISON"]);
+const TASKS = new Set(["BODY_LOG_PROGRESS_ANALYSIS", "BODY_LOG_DAILY_CALORIE_ANALYSIS", "HEALTH_CHECKUP_PAGE_SELECTION", "HEALTH_CHECKUP_EXTRACTION", "HEALTH_TREND_ANALYSIS", "HEALTH_SCREENING_OPTION_RECOMMENDATION", "AUCTION_RIGHTS_ANALYSIS", "PHONE_INSIGHT_BATCH", "PROPERTY_TAX_DEEP_ANALYSIS", "PROPERTY_TAX_RULE_CHANGE_ANALYSIS", "PROPERTY_TAX_SCENARIO_COMPARISON", "PERSPECTIVE_VIDEO_ANALYSIS", "PERSPECTIVE_TOPIC_SUGGESTION"]);
 const MAX_PROMPT_LENGTH = 60_000;
 // Base64 expands files by about one third. Keep this safely below the Gen 2
 // callable request limit while allowing typical high-resolution checkup PDFs.
@@ -72,6 +72,7 @@ exports.openAiGenerate = onCall(
     if (!TASKS.has(taskType)) throw new HttpsError("invalid-argument", "허용되지 않은 AI 작업입니다.");
     if (!Object.hasOwn(MODELS, model)) throw new HttpsError("invalid-argument", "허용되지 않은 모델입니다.");
     const isTaxAnalysis = taskType.startsWith("PROPERTY_TAX_");
+    const isPerspectiveAnalysis = taskType === "PERSPECTIVE_VIDEO_ANALYSIS";
     if (isTaxAnalysis && (model !== "OPENAI_DEEP" || reasoningEffort !== "max")) throw new HttpsError("invalid-argument", "세금 정밀 분석은 GPT-5.6 Sol max만 허용됩니다.");
     if (reasoningEffort != null && !["none", "low", "medium", "high", "xhigh", "max"].includes(reasoningEffort)) throw new HttpsError("invalid-argument", "허용되지 않은 reasoning 설정입니다.");
     if (typeof prompt !== "string" || !prompt.trim() || prompt.length > MAX_PROMPT_LENGTH) {
@@ -126,14 +127,14 @@ exports.openAiGenerate = onCall(
         store: false,
         ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
         ...(jsonOutput ? { text: { format: { type: "json_object" } } } : {}),
-        ...(isTaxAnalysis ? {
+        ...(isTaxAnalysis || isPerspectiveAnalysis ? {
           tools: [{
             type: "web_search",
             external_web_access: true,
             search_context_size: "high",
-            filters: { allowed_domains: TAX_OFFICIAL_DOMAINS },
+            ...(isTaxAnalysis ? { filters: { allowed_domains: TAX_OFFICIAL_DOMAINS } } : {}),
           }],
-          tool_choice: "required",
+          tool_choice: isTaxAnalysis ? "required" : "auto",
           include: ["web_search_call.action.sources"],
         } : {}),
       }),
