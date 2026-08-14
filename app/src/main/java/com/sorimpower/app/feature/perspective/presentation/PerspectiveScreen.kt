@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Map
@@ -45,6 +46,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -111,7 +113,7 @@ fun PerspectiveScreen(
     val message by viewModel.message.collectAsStateWithLifecycle()
     var tab by remember { mutableStateOf(PerspectiveTab.HOME) }
     var manageTopics by remember { mutableStateOf(false) }
-    LaunchedEffect(openExploreRequest) { if (openExploreRequest > 0) tab = PerspectiveTab.EXPLORE }
+    LaunchedEffect(openExploreRequest) { if (openExploreRequest > 0) tab = PerspectiveTab.RECORDS }
     LaunchedEffect(openTopicsRequest) {
         if (openTopicsRequest > 0) {
             tab = PerspectiveTab.RECORDS
@@ -384,47 +386,32 @@ private fun ThoughtMapCanvas(nodes: List<ThoughtNodeEntity>, edges: List<Thought
 @Composable
 private fun ExploreScreen(state: PerspectiveState, busyVideoId: String?, viewModel: PerspectiveViewModel) {
     val context = LocalContext.current
-    val mediaAccessEnabled = remember(context) { context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context) }
     val latestVideo = state.videos.firstOrNull()
     val latestPerspectives = latestVideo?.let { video -> state.perspectives.filter { it.videoId == video.id && it.status == "suggested" }.take(4) }.orEmpty()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
-        item {
-            Row(
-                Modifier.fillMaxWidth().clickable { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.background(
-                    if (mediaAccessEnabled) AppGreen.copy(alpha = .10f) else AppOrange.copy(alpha = .10f),
-                    RoundedCornerShape(14.dp),
-                ).padding(horizontal = 13.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(8.dp).background(if (mediaAccessEnabled) AppGreen else AppOrange, CircleShape))
-                Text(if (mediaAccessEnabled) "YouTube 자동 감지 켜짐" else "YouTube 자동 감지 권한이 필요해요", Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                Text("설정", color = AppCobalt, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-            }
-        }
         if (latestVideo != null) {
             item {
-                Text("방금 본 영상", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                VideoCard(latestVideo, state, busyVideoId == latestVideo.id, onAnalyze = { viewModel.deepAnalyze(latestVideo.id) }, onOpen = {
-                    if (latestVideo.url.isNotBlank()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(latestVideo.url)))
-                })
-            }
-            item {
-                Text("이 영상에서 열어볼 다른 관점", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                if (latestPerspectives.isEmpty()) Text("‘다른 관점 보기’를 누르면 이 영상에서 놓친 질문 4개를 찾아드려요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("최근 분석에서 열어볼 다른 관점", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                if (latestPerspectives.isEmpty()) Text("시청 기록에서 ‘다른 관점 보기’를 실행하면 이곳에 탐색할 질문이 나타나요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else item { EmptyStateCard("YouTube 영상을 2분 이상 시청하면 여기서 다른 관점을 발견할 수 있어요.") }
         items(latestPerspectives, key = PerspectiveEntity::id) { item ->
+            val recommendations = state.recommendedVideos.filter { it.perspectiveId == item.id }
             Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFF6F4FA))) {
                 Column(Modifier.padding(15.dp)) {
                     Text(item.label, fontWeight = FontWeight.Black, color = AppCobalt)
                     Text(item.description, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall)
                     Text(item.representativeQuestion, Modifier.padding(top = 7.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = {
-                        viewModel.explorePerspective(item.id)
-                        val target = "https://www.youtube.com/results?search_query=${Uri.encode(item.searchQuery)}"
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
-                    }, Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                        Icon(Icons.Rounded.Explore, null, Modifier.size(17.dp)); Text("이 관점 탐색", Modifier.padding(start = 6.dp))
+                    if (recommendations.isEmpty()) {
+                        Text("추천 영상을 찾는 중이거나 공개 검색 결과가 없어요.", Modifier.padding(top = 9.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Text("이 관점의 추천 영상", Modifier.padding(top = 10.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = AppCobalt)
+                        recommendations.forEach { video ->
+                            RecommendedVideoRow(video) {
+                                viewModel.explorePerspective(item.id)
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(video.url)))
+                            }
+                        }
                     }
                 }
             }
@@ -432,10 +419,11 @@ private fun ExploreScreen(state: PerspectiveState, busyVideoId: String?, viewMod
         val otherSuggestions = state.perspectives.filter { it.status == "suggested" && it.videoId != latestVideo?.id }.distinctBy(PerspectiveEntity::label).take(6)
         if (otherSuggestions.isNotEmpty()) item { Text("이전 영상에서 아직 안 본 관점", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black) }
         items(otherSuggestions, key = { "older:${it.id}" }) { item ->
+            val recommendation = state.recommendedVideos.firstOrNull { video -> video.perspectiveId == item.id }
             Row(
                 Modifier.fillMaxWidth().clickable {
                     viewModel.explorePerspective(item.id)
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(item.searchQuery)}")))
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(recommendation?.url ?: "https://www.youtube.com/results?search_query=${Uri.encode(item.searchQuery)}")))
                 }.background(Color.White, RoundedCornerShape(16.dp)).padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -451,29 +439,70 @@ private fun ExploreScreen(state: PerspectiveState, busyVideoId: String?, viewMod
 }
 
 @Composable
+private fun RecommendedVideoRow(video: com.sorimpower.app.feature.perspective.data.PerspectiveRecommendedVideoEntity, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp).clickable(onClick = onClick).background(Color.White, RoundedCornerShape(12.dp)).padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (video.thumbnailUrl.isNotBlank()) AsyncImage(model = video.thumbnailUrl, contentDescription = null, modifier = Modifier.size(52.dp))
+        Column(Modifier.weight(1f).padding(start = if (video.thumbnailUrl.isBlank()) 0.dp else 9.dp)) {
+            Text(video.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+            Text(video.channelName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.Rounded.PlayCircle, null, Modifier.padding(start = 6.dp).size(18.dp), tint = AppOrange)
+    }
+}
+
+@Composable
 private fun RecordsScreen(state: PerspectiveState, busyVideoId: String?, viewModel: PerspectiveViewModel, openTopics: () -> Unit) {
     val context = LocalContext.current
+    val mediaAccessEnabled = remember(context) { context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context) }
+    // 과거 버전에서 URL을 뒤늦게 찾으며 남은 중복 행도 한 장으로 보이게 한다.
+    val visibleVideos = state.videos.distinctBy { "${it.title.trim().lowercase()}|${it.channelName.trim().lowercase()}" }
+    var videoToDelete by remember { mutableStateOf<WatchedVideoEntity?>(null) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("시청 기록", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                    if (state.videos.isNotEmpty()) Text("최근 자동 감지된 영상 ${state.videos.size}개", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (visibleVideos.isNotEmpty()) Text("최근 자동 감지된 영상 ${visibleVideos.size}개", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 TextButton(onClick = openTopics) { Text("주제 관리") }
             }
         }
-        if (state.videos.isEmpty()) item { EmptyStateCard("YouTube에서 영상을 재생하면 시청 기록이 자동으로 나타나요.") }
-        items(state.videos.take(30), key = WatchedVideoEntity::id) { video ->
-            VideoCard(video, state, busyVideoId == video.id, onAnalyze = { viewModel.deepAnalyze(video.id) }, onOpen = {
-                if (video.url.isNotBlank()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(video.url)))
-            })
+        item {
+            Row(
+                Modifier.fillMaxWidth().clickable { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.background(
+                    if (mediaAccessEnabled) AppGreen.copy(alpha = .10f) else AppOrange.copy(alpha = .10f),
+                    RoundedCornerShape(14.dp),
+                ).padding(horizontal = 13.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(8.dp).background(if (mediaAccessEnabled) AppGreen else AppOrange, CircleShape))
+                Text(if (mediaAccessEnabled) "YouTube 자동 감지 켜짐" else "YouTube 자동 감지 권한이 필요해요", Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                Text("설정", color = AppCobalt, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            }
         }
+        if (visibleVideos.isEmpty()) item { EmptyStateCard("YouTube에서 영상을 재생하면 시청 기록이 자동으로 나타나요.") }
+        items(visibleVideos.take(30), key = WatchedVideoEntity::id) { video ->
+            VideoCard(video, state, busyVideoId == video.id, onAnalyze = { viewModel.deepAnalyze(video.id) }, onPremiumAnalyze = { viewModel.deepAnalyze(video.id, premiumVideo = true) }, onOpen = {
+                if (video.url.isNotBlank()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(video.url)))
+            }, onDelete = { videoToDelete = video })
+        }
+    }
+    videoToDelete?.let { video ->
+        AlertDialog(
+            onDismissRequest = { videoToDelete = null },
+            title = { Text("시청 기록 삭제") },
+            text = { Text("이 영상의 분석 결과와 연결된 탐색 관점도 함께 삭제됩니다.") },
+            confirmButton = { TextButton(onClick = { viewModel.deleteWatchRecord(video.id); videoToDelete = null }) { Text("삭제", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { videoToDelete = null }) { Text("취소") } },
+        )
     }
 }
 
 @Composable
-private fun VideoCard(video: WatchedVideoEntity, state: PerspectiveState, busy: Boolean, onAnalyze: () -> Unit, onOpen: () -> Unit) {
+private fun VideoCard(video: WatchedVideoEntity, state: PerspectiveState, busy: Boolean, onAnalyze: () -> Unit, onPremiumAnalyze: () -> Unit, onOpen: () -> Unit, onDelete: (() -> Unit)? = null) {
     val analysis = state.analyses.firstOrNull { it.videoId == video.id }
     Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(15.dp)) {
@@ -484,12 +513,18 @@ private fun VideoCard(video: WatchedVideoEntity, state: PerspectiveState, busy: 
                     Text(listOf(video.channelName, formatTime(video.watchedAt)).filter(String::isNotBlank).joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (video.url.isNotBlank()) Icon(Icons.Rounded.OpenInNew, "YouTube 열기", Modifier.clickable(onClick = onOpen), tint = AppCobalt)
+                if (onDelete != null) IconButton(onClick = onDelete) { Icon(Icons.Rounded.DeleteOutline, "시청 기록 삭제", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-            analysis?.let { Text(it.mainClaim, Modifier.padding(top = 9.dp), style = MaterialTheme.typography.bodySmall, color = AppNavy) }
-            if (video.url.isBlank()) Text("MediaSession 자동 감지 · 영상 ID 미제공 시 공개 메타데이터를 기준으로 분석해요.", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelSmall, color = AppOrange)
+            analysis?.let {
+                Text(it.mainClaim, Modifier.padding(top = 9.dp), style = MaterialTheme.typography.bodySmall, color = AppNavy)
+                if (it.analysisBasis.isNotBlank()) Text("근거: ${it.analysisBasis}", Modifier.padding(top = 5.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             OutlinedButton(onClick = onAnalyze, enabled = !busy, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(16.dp))
-                Text(if (analysis == null) "다른 관점 보기" else "캐시된 분석 보기 · 다시 확인", Modifier.padding(start = 6.dp))
+                Text(if (analysis == null) "다른 관점 보기 · Terra" else "공개 정보 분석 다시 보기 · Terra", Modifier.padding(start = 6.dp))
+            }
+            TextButton(onClick = onPremiumAnalyze, enabled = !busy, modifier = Modifier.align(Alignment.End)) {
+                Text("영상 정밀 분석 · Gemini 3.5 Flash", style = MaterialTheme.typography.labelSmall, color = AppCobalt)
             }
         }
     }
@@ -566,7 +601,6 @@ private fun TopicScreen(
             }
         }
         if (state.topics.isEmpty()) item { Text("아직 등록한 주제가 없어요. 의미 있게 시청한 영상에서 새 주제를 제안해 드릴게요.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        if (state.topics.isNotEmpty()) item { Text("등록한 주제", fontWeight = FontWeight.Black, color = AppCobalt) }
         items(state.topics, key = { it.id }) { topic ->
             Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Row(Modifier.fillMaxWidth().padding(15.dp), verticalAlignment = Alignment.CenterVertically) {

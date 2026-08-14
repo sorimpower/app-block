@@ -73,7 +73,7 @@ internal fun HomeScreen(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 HomeFeatureTile(
                     modifier = Modifier.weight(1f),
-                    title = "AI 챙김",
+                    title = "AI 알림",
                     description = "놓치기 쉬운 일정을 정리해요",
                     icon = Icons.Rounded.NotificationsNone,
                     accent = AppCobalt,
@@ -81,7 +81,7 @@ internal fun HomeScreen(
                 )
                 HomeFeatureTile(
                     modifier = Modifier.weight(1f),
-                    title = "건강 기록",
+                    title = "건강",
                     description = "체중·식사·주사를 기록해요",
                     icon = Icons.Rounded.FavoriteBorder,
                     accent = AppOrange,
@@ -117,7 +117,7 @@ internal fun HomeScreen(
         }
         item {
             HomeWideFeatureCard(
-                title = "관점 확장",
+                title = "유튜브 분석",
                 description = "최근 본 콘텐츠를 바탕으로 아직 만나지 않은 관점을 탐색해요",
                 icon = Icons.Rounded.Psychology,
                 accent = AppCobalt,

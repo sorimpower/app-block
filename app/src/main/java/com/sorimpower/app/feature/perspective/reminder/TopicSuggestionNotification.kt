@@ -14,15 +14,18 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.sorimpower.app.MainActivity
 import com.sorimpower.app.feature.perspective.data.PerspectiveRepository
+import com.sorimpower.app.feature.perspective.data.PerspectiveTopicEntity
 import com.sorimpower.app.feature.perspective.data.TopicSuggestionEntity
 import com.sorimpower.app.feature.perspective.data.WatchedVideoEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 object TopicSuggestionNotifier {
     private const val CHANNEL_ID = "perspective_topic_suggestions"
+    private const val EXPLORE_CHANNEL_ID = "perspective_explore_suggestions"
 
     fun show(context: Context, suggestion: TopicSuggestionEntity, video: WatchedVideoEntity) {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
@@ -69,11 +72,56 @@ object TopicSuggestionNotifier {
 
     fun cancel(context: Context, videoId: String) = NotificationManagerCompat.from(context).cancel(notificationId(videoId))
 
+    /** 이미 승인한 주제로 분류된 영상은 재등록을 요구하지 않고 바로 분석을 제안한다. */
+    fun showExplore(context: Context, topic: PerspectiveTopicEntity, video: WatchedVideoEntity): Boolean {
+        if (!canNotify(context) || !claimExploreDailySlot(context)) return false
+        val notificationId = 56_000 + (video.id.hashCode() and 0x0FFF)
+        val openIntent = PendingIntent.getActivity(
+            context,
+            notificationId,
+            Intent(context, MainActivity::class.java)
+                .setAction(MainActivity.ACTION_OPEN_PERSPECTIVE_RECORDS)
+                .putExtra(MainActivity.EXTRA_OPEN_PERSPECTIVE, true),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        NotificationManagerCompat.from(context).also {
+            it.createNotificationChannel(NotificationChannel(EXPLORE_CHANNEL_ID, "유튜브 분석 제안", NotificationManager.IMPORTANCE_DEFAULT))
+            it.notify(
+                notificationId,
+                NotificationCompat.Builder(context, EXPLORE_CHANNEL_ID)
+                    .setSmallIcon(com.sorimpower.app.R.drawable.ic_notification_najalal)
+                    .setContentTitle("‘${topic.name}’ 영상이에요")
+                    .setContentText("다른 관점 4개를 찾아볼까요?")
+                    .setStyle(NotificationCompat.BigTextStyle().bigText("${video.title}\n다른 관점 4개를 찾아볼까요?"))
+                    .setContentIntent(openIntent)
+                    .setAutoCancel(true)
+                    .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                    .build(),
+            )
+        }
+        return true
+    }
+
     private fun manager(context: Context): NotificationManagerCompat = NotificationManagerCompat.from(context).also {
-        it.createNotificationChannel(NotificationChannel(CHANNEL_ID, "관점 확장 주제 제안", NotificationManager.IMPORTANCE_DEFAULT))
+        it.createNotificationChannel(NotificationChannel(CHANNEL_ID, "유튜브 분석 주제 제안", NotificationManager.IMPORTANCE_DEFAULT))
+    }
+
+    private fun canNotify(context: Context): Boolean = Build.VERSION.SDK_INT < 33 ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    /** 기존 주제의 다른 관점 제안은 영상을 끝낸 뒤 하루 두 번까지만 보낸다. */
+    private fun claimExploreDailySlot(context: Context): Boolean {
+        val preferences = context.getSharedPreferences("perspective_explore_notifications", Context.MODE_PRIVATE)
+        val today = LocalDate.now().toString()
+        val savedDay = preferences.getString("day", null)
+        val count = if (savedDay == today) preferences.getInt("count", 0) else 0
+        if (count >= MAX_EXPLORE_NOTIFICATIONS_PER_DAY) return false
+        preferences.edit().putString("day", today).putInt("count", count + 1).apply()
+        return true
     }
 
     private fun notificationId(videoId: String): Int = 52_000 + (videoId.hashCode() and 0x0FFF)
+    private const val MAX_EXPLORE_NOTIFICATIONS_PER_DAY = 2
 }
 
 class TopicSuggestionActionReceiver : BroadcastReceiver() {

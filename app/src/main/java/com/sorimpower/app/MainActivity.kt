@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         handleAuctionAnalysisIntent(intent)
         handlePhoneInsightIntent(intent)
+        handlePerspectiveIntent(intent)
         handlePerspectiveTopicIntent(intent)
         enableEdgeToEdge()
         setContent {
@@ -68,6 +69,7 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         handleAuctionAnalysisIntent(intent)
         handlePhoneInsightIntent(intent)
+        handlePerspectiveIntent(intent)
         handlePerspectiveTopicIntent(intent)
     }
 
@@ -77,6 +79,14 @@ class MainActivity : ComponentActivity() {
         }
     }
     private fun handlePhoneInsightIntent(intent: Intent?) { if (intent?.getBooleanExtra(EXTRA_OPEN_PHONE_INSIGHT, false) == true) openPhoneInsightRequest++ }
+    private fun handlePerspectiveIntent(intent: Intent?) {
+        if (
+            intent?.getBooleanExtra(EXTRA_OPEN_PERSPECTIVE, false) == true ||
+            intent?.action == ACTION_OPEN_PERSPECTIVE_RECORDS
+        ) {
+            openPerspectiveRequest++
+        }
+    }
     private fun handlePerspectiveTopicIntent(intent: Intent?) {
         if (
             intent?.getBooleanExtra(EXTRA_OPEN_PERSPECTIVE_TOPICS, false) == true ||
@@ -99,7 +109,9 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_OPEN_AUCTION_ANALYSES = "open_auction_analyses"
         const val EXTRA_OPEN_PHONE_INSIGHT = "open_phone_insight"
+        const val EXTRA_OPEN_PERSPECTIVE = "open_perspective"
         const val EXTRA_OPEN_PERSPECTIVE_TOPICS = "open_perspective_topics"
+        const val ACTION_OPEN_PERSPECTIVE_RECORDS = "com.sorimpower.app.action.OPEN_PERSPECTIVE_RECORDS"
         const val ACTION_OPEN_PERSPECTIVE_TOPICS = "com.sorimpower.app.action.OPEN_PERSPECTIVE_TOPICS"
     }
 }

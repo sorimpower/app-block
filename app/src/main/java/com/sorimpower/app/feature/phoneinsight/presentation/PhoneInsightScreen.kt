@@ -143,7 +143,7 @@ private fun SourceManagement(configs: List<InsightSourceConfigEntity>,latestRun:
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp)) {
                     Row(Modifier.fillMaxWidth()) { Column(Modifier.weight(1f)) { Text(type.label, fontWeight = FontWeight.Black); Text(type.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(config?.enabled == true, { if(type==InsightSourceType.SMS) onSmsToggle(it) else onToggle(type,it) }, enabled = available && !working) }
-                    if (type == InsightSourceType.NOTIFICATION && config?.enabled == true&&!config.permissionGranted) Text("시스템 설정에서 ‘AI 챙김 알림 접근’을 허용해 주세요.", color = AppCobalt, style = MaterialTheme.typography.labelSmall)
+                    if (type == InsightSourceType.NOTIFICATION && config?.enabled == true&&!config.permissionGranted) Text("시스템 설정에서 ‘AI 알림의 알림 접근’을 허용해 주세요.", color = AppCobalt, style = MaterialTheme.typography.labelSmall)
                     if(type==InsightSourceType.NOTIFICATION&&config?.enabled==true){val selected=config.settings.selectedPackages;OutlinedButton({onEditApps(type,selected)},Modifier.fillMaxWidth()){Text(if(selected.isEmpty())"알림을 확인할 앱 · 전체 앱" else "알림을 확인할 앱 · ${selected.size}개")}}
                     if(config?.enabled==true&&!config.permissionGranted)Text("접근 권한을 확인해 주세요. 권한이 없으면 이 데이터는 건너뜁니다.",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.labelSmall)
                     if (type == InsightSourceType.SCREENSHOT && config?.enabled == true) Text("선택한 사진 폴더의 새 이미지만 분석합니다.", color = AppCobalt, style = MaterialTheme.typography.labelSmall)

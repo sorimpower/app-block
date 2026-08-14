@@ -21,17 +21,21 @@ class PerspectiveViewModel(application: Application) : AndroidViewModel(applicat
 
     init { viewModelScope.launch { repository.initialize() } }
 
-    fun deepAnalyze(videoId: String) = viewModelScope.launch {
+    fun deepAnalyze(videoId: String, premiumVideo: Boolean = false) = viewModelScope.launch {
         if (_busyVideoId.value != null) return@launch
         _busyVideoId.value = videoId
         _message.value = null
-        runCatching { repository.deepAnalyze(videoId) }
-            .onSuccess { _message.value = "4개의 탐색 관점을 만들었어요." }
+        runCatching { repository.deepAnalyze(videoId, premiumVideo) }
+            .onSuccess { _message.value = if (premiumVideo) "Gemini 영상 정밀 분석으로 4개의 관점을 만들었어요." else "Terra 공개 정보 분석으로 4개의 관점을 만들었어요." }
             .onFailure { _message.value = it.message ?: "관점 분석을 완료하지 못했어요." }
         _busyVideoId.value = null
     }
 
     fun explorePerspective(id: String) = viewModelScope.launch { repository.markPerspectiveVisited(id) }
+    fun deleteWatchRecord(videoId: String) = viewModelScope.launch {
+        repository.deleteWatchRecord(videoId)
+        _message.value = "시청 기록을 삭제했어요."
+    }
     fun setTopicEnabled(id: String, enabled: Boolean) = viewModelScope.launch { repository.setTopicEnabled(id, enabled) }
     fun updateTopic(id: String, name: String, description: String, onComplete: () -> Unit) = viewModelScope.launch {
         _message.value = null

@@ -1,21 +1,22 @@
 # 나잘알
 
-개인용 APK 설치를 전제로 만든 Kotlin·Jetpack Compose Android 앱입니다. 생활 관리, 건강 기록, 부동산 경매·세금, 휴대폰 데이터 기반 AI 챙김을 하나의 앱에서 제공합니다.
+개인용 APK 설치를 전제로 만든 Kotlin·Jetpack Compose Android 앱입니다. 생활 관리, 건강 기록, 부동산 경매·세금, 휴대폰 데이터 기반 AI 알림을 하나의 앱에서 제공합니다.
 
-> 버전: `v0.13.5` · 최소 Android 8.0(API 26) · target SDK 35
+> 버전: `v0.14.6` · 최소 Android 8.0(API 26) · target SDK 35
 
 ## 주요 기능
 
-### 관점 확장
+### 유튜브 분석
 
 - 활성 YouTube MediaSession 기반 제목·채널·재생시간 자동 기록
-- Gemini Flash-Lite 저비용 주제 제안과 알림에서 주제 등록/건너뛰기
-- 요청형 Gemini 영상·음성 심층 분석과 GPT 공개정보 fallback
+- GPT-5.6 Luna 저비용 주제 제안과 알림에서 주제 등록/건너뛰기
+- 기본 Terra medium 공개 정보·자막 분석과, 선택형 Gemini 3.5 Flash 실제 영상·음성 정밀 분석
+- 관점별 검색어 대신 YouTube Data API로 찾은 실제 추천 영상 카드 제공
 - 실제 관심 비중과 최근 탐색 경로 중심 홈, 영상 썸네일이 포함된 주제별 사고 확장 지도
 - 내가 안 본 세상, 생각이 넓어진 순간, 주간 정보 편식 리포트
 - 최근 영상 중심 탐색과 별도 시청 기록, 영상 분석 캐시 및 승인 주제의 이름·설명 수정/수집 ON·OFF
 
-### AI 챙김
+### AI 알림
 
 사용자가 허용한 휴대폰 데이터를 통합 분석해 놓치기 쉬운 일정과 기한을 찾아줍니다.
 
@@ -95,7 +96,7 @@ app/src/main/java/com/sorimpower/app/
 │  ├─ healthcheckup/     건강검진 기록·분석
 │  ├─ auction/           부동산 경매
 │  ├─ propertytax/       부동산 세금 Rule Engine·시뮬레이션
-│  ├─ phoneinsight/      AI 챙김
+│  ├─ phoneinsight/      AI 알림
 │  ├─ home/              홈
 │  └─ settings/          설정
 └─ MainActivity.kt       앱 시작점
@@ -113,7 +114,7 @@ docs/                    현재 기능 명세
 - [건강 기록 및 건강검진](docs/health-spec.md)
 - [부동산 경매](docs/auction-spec.md)
 - [부동산 세금](docs/property-tax-spec.md)
-- [AI 챙김](docs/phone-insight-spec.md)
+- [AI 알림](docs/phone-insight-spec.md)
 - [AI 및 Firebase](docs/ai-and-backend-spec.md)
 
 ## 개발 환경 및 빌드
@@ -146,7 +147,7 @@ Functions 배포에는 Firebase 결제 계정이 필요할 수 있습니다. API
 
 - `QUERY_ALL_PACKAGES`: 차단할 설치 앱 목록 표시
 - 접근성 권한: 앱 차단 동작
-- 알림 권한: 경매·AI 챙김·주사 알림
-- AI 챙김 소스별 권한: 문자, 캘린더, 연락처, 통화 기록, 앱 알림 접근, 파일·사진 폴더 등
+- 알림 권한: 경매·AI 알림·주사 알림
+- AI 알림 소스별 권한: 문자, 캘린더, 연락처, 통화 기록, 앱 알림 접근, 파일·사진 폴더 등
 
 각 권한은 해당 기능을 사용자가 켤 때만 요청하거나 설정으로 안내합니다.

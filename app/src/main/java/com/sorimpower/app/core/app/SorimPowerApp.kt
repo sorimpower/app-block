@@ -142,7 +142,7 @@ import com.sorimpower.app.feature.blocker.presentation.ScheduleScreen
 import com.sorimpower.app.feature.settings.presentation.SettingsScreen
 
 private enum class Screen(val label: String) {
-    HOME("홈"), PERSPECTIVE("관점"), BLOCKER("차단"), BODY_LOG("기록"), AUCTION("경매"), PHONE_INSIGHT("챙김"), PROPERTY_TAX("세금"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
+    HOME("홈"), PERSPECTIVE("유튜브"), BLOCKER("차단"), BODY_LOG("건강"), AUCTION("경매"), PHONE_INSIGHT("알림"), PROPERTY_TAX("세금"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
 }
 
 private enum class HealthRecordTab(val label: String) { DAILY("데일리 기록"), CHECKUP("건강검진") }
@@ -239,12 +239,12 @@ internal fun SorimPowerApp(
                         Text(when (screen) {
                             Screen.HOME -> "나잘알"
                             Screen.BLOCKER -> "앱 차단"
-                            Screen.BODY_LOG -> "건강 기록"
+                            Screen.BODY_LOG -> "건강"
                             Screen.AUCTION -> "부동산 경매"
                             Screen.MORE -> "더보기"
-                            Screen.PHONE_INSIGHT -> "AI 챙김"
+                            Screen.PHONE_INSIGHT -> "AI 알림"
                             Screen.PROPERTY_TAX -> "부동산 세금"
-                            Screen.PERSPECTIVE -> "관점 확장"
+                            Screen.PERSPECTIVE -> "유튜브 분석"
                             Screen.SCHEDULE -> "조건 편집"
                             Screen.APP_RULES -> "앱별 조건"
                             Screen.SETTINGS -> "설정"
@@ -275,7 +275,7 @@ internal fun SorimPowerApp(
                     }
                     if (screen == Screen.PHONE_INSIGHT) {
                         IconButton(onClick = { showPhoneInsightScheduleInfo = true }) {
-                            Icon(Icons.Rounded.Info, contentDescription = "AI 챙김 자동 확인 안내")
+                            Icon(Icons.Rounded.Info, contentDescription = "AI 알림 자동 확인 안내")
                         }
                     }
                     if (screen == Screen.PROPERTY_TAX) {
@@ -422,7 +422,7 @@ internal fun SorimPowerApp(
     if (showPhoneInsightScheduleInfo) {
         AlertDialog(
             onDismissRequest = { showPhoneInsightScheduleInfo = false },
-            title = { Text("AI 챙김 자동 확인", fontWeight = FontWeight.Black) },
+            title = { Text("AI 알림 자동 확인", fontWeight = FontWeight.Black) },
             text = {
                 val run = phoneLatestRun
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -568,7 +568,7 @@ private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
                     }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text("앱 정보", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                        Text("나잘알 v0.13.5", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
+                        Text("나잘알 v0.14.6", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
                         Text("나잘알 개인용 시스템", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }

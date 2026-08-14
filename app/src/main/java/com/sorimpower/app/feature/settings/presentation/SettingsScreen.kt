@@ -164,9 +164,9 @@ internal fun SettingsScreen(
                 Column(Modifier.padding(18.dp)) {
                     SectionTitle("시작 화면", "앱을 열었을 때 먼저 표시할 기능")
                     Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DestinationCard(Icons.Rounded.NotificationsNone, "AI 챙김", "AI가 찾은 일정과 할 일로 바로 시작", state.startDestination == StartDestination.PHONE_INSIGHT) { viewModel.setStartDestination(StartDestination.PHONE_INSIGHT) }
-                        DestinationCard(Icons.Rounded.Psychology, "관점 확장", "콘텐츠 지도와 새로운 관점으로 바로 시작", state.startDestination == StartDestination.PERSPECTIVE) { viewModel.setStartDestination(StartDestination.PERSPECTIVE) }
-                        DestinationCard(Icons.Rounded.FavoriteBorder, "건강 기록", "체중과 식사 기록으로 바로 시작", state.startDestination == StartDestination.BODY_LOG) { viewModel.setStartDestination(StartDestination.BODY_LOG) }
+                        DestinationCard(Icons.Rounded.NotificationsNone, "AI 알림", "AI가 찾은 일정과 할 일로 바로 시작", state.startDestination == StartDestination.PHONE_INSIGHT) { viewModel.setStartDestination(StartDestination.PHONE_INSIGHT) }
+                        DestinationCard(Icons.Rounded.Psychology, "유튜브 분석", "콘텐츠 지도와 새로운 관점으로 바로 시작", state.startDestination == StartDestination.PERSPECTIVE) { viewModel.setStartDestination(StartDestination.PERSPECTIVE) }
+                        DestinationCard(Icons.Rounded.FavoriteBorder, "건강", "체중과 식사 기록으로 바로 시작", state.startDestination == StartDestination.BODY_LOG) { viewModel.setStartDestination(StartDestination.BODY_LOG) }
                         DestinationCard(Icons.Rounded.Gavel, "부동산 경매", "관심 조건 경매 목록으로 바로 시작", state.startDestination == StartDestination.REAL_ESTATE_AUCTION) { viewModel.setStartDestination(StartDestination.REAL_ESTATE_AUCTION) }
                         DestinationCard(Icons.Rounded.AccountBalance, "부동산 세금", "세금 포트폴리오로 바로 시작", state.startDestination == StartDestination.PROPERTY_TAX) { viewModel.setStartDestination(StartDestination.PROPERTY_TAX) }
                         DestinationCard(Icons.Rounded.Block, "앱 차단", "차단 설정으로 바로 시작", state.startDestination == StartDestination.APP_BLOCKER) { viewModel.setStartDestination(StartDestination.APP_BLOCKER) }

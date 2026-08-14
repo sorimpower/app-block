@@ -103,7 +103,7 @@ class PhoneInsightNotificationListenerService : NotificationListenerService() {
     private fun captureController(controller: MediaController, fallbackTitle: String = "", fallbackChannel: String = "") {
         val metadata = controller.metadata
         val state = controller.playbackState
-        if (state?.state !in setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING)) return
+        if (state?.state !in setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING, PlaybackState.STATE_STOPPED)) return
         val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
             .ifBlank { metadata?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE).orEmpty() }
             .ifBlank { fallbackTitle }
@@ -112,17 +112,25 @@ class PhoneInsightNotificationListenerService : NotificationListenerService() {
             .ifBlank { metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST).orEmpty() }
             .ifBlank { fallbackChannel }
         if (title.isBlank()) return
+        // YouTube는 기기·영상 유형마다 MediaSession의 필드를 다르게 채운다.
+        // 기본 ID 외에 MediaDescription의 URI/ID까지 함께 확인해야 실제 영상 주소를
+        // 얻을 수 있다. 주소가 없는 세션은 제목만으로 영상을 특정할 수 없으므로 저장만 한다.
+        val description = metadata?.description
         val mediaId = listOfNotNull(
             metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID),
             metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_URI),
+            description?.mediaId,
+            description?.mediaUri?.toString(),
         ).firstNotNullOfOrNull(::extractYouTubeVideoId)
         val durationMs = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.coerceAtLeast(0L) ?: 0L
         val rawPosition = if (state?.state == PlaybackState.STATE_PLAYING && state.lastPositionUpdateTime > 0L) {
             state.position + ((SystemClock.elapsedRealtime() - state.lastPositionUpdateTime) * state.playbackSpeed).toLong()
         } else state?.position ?: 0L
         val positionMs = if (durationMs > 0) rawPosition.coerceIn(0L, durationMs) else rawPosition.coerceAtLeast(0L)
+        // 사용자가 일시정지한 경우에는 방해하지 않는다. 앱이 재생을 종료한 상태만 처리한다.
+        val playbackEnded = state?.state == PlaybackState.STATE_STOPPED
         serviceScope.launch {
-            PerspectiveRepository(applicationContext).recordPlayback(title, channel, mediaId, durationMs / 1_000L, positionMs / 1_000L)
+            PerspectiveRepository(applicationContext).recordPlayback(title, channel, mediaId, durationMs / 1_000L, positionMs / 1_000L, playbackEnded)
         }
     }
 
@@ -134,7 +142,7 @@ class PhoneInsightNotificationListenerService : NotificationListenerService() {
             when {
                 uri.host?.contains("youtu.be") == true -> uri.lastPathSegment
                 uri.path?.startsWith("/shorts/") == true -> uri.pathSegments.getOrNull(1)
-                else -> uri.getQueryParameter("v")
+                else -> uri.getQueryParameter("v") ?: uri.lastPathSegment
             }?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{11}")) }
         }.getOrNull()
     }

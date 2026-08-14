@@ -20,8 +20,8 @@ internal class AiModelRouter(context: Context) {
         AiTaskType.PROPERTY_TAX_DEEP_ANALYSIS,
         AiTaskType.PROPERTY_TAX_RULE_CHANGE_ANALYSIS,
         AiTaskType.PROPERTY_TAX_SCENARIO_COMPARISON,
-        AiTaskType.PERSPECTIVE_VIDEO_ANALYSIS,
         AiTaskType.PERSPECTIVE_TOPIC_SUGGESTION,
+        AiTaskType.PERSPECTIVE_METADATA_ANALYSIS,
         -> openAi.generate(model, request)
     }
 }
