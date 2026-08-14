@@ -75,7 +75,7 @@ internal class OpenAiBodyLogAnalyzer(
             val diet = if (state.activeGoal?.targetWeightKg?.let { currentWeight > it } == true) (maintenance - 500).coerceAtLeast(1_500) else maintenance
             appendLine("칼로리 해석 기준(1989년생·171cm 남성, 가벼운 활동 가정): 최소 1,500kcal, 감량 목표 ${diet}kcal, 유지 ${maintenance}kcal")
         }
-        appendLine("최근 일별 AI 추정 섭취 칼로리(최신순):")
+        appendLine("최근 일별 섭취 칼로리(최신순):")
         state.dailyCalories.sortedByDescending { it.dateEpochDay }.take(MAX_CALORIE_SUMMARIES).forEach { summary ->
             appendLine("- ${java.time.LocalDate.ofEpochDay(summary.dateEpochDay)} ${summary.estimatedCalories}kcal, 식사 ${summary.mealCount}개, 요약=${summary.summary}")
         }

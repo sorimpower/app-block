@@ -14,6 +14,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.sorimpower.app.feature.blocker.domain.BlockSchedule
 import com.sorimpower.app.feature.blocker.domain.RepeatCycle
 import com.sorimpower.app.feature.blocker.domain.ScheduleAction
+import com.sorimpower.app.core.ui.AppThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -42,6 +43,7 @@ class BlockerRepository(private val context: Context) {
     private val startDestinationKey = stringPreferencesKey("start_destination")
     private val bottomNavigationOrderKey = stringPreferencesKey("bottom_navigation_order")
     private val bottomNavigationSchemaVersionKey = intPreferencesKey("bottom_navigation_schema_version")
+    private val themeModeKey = stringPreferencesKey("app_theme_mode")
     private val passwordHashKey = stringPreferencesKey("password_hash")
     private val passwordSaltKey = stringPreferencesKey("password_salt")
     private val legacyBypassPackageKey = stringPreferencesKey("bypass_package")
@@ -81,6 +83,9 @@ class BlockerRepository(private val context: Context) {
             blockMessage = preferences[blockMessageKey] ?: DEFAULT_BLOCK_MESSAGE,
             startDestination = StartDestination.from(preferences[startDestinationKey]),
             bottomNavigationOrder = BottomNavigationTab.from(preferences[bottomNavigationOrderKey]),
+            themeMode = preferences[themeModeKey]
+                ?.let { saved -> AppThemeMode.entries.firstOrNull { it.name == saved } }
+                ?: AppThemeMode.SYSTEM,
             hasPassword = !preferences[passwordHashKey].isNullOrBlank(),
             oneTimeBypassPackage = preferences[legacyBypassPackageKey],
         )
@@ -169,6 +174,10 @@ class BlockerRepository(private val context: Context) {
 
     suspend fun setBottomNavigationOrder(order: List<BottomNavigationTab>) = context.blockerDataStore.edit {
         it[bottomNavigationOrderKey] = BottomNavigationTab.normalize(order).joinToString(",") { tab -> tab.name }
+    }
+
+    suspend fun setThemeMode(mode: AppThemeMode) = context.blockerDataStore.edit {
+        it[themeModeKey] = mode.name
     }
 
     /** 새 기능 탭을 기존 설치에 한 번만 추가하고 이후 사용자의 숨김 설정은 존중한다. */
@@ -406,6 +415,7 @@ data class BlockerState(
     val blockMessage: String = BlockerRepository.DEFAULT_BLOCK_MESSAGE,
     val startDestination: StartDestination = StartDestination.HOME,
     val bottomNavigationOrder: List<BottomNavigationTab> = BottomNavigationTab.defaultOrder,
+    val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val hasPassword: Boolean = false,
     val oneTimeBypassPackage: String? = null,
 ) {

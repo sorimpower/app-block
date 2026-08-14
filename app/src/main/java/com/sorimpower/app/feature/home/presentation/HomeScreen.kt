@@ -76,7 +76,7 @@ internal fun HomeScreen(
                     title = "AI 알림",
                     description = "놓치기 쉬운 일정을 정리해요",
                     icon = Icons.Rounded.NotificationsNone,
-                    accent = AppCobalt,
+                    accent = MaterialTheme.colorScheme.primary,
                     onClick = openPhoneInsight,
                 )
                 HomeFeatureTile(
@@ -84,7 +84,7 @@ internal fun HomeScreen(
                     title = "건강",
                     description = "체중·식사·주사를 기록해요",
                     icon = Icons.Rounded.FavoriteBorder,
-                    accent = AppOrange,
+                    accent = MaterialTheme.colorScheme.tertiary,
                     onClick = openBodyLog,
                 )
             }
@@ -107,7 +107,7 @@ internal fun HomeScreen(
                     title = "부동산 세금",
                     description = "보유·양도 계획을 검토해요",
                     icon = Icons.Rounded.AccountBalance,
-                    accent = AppCobalt,
+                    accent = MaterialTheme.colorScheme.primary,
                     onClick = openPropertyTax,
                 )
             }
@@ -120,7 +120,7 @@ internal fun HomeScreen(
                 title = "유튜브 분석",
                 description = "최근 본 콘텐츠를 바탕으로 아직 만나지 않은 관점을 탐색해요",
                 icon = Icons.Rounded.Psychology,
-                accent = AppCobalt,
+                accent = MaterialTheme.colorScheme.primary,
                 onClick = openPerspective,
             )
         }
@@ -129,7 +129,7 @@ internal fun HomeScreen(
                 title = "앱 차단",
                 description = if (state.enabled) "집중 모드 실행 중" else "방해되는 앱을 조건에 맞게 차단",
                 icon = Icons.Rounded.Lock,
-                accent = AppOrange,
+                accent = MaterialTheme.colorScheme.tertiary,
                 onClick = openBlocker,
             )
         }
@@ -138,17 +138,17 @@ internal fun HomeScreen(
                 Card(
                     Modifier.fillMaxWidth().clickable(onClick = openAccessibilitySettings),
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF0F7)),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .55f)),
                 ) {
                     Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(42.dp).background(AppOrange.copy(alpha = .13f), CircleShape), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.Security, null, tint = AppOrange)
+                        Box(Modifier.size(42.dp).background(MaterialTheme.colorScheme.tertiary.copy(alpha = .13f), CircleShape), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.Security, null, tint = MaterialTheme.colorScheme.tertiary)
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
                             Text("접근성 권한이 필요해요", fontWeight = FontWeight.Black)
                             Text("연결해야 앱 차단이 동작합니다.", style = MaterialTheme.typography.bodySmall)
                         }
-                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, tint = AppOrange)
+                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, tint = MaterialTheme.colorScheme.tertiary)
                     }
                 }
             }
@@ -167,7 +167,7 @@ private fun HomeHero() {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(AppCobalt, AppOrange)))
+                .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)))
                 .padding(horizontal = 22.dp, vertical = 20.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -229,7 +229,7 @@ private fun HomeFeatureTile(
     Card(
         modifier.height(156.dp).clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -261,7 +261,7 @@ private fun HomeWideFeatureCard(
     Card(
         Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {

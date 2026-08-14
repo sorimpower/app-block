@@ -129,7 +129,7 @@ internal fun BlockerScreen(
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(22.dp),
                 elevation = CardDefaults.cardElevation(1.dp),
             ) {
@@ -161,7 +161,7 @@ internal fun BlockerScreen(
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(22.dp),
                 elevation = CardDefaults.cardElevation(1.dp),
             ) {
@@ -185,7 +185,7 @@ internal fun BlockerScreen(
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(22.dp),
                 elevation = CardDefaults.cardElevation(1.dp),
             ) {
@@ -251,7 +251,7 @@ private fun ScheduleRow(
                     Text(schedule.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Black)
                     Text(
                         if (schedule.action == ScheduleAction.BLOCK) "차단 실행 조건" else "차단 해제 조건",
-                        color = if (schedule.action == ScheduleAction.BLOCK) AppCobalt else MaterialTheme.colorScheme.tertiary,
+                        color = if (schedule.action == ScheduleAction.BLOCK) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -275,7 +275,7 @@ private fun FeatureSectionTitle(
     Row(modifier, verticalAlignment = Alignment.Top) {
         Box(
             Modifier.size(38.dp).clip(RoundedCornerShape(12.dp))
-                .background(Brush.linearGradient(listOf(AppCobalt, AppOrange))),
+                .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary))),
             contentAlignment = Alignment.Center,
         ) { Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp)) }
         Column(Modifier.padding(start = 12.dp)) {
@@ -293,7 +293,7 @@ private fun CleanSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, en
         enabled = enabled,
         colors = SwitchDefaults.colors(
             checkedThumbColor = Color.White,
-            checkedTrackColor = AppCobalt,
+            checkedTrackColor = MaterialTheme.colorScheme.primary,
             checkedBorderColor = Color.Transparent,
             uncheckedThumbColor = Color(0xFFD0CCD5),
             uncheckedTrackColor = Color(0xFFECE9EF),
@@ -425,8 +425,8 @@ internal fun ScheduleScreen(
             }
         }
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), elevation = CardDefaults.cardElevation(1.dp)) {
-                Column(Modifier.fillMaxWidth().padding(8.dp).clip(RoundedCornerShape(18.dp)).background(Brush.linearGradient(listOf(AppCobalt, AppOrange))).padding(20.dp)) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), elevation = CardDefaults.cardElevation(1.dp)) {
+                Column(Modifier.fillMaxWidth().padding(8.dp).clip(RoundedCornerShape(18.dp)).background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary))).padding(20.dp)) {
                     Text("PREVIEW", color = Color.White.copy(alpha = .75f), fontWeight = FontWeight.Black)
                     Text(scheduleSummary(draft), color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text("한 조건 안의 항목은 모두 만족할 때 적용됩니다.", color = Color.White.copy(alpha = .7f))
@@ -464,8 +464,8 @@ internal fun AppRulesScreen(
     ) {
         item { OutlinedButton(onClick = onBack) { Text("‹ 앱 목록") } }
         item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(26.dp), elevation = CardDefaults.cardElevation(2.dp)) {
-                Row(Modifier.fillMaxWidth().padding(10.dp).clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(Color(0xFF7C2AE8), Color(0xFFB623E6), Color(0xFFE72A99)))).padding(22.dp), verticalAlignment = Alignment.CenterVertically) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(26.dp), elevation = CardDefaults.cardElevation(2.dp)) {
+                Row(Modifier.fillMaxWidth().padding(10.dp).clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.tertiary))).padding(22.dp), verticalAlignment = Alignment.CenterVertically) {
                     val appIcon = remember(app.packageName) { app.icon.toBitmap(96, 96).asImageBitmap() }
                     Image(appIcon, contentDescription = null, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)))
                     Column(Modifier.weight(1f).padding(start = 14.dp)) {
@@ -503,7 +503,7 @@ internal fun AppRulesScreen(
                         }
                     },
                     colors = CardDefaults.cardColors(
-                        containerColor = if (assigned) Color(0xFFF2E7FC) else Color.White,
+                        containerColor = if (assigned) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                     ),
                     shape = RoundedCornerShape(20.dp),
                     elevation = CardDefaults.cardElevation(1.dp),
@@ -533,7 +533,7 @@ internal fun AppRulesScreen(
             }
         }
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(1.dp)) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(1.dp)) {
                 Text(
                     "이 앱에 선택한 해제 조건과 차단 조건이 동시에 맞으면 해제 조건이 우선합니다.",
                     Modifier.padding(16.dp),
@@ -606,7 +606,7 @@ internal fun PasswordGateDialog(
 
 @Composable
 private fun EmptyCard(message: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(1.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(1.dp)) {
         Text(message, Modifier.fillMaxWidth().padding(18.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

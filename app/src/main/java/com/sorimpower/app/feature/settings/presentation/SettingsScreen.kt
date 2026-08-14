@@ -96,6 +96,7 @@ import com.sorimpower.app.core.ui.AppCobalt
 import com.sorimpower.app.core.ui.AppLilac
 import com.sorimpower.app.core.ui.AppNavy
 import com.sorimpower.app.core.ui.AppOrange
+import com.sorimpower.app.core.ui.AppThemeMode
 import com.sorimpower.app.core.ui.SorimPowerTheme
 import java.time.DayOfWeek
 
@@ -119,15 +120,50 @@ internal fun SettingsScreen(
     ) {
         item {
             Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(22.dp),
+                elevation = CardDefaults.cardElevation(1.dp),
+            ) {
+                Column(Modifier.padding(18.dp)) {
+                    SectionTitle("화면 테마", "원하는 화면 밝기를 선택하세요")
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        AppThemeMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = state.themeMode == mode,
+                                onClick = { viewModel.setThemeMode(mode) },
+                                label = { Text(mode.label) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                    Text(
+                        when (state.themeMode) {
+                            AppThemeMode.SYSTEM -> "휴대폰의 다크모드 설정에 맞춰 자동으로 전환됩니다."
+                            AppThemeMode.LIGHT -> "항상 밝은 화면을 사용합니다."
+                            AppThemeMode.DARK -> "항상 눈부심을 줄인 어두운 화면을 사용합니다."
+                        },
+                        Modifier.padding(top = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        item {
+            Card(
                 Modifier.fillMaxWidth().clickable(onClick = openAccessibilitySettings),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (accessibilityEnabled) Color(0xFFF2E7FC) else Color.White,
+                    containerColor = if (accessibilityEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                 ),
                 shape = RoundedCornerShape(22.dp),
                 elevation = CardDefaults.cardElevation(1.dp),
             ) {
                 Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(44.dp).clip(CircleShape).background(if (accessibilityEnabled) AppCobalt else AppOrange), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(44.dp).clip(CircleShape).background(if (accessibilityEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary), contentAlignment = Alignment.Center) {
                         Icon(Icons.Rounded.Security, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
                     }
                     Column(Modifier.padding(start = 14.dp)) {
@@ -138,10 +174,10 @@ internal fun SettingsScreen(
             }
         }
         item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp), elevation = CardDefaults.cardElevation(1.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(22.dp), elevation = CardDefaults.cardElevation(1.dp)) {
                 Column(Modifier.padding(18.dp)) {
                     SectionTitle("설정 보호 비밀번호", "차단 실행·해제 설정을 변경할 때 사용")
-                    if (state.hasPassword) Text("비밀번호가 설정되어 있어요.", Modifier.padding(top = 8.dp), color = AppCobalt, fontWeight = FontWeight.Bold)
+                    if (state.hasPassword) Text("비밀번호가 설정되어 있어요.", Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     PasswordField("새 숫자 비밀번호 (4~12자리)", password) { password = it }
                     PasswordField("비밀번호 확인", confirmation) { confirmation = it }
                     Button(
@@ -160,7 +196,7 @@ internal fun SettingsScreen(
             }
         }
         item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp), elevation = CardDefaults.cardElevation(1.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(22.dp), elevation = CardDefaults.cardElevation(1.dp)) {
                 Column(Modifier.padding(18.dp)) {
                     SectionTitle("시작 화면", "앱을 열었을 때 먼저 표시할 기능")
                     Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -175,7 +211,7 @@ internal fun SettingsScreen(
             }
         }
         item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp), elevation = CardDefaults.cardElevation(1.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(22.dp), elevation = CardDefaults.cardElevation(1.dp)) {
                 Column(Modifier.padding(18.dp)) {
                     SectionTitle("하단 탭 순서", "길게 눌러 드래그하면 순서를 바꿀 수 있어요")
                     var draggingTab by remember { mutableStateOf<BottomNavigationTab?>(null) }
@@ -227,8 +263,8 @@ internal fun SettingsScreen(
                                     .padding(horizontal = 12.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Box(Modifier.size(34.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
-                                    Icon(bottomNavigationIcon(tab), contentDescription = null, tint = AppCobalt, modifier = Modifier.size(18.dp))
+                                Box(Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
+                                    Icon(bottomNavigationIcon(tab), contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                                 }
                                 Text(tab.label, Modifier.weight(1f).padding(start = 11.dp), fontWeight = FontWeight.Bold)
                                 if (tab != BottomNavigationTab.MORE) {
@@ -246,7 +282,7 @@ internal fun SettingsScreen(
                                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Box(Modifier.size(34.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                                    Box(Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
                                         Icon(bottomNavigationIcon(tab), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                                     }
                                     Text(tab.label, Modifier.weight(1f).padding(start = 11.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -307,12 +343,12 @@ private fun DestinationCard(icon: ImageVector, title: String, description: Strin
     Card(
         Modifier.fillMaxWidth().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = if (selected) Color(0xFFF2E7FC) else MaterialTheme.colorScheme.surfaceVariant,
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
         ),
         shape = RoundedCornerShape(16.dp),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp).clip(CircleShape).background(if (selected) AppCobalt else Color.White), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(40.dp).clip(CircleShape).background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = null, tint = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
             }
             Column(Modifier.padding(start = 14.dp)) {

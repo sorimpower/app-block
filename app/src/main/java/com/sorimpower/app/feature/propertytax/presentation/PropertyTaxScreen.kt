@@ -1,5 +1,6 @@
 package com.sorimpower.app.feature.propertytax.presentation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -59,7 +60,7 @@ fun PropertyTaxAnalysisInfoDialog(onDismiss: () -> Unit) {
                 item { AnalysisGuideStep("4", "최소 추가 확인 정보", "결론을 바꿀 가능성이 큰 취득일, 잔금일, 명의, 거주기간과 금액만 최대 6개까지 질문해요.") }
                 item { AnalysisGuideStep("5", "다음 행동과 공식 근거", "확인할 계약서·등기·전입 자료와 실행 순서를 안내하고 국가법령정보센터·국세청 공식 링크를 함께 제공해요.") }
                 item {
-                    Card(colors = CardDefaults.cardColors(containerColor = AppOrange.copy(alpha = .09f))) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiary.copy(alpha = .09f))) {
                         Text(
                             "금액 정보가 없으면 AI가 임의 세액을 만들지 않아요. 미래 매도계획과 비과세 여부는 현재 법령 기준의 조건부 분석이며 실제 거래 전에는 당시 법령과 세무 전문가 확인이 필요해요.",
                             modifier = Modifier.padding(12.dp),
@@ -78,9 +79,9 @@ fun PropertyTaxAnalysisInfoDialog(onDismiss: () -> Unit) {
 private fun AnalysisGuideStep(number: String, title: String, description: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
         Box(
-            modifier = Modifier.size(28.dp).background(AppCobalt.copy(alpha = .12f), CircleShape),
+            modifier = Modifier.size(28.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f), CircleShape),
             contentAlignment = Alignment.Center,
-        ) { Text(number, color = AppCobalt, fontWeight = FontWeight.Black) }
+        ) { Text(number, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, fontWeight = FontWeight.Black)
             Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -99,6 +100,7 @@ fun PropertyTaxScreen(padding: PaddingValues, viewModel: PropertyTaxViewModel, o
     var scenarioDialog by remember { mutableStateOf(false) }
     var acquisitionScenarioId by remember { mutableStateOf<String?>(null) }
     var saleScenarioId by remember { mutableStateOf<String?>(null) }
+    BackHandler(enabled = tab != PropertyTaxTab.AI_PLAN) { tab = PropertyTaxTab.AI_PLAN }
     Column(Modifier.fillMaxSize().padding(padding)) {
         PrimaryTabRow(selectedTabIndex = PropertyTaxTab.entries.indexOf(tab)) {
             PropertyTaxTab.entries.forEach { value -> Tab(tab == value, { tab = value }, text = { Text(value.label, style = MaterialTheme.typography.labelMedium) }) }
@@ -113,7 +115,7 @@ fun PropertyTaxScreen(padding: PaddingValues, viewModel: PropertyTaxViewModel, o
                 PropertyTaxTab.SIMULATIONS -> SimulationContent(state, { simulationDialog = true }, viewModel::recalculate, viewModel::analyze, viewModel::deleteSimulation)
                 PropertyTaxTab.RULES -> RuleContent(state)
             }
-            if (state.working) Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = .55f)), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = AppCobalt) }
+            if (state.working) Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = .72f)), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = MaterialTheme.colorScheme.primary) }
         }
     }
     if (propertyDialog) PropertyDialog(onDismiss = { propertyDialog = false }) { viewModel.saveProperty(it); propertyDialog = false }
@@ -185,7 +187,7 @@ private fun AiTaxPlanContent(
                             Text("AI 추천 계획", fontWeight = FontWeight.Black, color = color)
                         }
                         Text(analysis.summary, style = MaterialTheme.typography.bodyMedium)
-                        if (analysis.recommendedScenario.isNotBlank()) Text(analysis.recommendedScenario, fontWeight = FontWeight.Black, color = AppCobalt)
+                        if (analysis.recommendedScenario.isNotBlank()) Text(analysis.recommendedScenario, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
                         analysis.checkedAt?.let { Text("공식 법령 확인 ${formatAnalysisTime(it)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                 }
@@ -196,7 +198,7 @@ private fun AiTaxPlanContent(
                         Row(verticalAlignment = Alignment.Top) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Box(Modifier.size(10.dp).background(if (event.status == "DEADLINE") AppOrange else AppCobalt, CircleShape))
-                                if (index < analysis.timeline.lastIndex) VerticalDivider(Modifier.height(42.dp), color = AppCobalt.copy(alpha = .2f))
+                                if (index < analysis.timeline.lastIndex) VerticalDivider(Modifier.height(42.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .2f))
                             }
                             Column(Modifier.padding(start = 10.dp, bottom = 8.dp)) {
                                 Text("${event.date} · ${event.title}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
@@ -214,7 +216,7 @@ private fun AiTaxPlanContent(
             if (analysis.officialSources.isNotEmpty()) item {
                 PlanSection("공식 근거", Icons.Rounded.Link) {
                     analysis.officialSources.forEach { source ->
-                        Text("• ${source.title}", Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri(source.url) } }.padding(vertical = 3.dp), color = AppCobalt, textDecoration = TextDecoration.Underline, style = MaterialTheme.typography.bodySmall)
+                        Text("• ${source.title}", Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri(source.url) } }.padding(vertical = 3.dp), color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -227,9 +229,9 @@ private fun AiTaxPlanContent(
 
 @Composable
 private fun PlanSection(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(1.dp)) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) { Icon(icon, null, tint = AppCobalt); Text(title, fontWeight = FontWeight.Black) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) { Icon(icon, null, tint = MaterialTheme.colorScheme.primary); Text(title, fontWeight = FontWeight.Black) }
             content()
         }
     }
@@ -252,16 +254,16 @@ private fun TaxPlanScenarioCard(scenario: TaxPlanScenario) {
         "위험", "비권장" -> MaterialTheme.colorScheme.error
         else -> AppOrange
     }
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, verdictColor.copy(alpha = .25f)), shape = RoundedCornerShape(18.dp)) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), border = BorderStroke(1.dp, verdictColor.copy(alpha = .25f)), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(scenario.name, Modifier.weight(1f), fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
                 Surface(color = verdictColor.copy(alpha = .12f), shape = RoundedCornerShape(50)) { Text(scenario.verdict, Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = verdictColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall) }
             }
-            if (scenario.saleOrder.isNotEmpty()) { Text("매도 순서", fontWeight = FontWeight.Bold, color = AppCobalt); PlanBullets(scenario.saleOrder) }
-            if (scenario.taxTreatment.isNotEmpty()) { Text("예상 세금 처리", fontWeight = FontWeight.Bold, color = AppCobalt); PlanBullets(scenario.taxTreatment) }
+            if (scenario.saleOrder.isNotEmpty()) { Text("매도 순서", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); PlanBullets(scenario.saleOrder) }
+            if (scenario.taxTreatment.isNotEmpty()) { Text("예상 세금 처리", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); PlanBullets(scenario.taxTreatment) }
             if (scenario.advantages.isNotEmpty()) { Text("장점", fontWeight = FontWeight.Bold, color = AppGreen); PlanBullets(scenario.advantages) }
-            if (scenario.risks.isNotEmpty()) { Text("주의", fontWeight = FontWeight.Bold, color = AppOrange); PlanBullets(scenario.risks) }
+            if (scenario.risks.isNotEmpty()) { Text("주의", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary); PlanBullets(scenario.risks) }
             if (scenario.deadlines.isNotEmpty()) { Text("중요 기한", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error); PlanBullets(scenario.deadlines) }
         }
     }
@@ -293,7 +295,7 @@ private fun ScenarioContent(
         items(state.scenarios, key = { it.id }) { scenario ->
             val impact = state.scenarioImpacts[scenario.id]
             val transactions = state.scenarioTransactions.filter { it.scenarioId == scenario.id }.sortedBy { it.sequence }
-            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
                 Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) { Text(scenario.name, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium); Text("${transactions.size}단계 · ${scenario.taxRuleVersionId}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -303,7 +305,7 @@ private fun ScenarioContent(
                     transactions.forEach { transaction ->
                         Surface(color = Color(0xFFF6F7FB), shape = RoundedCornerShape(12.dp)) {
                             Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("${transaction.sequence}", color = AppCobalt, fontWeight = FontWeight.Black)
+                                Text("${transaction.sequence}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
                                 Text("  ${runCatching { ScenarioTransactionType.valueOf(transaction.type).label }.getOrDefault(transaction.type)} · ${transaction.transactionDate}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                                 Text(won(transaction.transactionPrice), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
                             }
@@ -315,7 +317,7 @@ private fun ScenarioContent(
                         TaxRow("연간 보유세", "${won(it.beforeHoldingTax)} → ${won(it.afterHoldingTax)}")
                         TaxRow("거래 단계 세금 합계", won(it.transactionTax))
                         TaxRow("거래+연간 보유세 증감", signedWon(it.totalTaxChange), true)
-                        if (it.missingInputs.isNotEmpty()) Text("확인 필요 ${it.missingInputs.distinct().size}건", color = AppOrange, style = MaterialTheme.typography.labelSmall)
+                        if (it.missingInputs.isNotEmpty()) Text("확인 필요 ${it.missingInputs.distinct().size}건", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelSmall)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton({ onAcquire(scenario.id) }, Modifier.weight(1f)) { Icon(Icons.Rounded.AddHome, null); Text(" 가상 취득") }
@@ -342,10 +344,10 @@ private fun PortfolioContent(state: PropertyTaxUiState, onAdd: () -> Unit, onEdi
         if (state.properties.isEmpty()) item { EmptyCard("상세 계산용 자산이 없습니다.", "AI 계획만 이용해도 됩니다. 정확한 세액이 필요할 때 이름·유형·취득일·취득가만 간편 등록하세요.") }
         items(state.properties, key = { it.id }) { property ->
             val acquisition = state.acquisitionTaxes[property.id]
-            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
                 Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Apartment, null, tint = AppCobalt)
+                        Icon(Icons.Rounded.Apartment, null, tint = MaterialTheme.colorScheme.primary)
                         Column(Modifier.weight(1f).padding(start = 10.dp)) { Text(property.name, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium); Text("${property.propertyType.propertyTypeLabel()} · ${property.acquisitionDate} 취득", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         IconButton({ onEdit(property) }) { Icon(Icons.Rounded.Edit, "수정") }
                         IconButton({ onDelete(property.id) }) { Icon(Icons.Rounded.DeleteOutline, "삭제") }
@@ -376,15 +378,15 @@ private fun PortfolioContent(state: PropertyTaxUiState, onAdd: () -> Unit, onEdi
 @Composable
 private fun TaxSummaryCard(calculation: TaxCalculation<HoldingTaxResult>?, year: Int, onYear: (Int) -> Unit) {
     val result = calculation?.result
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F3FF)), border = BorderStroke(1.dp, AppCobalt.copy(alpha = .18f))) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)), border = BorderStroke(1.dp, AppCobalt.copy(alpha = .18f))) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("$year 예상 보유세", Modifier.weight(1f), color = AppCobalt, fontWeight = FontWeight.Bold)
+                Text("$year 예상 보유세", Modifier.weight(1f), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 IconButton({ onYear(year - 1) }, Modifier.size(32.dp)) { Icon(Icons.Rounded.ChevronLeft, "이전 연도") }
                 IconButton({ onYear(year + 1) }, Modifier.size(32.dp)) { Icon(Icons.Rounded.ChevronRight, "다음 연도") }
             }
             Text(when { calculation == null -> "계산 중"; !calculation.calculationAvailable -> "해당 연도 계산 불가"; else -> result?.totalTax?.let(::won) ?: "계산 중" }, fontWeight = FontWeight.Black, style = MaterialTheme.typography.headlineMedium)
-            HorizontalDivider(color = AppCobalt.copy(alpha = .15f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = .15f))
             TaxRow("재산세", result?.propertyTax?.let(::won) ?: "-")
             TaxRow("종합부동산세", result?.comprehensiveRealEstateTax?.let(::won) ?: "-")
             result?.jointSpecialComprehensiveTax?.let {
@@ -396,7 +398,7 @@ private fun TaxSummaryCard(calculation: TaxCalculation<HoldingTaxResult>?, year:
             TaxRow("도시지역분", result?.urbanAreaTax?.let(::won) ?: "-")
             TaxRow("지역자원시설세", result?.regionalResourceTax?.let(::won) ?: "-")
             TaxRow("지방교육세·종부세 농특세 등", result?.additionalTax?.let(::won) ?: "-")
-            calculation?.missingInputs?.firstOrNull()?.let { Text("확인 필요 · $it", color = AppOrange, style = MaterialTheme.typography.labelSmall) }
+            calculation?.missingInputs?.firstOrNull()?.let { Text("확인 필요 · $it", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelSmall) }
         }
     }
 }
@@ -413,7 +415,7 @@ private fun SimulationContent(state: PropertyTaxUiState, onAdd: () -> Unit, onRe
         if (state.simulations.isEmpty()) item { EmptyCard("저장된 시뮬레이션이 없습니다.", "매도일과 매도가를 입력해 예상 양도세를 저장하세요.") }
         items(state.simulations, key = { it.id }) { simulation ->
             val propertyName = state.properties.firstOrNull { it.id == simulation.propertyId }?.name ?: "삭제된 부동산"
-            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
                 Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Row { Column(Modifier.weight(1f)) { Text(simulation.name, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium); Text("$propertyName · ${simulation.expectedSaleDate} 매도 가정", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }; IconButton({ onDelete(simulation.id) }) { Icon(Icons.Rounded.DeleteOutline, "삭제") } }
                     TaxRow("예상 매도가", won(simulation.expectedSalePrice))
@@ -424,18 +426,18 @@ private fun SimulationContent(state: PropertyTaxUiState, onAdd: () -> Unit, onRe
                     when {
                         ruleApplied(simulation.appliedRulesJson, "ONE_HOME_PRESALE_SPECIAL") && ruleApplied(simulation.appliedRulesJson, "ONE_HOME_EXEMPTION") -> Text("1주택 + 1분양권 특례로 비과세 판정", color = AppGreen, fontWeight = FontWeight.Black, style = MaterialTheme.typography.bodySmall)
                         ruleApplied(simulation.appliedRulesJson, "ONE_HOME_EXEMPTION") -> Text("1세대 1주택 비과세·고가주택 안분 적용", color = AppGreen, fontWeight = FontWeight.Black, style = MaterialTheme.typography.bodySmall)
-                        ruleApplied(simulation.appliedRulesJson, "MULTI_HOME_SURCHARGE") -> Text("조정대상지역 다주택 중과 적용", color = AppOrange, fontWeight = FontWeight.Black, style = MaterialTheme.typography.bodySmall)
+                        ruleApplied(simulation.appliedRulesJson, "MULTI_HOME_SURCHARGE") -> Text("조정대상지역 다주택 중과 적용", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Black, style = MaterialTheme.typography.bodySmall)
                     }
                     Text("적용 세법 · ${simulation.taxRuleVersionId} · 정확도 ${CalculationConfidence.valueOf(simulation.confidence).label}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     TraceBlock(simulation.calculationTraceJson)
                     val missing = parseStrings(simulation.missingInputsJson)
-                    if (missing.isNotEmpty()) Surface(color = AppOrange.copy(alpha = .1f), shape = RoundedCornerShape(12.dp)) { Column(Modifier.padding(12.dp)) { Text("추가 확인 필요", color = AppOrange, fontWeight = FontWeight.Bold); missing.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) } } }
+                    if (missing.isNotEmpty()) Surface(color = MaterialTheme.colorScheme.tertiary.copy(alpha = .1f), shape = RoundedCornerShape(12.dp)) { Column(Modifier.padding(12.dp)) { Text("추가 확인 필요", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold); missing.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) } } }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton({ onRecalculate(simulation.id) }, Modifier.weight(1f)) { Text("최신 기준 재계산") }
                         Button({ onAnalyze(simulation.id) }, Modifier.weight(1f)) { Icon(Icons.Rounded.AutoAwesome, null); Text(" 최신 법령 + GPT") }
                     }
                     val revisionCount = state.revisions.count { it.simulationId == simulation.id }
-                    Text("저장된 계산 이력 ${revisionCount}개", style = MaterialTheme.typography.labelSmall, color = AppCobalt)
+                    Text("저장된 계산 이력 ${revisionCount}개", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
@@ -467,8 +469,8 @@ private fun RuleContent(state: PropertyTaxUiState) {
     }
 }
 
-@Composable private fun WarningCard() = Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF6E8)), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp)) { Text("계산 범위", fontWeight = FontWeight.Black, color = AppOrange); Text("검증된 Rule 기간과 입력된 증빙 범위에서만 계산합니다. 법정 제외주택·감면·세부담상한·지자체 탄력세율처럼 자동 확정할 수 없는 항목은 합계에서 제외하거나 확인 필요로 표시하며 신고 자료로 사용할 수 없습니다.", style = MaterialTheme.typography.bodySmall) } }
-@Composable private fun SourceCard(title: String, source: String, detail: String) = Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(title, fontWeight = FontWeight.Black); Text(source, color = AppCobalt, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall); Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
+@Composable private fun WarningCard() = Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .45f)), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp)) { Text("계산 범위", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.tertiary); Text("검증된 Rule 기간과 입력된 증빙 범위에서만 계산합니다. 법정 제외주택·감면·세부담상한·지자체 탄력세율처럼 자동 확정할 수 없는 항목은 합계에서 제외하거나 확인 필요로 표시하며 신고 자료로 사용할 수 없습니다.", style = MaterialTheme.typography.bodySmall) } }
+@Composable private fun SourceCard(title: String, source: String, detail: String) = Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(title, fontWeight = FontWeight.Black); Text(source, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall); Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
 
 @Composable
 private fun ScenarioNameDialog(onDismiss: () -> Unit, onSave: (String) -> Unit) {
@@ -558,11 +560,11 @@ private fun PropertyDialog(title: String = "부동산 간편 등록", initial: P
         title = { Text(title) },
         text = { LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.heightIn(max = 560.dp)) {
             item {
-                Surface(color = AppCobalt.copy(alpha = .08f), shape = RoundedCornerShape(14.dp)) {
+                Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = .08f), shape = RoundedCornerShape(14.dp)) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.Top) {
-                        Icon(Icons.Rounded.CheckCircle, null, tint = AppCobalt, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("4가지만 입력하면 저장할 수 있어요", fontWeight = FontWeight.Black, color = AppCobalt, style = MaterialTheme.typography.bodyMedium)
+                            Text("4가지만 입력하면 저장할 수 있어요", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
                             Text("이름·유형·취득일·취득가 외 정보는 나중에 수정해도 됩니다.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -584,7 +586,7 @@ private fun PropertyDialog(title: String = "부동산 간편 등록", initial: P
             if (redevelopmentSelected) {
                 item { OptionalInputSection("재개발 상세정보", "서류를 찾은 뒤 하나씩 보완 가능", redevelopmentDetailsExpanded, hasRedevelopmentDetails) { redevelopmentDetailsExpanded = !redevelopmentDetailsExpanded } }
                 if (redevelopmentDetailsExpanded) {
-                    item { Text("관리처분계획서·등기자료·취득세 고지서에서 확인할 수 있어요. 모르는 값은 비워두세요.", style = MaterialTheme.typography.labelSmall, color = AppCobalt) }
+                    item { Text("관리처분계획서·등기자료·취득세 고지서에서 확인할 수 있어요. 모르는 값은 비워두세요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
                     item { OutlinedTextField(managementApproval, { managementApproval = it }, label = { Text("관리처분계획 인가일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
                     item { OutlinedTextField(demolition, { demolition = it }, label = { Text("기존 주택 철거·멸실일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
                     item { OutlinedTextField(redevelopmentCompletion, { redevelopmentCompletion = it }, label = { Text("신축 주택 사용승인·준공일 YYYY-MM-DD") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
@@ -704,7 +706,7 @@ private fun SimulationDialog(properties: List<PropertyEntity>, onDismiss: () -> 
         item { NumberField("예상 매도가 (원)", price) { price = it } }
         item { NumberField("추가 필요경비 (원)", expenses) { expenses = it } }
         item { BooleanSelector("양도 당시 조정대상지역", regulated) { regulated = it } }
-        item { Text("2026년 다주택 중과 유예 검증", fontWeight = FontWeight.Black, color = AppCobalt) }
+        item { Text("2026년 다주택 중과 유예 검증", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary) }
         item { OutlinedTextField(contract, { contract = it }, label = { Text("매매계약일 YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth(), singleLine = true) }
         item { LabeledCheckbox("계약금 수령 증빙 있음", deposit) { deposit = it } }
         item { BooleanSelector("토지거래허가 대상", permitRequired) { permitRequired = it } }
@@ -713,10 +715,10 @@ private fun SimulationDialog(properties: List<PropertyEntity>, onDismiss: () -> 
             item { LabeledCheckbox("토지거래허가 승인 완료", permitApproved) { permitApproved = it } }
         }
         item { LabeledCheckbox("법정 6개월 연장 대상 지역", extendedRegion) { extendedRegion = it } }
-        item { Text("완공 후 1주택+1분양권 특례 날짜", fontWeight = FontWeight.Black, color = AppCobalt) }
+        item { Text("완공 후 1주택+1분양권 특례 날짜", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary) }
         item { OutlinedTextField(moveIn, { moveIn = it }, label = { Text("신축주택 이사일 YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth(), singleLine = true) }
         item { OutlinedTextField(residenceEnd, { residenceEnd = it }, label = { Text("1년 계속 거주 확인일 YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth(), singleLine = true) }
-        item { Text("같은 과세연도 기본공제 사용액", fontWeight = FontWeight.Black, color = AppCobalt) }
+        item { Text("같은 과세연도 기본공제 사용액", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary) }
         item { NumberField("본인 기사용 기본공제 (최대 250만원)", ownerBasicUsed) { ownerBasicUsed = it } }
         item { NumberField("배우자 기사용 기본공제 (최대 250만원)", spouseBasicUsed) { spouseBasicUsed = it } }
     } }, confirmButton = { Button({
@@ -779,11 +781,11 @@ private fun OptionalInputSection(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("$title (선택)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                    if (hasValue) Text("입력됨", color = AppCobalt, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                    if (hasValue) Text("입력됨", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
                 }
                 Text(description, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, if (expanded) "접기" else "펼치기", tint = AppCobalt)
+            Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, if (expanded) "접기" else "펼치기", tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -867,11 +869,11 @@ private fun AiAnalysisDialog(value: PropertyTaxAiAnalysis, onDismiss: () -> Unit
                 }
             }
             if (value.previousCheckedAt != null) item {
-                Card(colors = CardDefaults.cardColors(containerColor = AppCobalt.copy(alpha = .07f)), border = BorderStroke(1.dp, AppCobalt.copy(alpha = .25f))) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = .07f)), border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .25f))) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Rounded.History, null, tint = AppCobalt)
-                            Text("이전 분석과 비교", fontWeight = FontWeight.Black, color = AppCobalt)
+                            Icon(Icons.Rounded.History, null, tint = MaterialTheme.colorScheme.primary)
+                            Text("이전 분석과 비교", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
                         }
                         Text(
                             "비교 기준 ${DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm").withZone(ZoneId.of("Asia/Seoul")).format(Instant.ofEpochMilli(value.previousCheckedAt))}",
@@ -909,19 +911,19 @@ private fun AiAnalysisDialog(value: PropertyTaxAiAnalysis, onDismiss: () -> Unit
             analysisSection("추가 비교 시나리오", value.suggestedScenarios)
             if (value.officialSources.isNotEmpty()) item {
                 Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text("이번 분석의 공식 근거", fontWeight = FontWeight.Black, color = AppCobalt)
+                    Text("이번 분석의 공식 근거", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
                     value.officialSources.forEach { source ->
                         Text(
                             text = "• ${source.title}",
                             modifier = Modifier.clickable { runCatching { uriHandler.openUri(source.url) } },
                             style = MaterialTheme.typography.bodySmall,
-                            color = AppCobalt,
+                            color = MaterialTheme.colorScheme.primary,
                             textDecoration = TextDecoration.Underline,
                         )
                     }
                 }
             }
-            item { Text("공식 법령과 Engine이 다르거나 검증이 불완전하면 계산값을 확정하지 않습니다. AI가 계산식이나 Rule을 자동 변경하지는 않습니다.", style = MaterialTheme.typography.labelSmall, color = AppOrange) }
+            item { Text("공식 법령과 Engine이 다르거나 검증이 불완전하면 계산값을 확정하지 않습니다. AI가 계산식이나 Rule을 자동 변경하지는 않습니다.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary) }
         } },
         confirmButton = { Button(onDismiss) { Text("확인") } },
     )
@@ -934,9 +936,9 @@ private fun ComparisonItems(title: String, values: List<String>, color: Color) {
     values.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.analysisSection(title: String, values: List<String>) { if (values.isNotEmpty()) item { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(title, fontWeight = FontWeight.Black, color = AppCobalt); values.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) } } } }
+private fun androidx.compose.foundation.lazy.LazyListScope.analysisSection(title: String, values: List<String>) { if (values.isNotEmpty()) item { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(title, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary); values.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) } } } }
 @Composable private fun TaxRow(label: String, value: String, strong: Boolean = false) = Row(Modifier.fillMaxWidth()) { Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant); Text(value, fontWeight = if (strong) FontWeight.Black else FontWeight.Bold, color = if (strong) AppCobalt else MaterialTheme.colorScheme.onSurface) }
-@Composable private fun EmptyCard(title: String, description: String) = Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(title, fontWeight = FontWeight.Black); Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+@Composable private fun EmptyCard(title: String, description: String) = Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(title, fontWeight = FontWeight.Black); Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
 private fun parseStrings(json: String) = runCatching { JSONArray(json) }.getOrNull()?.let { array -> (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) } } ?: emptyList()
 private fun ruleApplied(json: String, ruleId: String): Boolean = runCatching { JSONArray(json) }.getOrNull()?.let { array -> (0 until array.length()).any { index -> array.getJSONObject(index).optString("ruleId") == ruleId && array.getJSONObject(index).optBoolean("applied") } } ?: false
 private fun traceAmount(json: String, label: String): Long? = runCatching { JSONArray(json) }.getOrNull()?.let { array -> (0 until array.length()).firstNotNullOfOrNull { index -> array.getJSONObject(index).takeIf { it.optString("label") == label }?.optLong("amount") } }

@@ -122,9 +122,12 @@ class PerspectiveRepository(context: Context) {
             // URL을 나중에 찾은 기존 기록도 다시 auto ID로 들어오는 MediaSession 갱신과 합친다.
             ?: youtubeId.takeUnless(::isVideoId)?.let { dao.latestVideoByTitleAndChannel(title.trim(), channel.trim()) }
         val now = System.currentTimeMillis()
+        // MediaSession이 ID를 주지 않는 기기에서도 이전에 해석해 둔 실제 YouTube ID를
+        // 유지해야 추천 영상 시청 여부를 안정적으로 연결할 수 있다.
+        val resolvedYoutubeId = youtubeId.takeIf(::isVideoId) ?: existing?.youtubeVideoId ?: youtubeId
         val item = WatchedVideoEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),
-            youtubeVideoId = youtubeId,
+            youtubeVideoId = resolvedYoutubeId,
             url = url.ifBlank { existing?.url.orEmpty() },
             title = title.ifBlank { existing?.title ?: "YouTube 영상" },
             channelName = channel.ifBlank { existing?.channelName.orEmpty() },
@@ -134,10 +137,18 @@ class PerspectiveRepository(context: Context) {
             source = if (existing?.source == "share") "share" else source,
             analysisStatus = existing?.analysisStatus ?: "unclassified",
             playbackEnded = playbackEnded,
-            contentHash = sha256("$youtubeId|$title|$channel"),
+            contentHash = sha256("$resolvedYoutubeId|$title|$channel"),
         )
         dao.upsertVideo(item)
         val meaningful = item.watchedSec >= 120
+        // 추천 영상을 단순히 연 것이 아니라 실제로 2분 이상 시청한 경우에만
+        // '사고 확장'으로 확정한다. MediaSession에 ID가 없는 경우에는 추천 카드의
+        // 정확한 제목·채널도 함께 대조한다.
+        if (meaningful) {
+            for (perspective in dao.openedPerspectivesForRecommendation(item.youtubeVideoId, item.title, item.channelName)) {
+                markPerspectiveVisited(perspective.id)
+            }
+        }
         val previousSuggestion = dao.topicSuggestion(item.id)
         val retryFailed = previousSuggestion?.status == "failed" && (
             previousSuggestion.model != TOPIC_MODEL || System.currentTimeMillis() - previousSuggestion.updatedAt >= TOPIC_RETRY_INTERVAL_MS
@@ -330,6 +341,11 @@ class PerspectiveRepository(context: Context) {
         generateWeeklyReport()
     }
 
+    /** 추천 카드의 YouTube 링크를 연 사실만 기록한다. 확장은 2분 이상 시청 후 확정된다. */
+    suspend fun markPerspectiveOpened(id: String) = withContext(Dispatchers.IO) {
+        dao.markPerspectiveOpened(id)
+    }
+
     private suspend fun PerspectiveDao.upsertEdgeFromPerspective(from: PerspectiveEntity, to: PerspectiveEntity) {
         upsertEdges(listOf(ThoughtEdgeEntity(UUID.randomUUID().toString(), to.topicId, "perspective:${from.id}", "perspective:${to.id}", "selected")))
     }
@@ -344,10 +360,10 @@ class PerspectiveRepository(context: Context) {
         val dominant = topicCounts.entries.sortedByDescending(Map.Entry<String, Int>::value).take(3).mapNotNull { entry -> topics.firstOrNull { it.id == entry.key }?.name }
         val perspectives = dao.perspectiveSnapshot()
         val visited = perspectives.filter { it.status == "visited" }.map(PerspectiveEntity::label).distinct().take(5)
-        val under = perspectives.filter { it.status == "suggested" }.map(PerspectiveEntity::label).distinct().take(5)
-        val summary = if (videos.isEmpty()) "이번 주에는 아직 분석할 YouTube 시청 기록이 없습니다." else if (under.isEmpty()) {
-            "이번 주에는 ${dominant.joinToString(" · ").ifBlank { "여러 주제" }} 콘텐츠를 주로 접했습니다. 다른 관점 분석을 실행하면 덜 본 세계가 나타납니다."
-        } else "이번 주에는 ${dominant.joinToString(" · ")} 콘텐츠를 주로 접했고, ${under.take(3).joinToString(" · ")} 관점은 아직 탐색하지 않았습니다."
+        val under = perspectives.filter { it.status != "visited" }.map(PerspectiveEntity::label).distinct().take(5)
+        val summary = if (videos.isEmpty()) "이번 주에는 아직 요약할 YouTube 시청 기록이 없습니다." else if (under.isEmpty()) {
+            "이번 주에는 ${dominant.joinToString(" · ").ifBlank { "여러 주제" }} 영상을 주로 봤습니다. 다른 관점 보기를 사용하면 시청 범위를 더 넓힐 수 있습니다."
+        } else "이번 주에는 ${dominant.joinToString(" · ")} 영상을 주로 봤고, ${under.take(3).joinToString(" · ")} 관점은 아직 보지 않았습니다."
         dao.upsertReport(WeeklyPerspectiveReportEntity(weekStart.toEpochDay(), jsonArray(dominant), jsonArray(visited), jsonArray(under), summary))
     }
 

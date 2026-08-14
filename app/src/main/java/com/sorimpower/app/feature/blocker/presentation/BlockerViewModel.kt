@@ -9,6 +9,7 @@ import com.sorimpower.app.feature.blocker.data.BlockerState
 import com.sorimpower.app.feature.blocker.data.BottomNavigationTab
 import com.sorimpower.app.feature.blocker.data.StartDestination
 import com.sorimpower.app.feature.blocker.domain.BlockSchedule
+import com.sorimpower.app.core.ui.AppThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -70,6 +71,7 @@ class BlockerViewModel(application: Application) : AndroidViewModel(application)
     fun setBlockMessage(message: String) = viewModelScope.launch { repository.setBlockMessage(message) }
     fun setStartDestination(destination: StartDestination) = viewModelScope.launch { repository.setStartDestination(destination) }
     fun setBottomNavigationOrder(order: List<BottomNavigationTab>) = viewModelScope.launch { repository.setBottomNavigationOrder(order) }
+    fun setThemeMode(mode: AppThemeMode) = viewModelScope.launch { repository.setThemeMode(mode) }
     fun setPassword(password: String) = viewModelScope.launch { repository.setPassword(password) }
     fun clearPassword() = viewModelScope.launch { repository.clearPassword() }
     fun verifyPassword(password: String, onResult: (Boolean) -> Unit) = viewModelScope.launch {

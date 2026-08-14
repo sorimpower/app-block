@@ -273,7 +273,7 @@ class BodyLogRepository(private val context: Context) {
         val summary = DailyCalorieSummaryEntity(
             dateEpochDay = date.toEpochDay(),
             estimatedCalories = estimates.sumOf(MealCalorieEstimateEntity::estimatedCalories),
-            summary = "개별 식사 AI 추정값 $coverage 합산",
+            summary = "개별 식사 $coverage 합산",
             mealCount = meals.size,
             analyzedAt = System.currentTimeMillis(),
         )

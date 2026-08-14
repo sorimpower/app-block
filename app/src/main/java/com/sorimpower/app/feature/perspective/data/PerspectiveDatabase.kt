@@ -177,8 +177,16 @@ interface PerspectiveDao {
     @Query("SELECT * FROM video_analyses WHERE videoId = :videoId LIMIT 1") suspend fun analysis(videoId: String): VideoAnalysisEntity?
     @Query("SELECT * FROM perspectives WHERE id = :id LIMIT 1") suspend fun perspective(id: String): PerspectiveEntity?
     @Query("SELECT * FROM perspectives WHERE topicId = :topicId AND status = 'visited' ORDER BY visitedAt DESC LIMIT 1") suspend fun latestVisitedPerspective(topicId: String): PerspectiveEntity?
+    @Query("UPDATE perspectives SET status = 'opened' WHERE id = :id AND status = 'suggested'") suspend fun markPerspectiveOpened(id: String)
     @Query("UPDATE perspective_topics SET enabled = :enabled, updatedAt = :updatedAt WHERE id = :id") suspend fun setTopicEnabled(id: String, enabled: Boolean, updatedAt: Long = System.currentTimeMillis())
     @Query("UPDATE perspectives SET status = 'visited', visitedAt = :visitedAt WHERE id = :id") suspend fun markPerspectiveVisited(id: String, visitedAt: Long = System.currentTimeMillis())
+    @Query("""
+        SELECT p.* FROM perspectives p
+        INNER JOIN perspective_recommended_videos r ON r.perspectiveId = p.id
+        WHERE p.status = 'opened'
+          AND (r.url LIKE '%' || :youtubeVideoId || '%'
+               OR (r.title = :title AND r.channelName = :channelName))
+    """) suspend fun openedPerspectivesForRecommendation(youtubeVideoId: String, title: String, channelName: String): List<PerspectiveEntity>
     @Query("UPDATE topic_suggestions SET status = :status, updatedAt = :updatedAt WHERE videoId = :videoId") suspend fun setTopicSuggestionStatus(videoId: String, status: String, updatedAt: Long = System.currentTimeMillis())
     @Query("DELETE FROM thought_edges WHERE fromNodeId IN (SELECT id FROM thought_nodes WHERE videoId = :videoId OR perspectiveId IN (SELECT id FROM perspectives WHERE videoId = :videoId)) OR toNodeId IN (SELECT id FROM thought_nodes WHERE videoId = :videoId OR perspectiveId IN (SELECT id FROM perspectives WHERE videoId = :videoId))") suspend fun deleteEdgesForVideo(videoId: String)
     @Query("DELETE FROM thought_nodes WHERE videoId = :videoId OR perspectiveId IN (SELECT id FROM perspectives WHERE videoId = :videoId)") suspend fun deleteNodesForVideo(videoId: String)

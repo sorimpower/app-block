@@ -32,6 +32,7 @@ class PerspectiveViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun explorePerspective(id: String) = viewModelScope.launch { repository.markPerspectiveVisited(id) }
+    fun markRecommendedPerspectiveOpened(id: String) = viewModelScope.launch { repository.markPerspectiveOpened(id) }
     fun deleteWatchRecord(videoId: String) = viewModelScope.launch {
         repository.deleteWatchRecord(videoId)
         _message.value = "시청 기록을 삭제했어요."

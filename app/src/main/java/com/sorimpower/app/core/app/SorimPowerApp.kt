@@ -6,6 +6,7 @@ import android.content.Intent
 import android.provider.Settings
 import android.text.TextUtils
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -53,7 +55,6 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
@@ -113,14 +114,12 @@ import com.sorimpower.app.feature.blocker.presentation.InstalledApp
 import com.sorimpower.app.feature.bodylog.presentation.BodyLogScreen
 import com.sorimpower.app.feature.bodylog.presentation.BodyLogViewModel
 import com.sorimpower.app.feature.auction.presentation.AuctionScreen
-import com.sorimpower.app.feature.auction.presentation.AuctionCollectionInfoDialog
 import com.sorimpower.app.feature.auction.presentation.AuctionViewModel
 import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupScreen
 import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupViewModel
 import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightScreen
 import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightViewModel
 import com.sorimpower.app.feature.propertytax.presentation.PropertyTaxScreen
-import com.sorimpower.app.feature.propertytax.presentation.PropertyTaxAnalysisInfoDialog
 import com.sorimpower.app.feature.propertytax.presentation.PropertyTaxViewModel
 import com.sorimpower.app.feature.perspective.presentation.PerspectiveScreen
 import com.sorimpower.app.feature.perspective.presentation.PerspectiveViewModel
@@ -146,6 +145,61 @@ private enum class Screen(val label: String) {
 }
 
 private enum class HealthRecordTab(val label: String) { DAILY("데일리 기록"), CHECKUP("건강검진") }
+
+/** Header help is intentionally kept in one place so every feature explains itself in the same language. */
+private data class HeaderFeatureInfo(
+    val title: String,
+    val description: String,
+    val features: List<String>,
+    val ai: List<String>,
+    val schedule: List<String>,
+)
+
+private fun headerFeatureInfo(screen: Screen): HeaderFeatureInfo? = when (screen) {
+    Screen.PHONE_INSIGHT -> HeaderFeatureInfo(
+        title = "AI 알림 안내",
+        description = "휴대폰의 선택한 정보를 합쳐, 놓치기 쉬운 일정과 기한을 정리합니다.",
+        features = listOf("문자·알림·사진·파일·통화 녹음·캘린더 등 선택한 데이터만 확인", "오늘·내일 일정과 2주 안의 기한을 카드와 푸시로 안내"),
+        ai = listOf("GPT-5.6 Luna", "새로 들어온 후보 데이터를 묶어 중복을 제거하고 챙길 항목만 추출"),
+        schedule = listOf("매일 오전 8시 자동 확인", "시간이 있는 일정은 시작 30분 전에 별도 알림"),
+    )
+    Screen.BODY_LOG -> HeaderFeatureInfo(
+        title = "건강 기록 안내",
+        description = "체중·식사·마운자로 기록과 건강검진을 한 흐름으로 관리합니다.",
+        features = listOf("체중 추이, 식사와 일별 추정 칼로리, 주사 기록을 함께 확인", "검진 PDF에서 검사값을 추출하고 여러 해의 추이를 비교"),
+        ai = listOf("식사별 칼로리 추정: GPT-5.6 Luna", "건강 경과 분석: GPT-5.6 Terra · high 추론", "검진 문서 추출·추이·선택검사 추천: GPT-5.6 Luna"),
+        schedule = listOf("식사를 저장하거나 수정하면 해당 식사를 바로 분석하고 하루 합계 갱신", "주사 알림을 켠 경우, 설정한 투여 주기에 맞춰 다음 알림 예약"),
+    )
+    Screen.AUCTION -> HeaderFeatureInfo(
+        title = "부동산 경매 안내",
+        description = "서울 아파트 진행 사건을 모아 보고, 법원 문서 기반의 예비 권리분석을 제공합니다.",
+        features = listOf("서울·아파트·진행 중·감정가 15억 원 이상·매각기일 90일 이내 사건 수집", "관심·종료 사건을 별도로 보관하고 종료 결과를 다시 확인"),
+        ai = listOf("수동 권리분석: GPT-5.6 Luna 또는 Terra 선택", "매일 추천 분석: GPT-5.6 Luna · 법원 문서와 사용자 조건을 함께 검토"),
+        schedule = listOf("AI 추천을 켠 경우 설정한 오전 시간(6~10시)에 새 사건만 분석", "추천 알림은 조건을 통과한 사건이 있을 때만 발송"),
+    )
+    Screen.PROPERTY_TAX -> HeaderFeatureInfo(
+        title = "부동산 세금 안내",
+        description = "보유 자산과 매도 계획을 타임라인으로 정리해 세금상 유의점을 비교합니다.",
+        features = listOf("취득·보유·양도 흐름, 공동명의·분양권·재개발 상황을 시나리오로 비교", "이전 분석과 비교해 달라진 전제와 추가 확인 사항을 표시"),
+        ai = listOf("GPT-5.6 Sol · max 추론", "분석 시 공식 법령·국세청 등 근거를 확인해 계획과 조건부 결과를 정리"),
+        schedule = listOf("정해진 자동 분석은 없음", "새로 분석하기를 누를 때마다 최신 근거 확인과 이전 결과 비교 실행"),
+    )
+    Screen.BLOCKER -> HeaderFeatureInfo(
+        title = "앱 차단 안내",
+        description = "집중 시간에 지정한 앱을 차단하고, 조건별 예외와 일정을 관리합니다.",
+        features = listOf("시간·요일·반복 조건과 앱별 규칙을 조합", "접근성 서비스를 통해 차단 화면을 즉시 적용"),
+        ai = listOf("AI 분석을 사용하지 않음", "모든 차단 판단은 기기에 저장한 규칙으로 처리"),
+        schedule = listOf("각 차단 조건에 설정한 시간과 반복 주기에 맞춰 동작", "사용자가 켠 조건만 적용"),
+    )
+    Screen.PERSPECTIVE -> HeaderFeatureInfo(
+        title = "유튜브 분석 안내",
+        description = "시청한 유튜브 영상을 주제와 관점으로 정리해, 다른 시각의 영상을 발견하도록 돕습니다.",
+        features = listOf("2분 이상 시청한 YouTube 영상만 기록 후보로 감지", "주제 등록 제안, 사고 지도, 다른 관점의 실제 YouTube 영상 추천"),
+        ai = listOf("주제 분류: GPT-5.6 Luna", "공개 메타데이터·자막 분석: GPT-5.6 Terra · medium 추론", "영상 정밀 분석: Gemini 3.5 Flash (공개 YouTube URL 필요)"),
+        schedule = listOf("고정 시각 스케줄 없음", "영상 재생 종료 직후 주제 또는 다른 관점 알림을 판단하며 하루 최대 2회 발송"),
+    )
+    else -> null
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
@@ -183,9 +237,7 @@ internal fun SorimPowerApp(
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
     var healthRecordTab by remember { mutableStateOf(HealthRecordTab.DAILY) }
     var protectedAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var showAuctionCollectionInfo by remember { mutableStateOf(false) }
-    var showPhoneInsightScheduleInfo by remember { mutableStateOf(false) }
-    var showPropertyTaxAnalysisInfo by remember { mutableStateOf(false) }
+    var infoScreen by remember { mutableStateOf<Screen?>(null) }
     // 알림으로 진입한 화면은 사용자가 설정한 시작 화면보다 항상 우선한다.
     // AI 챙김을 시작 화면으로 설정한 경우 관점 확장 알림이 로딩 뒤 AI 챙김으로
     // 다시 덮어써지던 경쟁 상태를 막는다.
@@ -219,9 +271,38 @@ internal fun SorimPowerApp(
     LaunchedEffect(openPerspectiveRequest) { if (openPerspectiveRequest > 0) screen = Screen.PERSPECTIVE }
     LaunchedEffect(openPerspectiveTopicsRequest) { if (openPerspectiveTopicsRequest > 0) screen = Screen.PERSPECTIVE }
 
+    BackHandler(enabled = infoScreen != null) { infoScreen = null }
+    BackHandler(enabled = infoScreen == null && protectedAction == null && screen != Screen.HOME) {
+        screen = when (screen) {
+            Screen.SCHEDULE, Screen.APP_RULES -> Screen.BLOCKER
+            Screen.SETTINGS -> Screen.MORE
+            Screen.BODY_LOG -> if (healthRecordTab == HealthRecordTab.CHECKUP) {
+                healthRecordTab = HealthRecordTab.DAILY
+                Screen.BODY_LOG
+            } else Screen.HOME
+            else -> Screen.HOME
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
+            Surface(
+                shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                shadowElevation = 5.dp,
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+            Box(
+                Modifier.background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f),
+                            MaterialTheme.colorScheme.surface,
+                            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .35f),
+                        ),
+                    ),
+                ),
+            ) {
             TopAppBar(
                 navigationIcon = {
                     Image(
@@ -257,37 +338,30 @@ internal fun SorimPowerApp(
                         Surface(
                             modifier = Modifier.padding(end = 18.dp),
                             shape = RoundedCornerShape(14.dp),
-                            color = AppLilac.copy(alpha = .65f),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = .72f),
                         ) {
                             Text(
                                 LocalDate.now().format(DateTimeFormatter.ofPattern("M.d E", Locale.KOREAN)),
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                                color = AppCobalt,
+                                color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
                     }
-                    if (screen == Screen.AUCTION) {
-                        IconButton(onClick = { showAuctionCollectionInfo = true }) {
-                            Icon(Icons.Rounded.Info, contentDescription = "법원 경매 수집 조건")
-                        }
-                    }
-                    if (screen == Screen.PHONE_INSIGHT) {
-                        IconButton(onClick = { showPhoneInsightScheduleInfo = true }) {
-                            Icon(Icons.Rounded.Info, contentDescription = "AI 알림 자동 확인 안내")
-                        }
-                    }
-                    if (screen == Screen.PROPERTY_TAX) {
-                        IconButton(onClick = { showPropertyTaxAnalysisInfo = true }) {
-                            Icon(Icons.Rounded.Info, contentDescription = "부동산 세금 분석 방식 안내")
-                        }
+                    headerFeatureInfo(screen)?.let { info ->
+                        HeaderInfoButton(
+                            contentDescription = "${info.title} 열기",
+                            onClick = { infoScreen = screen },
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.White,
+                    containerColor = Color.Transparent,
                 ),
             )
+            }
+            }
         },
         bottomBar = {
             if (screen != Screen.SCHEDULE && screen != Screen.APP_RULES) FloatingNavigation(screen, state.bottomNavigationOrder) { screen = it }
@@ -416,31 +490,19 @@ internal fun SorimPowerApp(
         }
         }
     }
-    if (showAuctionCollectionInfo) {
-        AuctionCollectionInfoDialog(onDismiss = { showAuctionCollectionInfo = false })
-    }
-    if (showPhoneInsightScheduleInfo) {
-        AlertDialog(
-            onDismissRequest = { showPhoneInsightScheduleInfo = false },
-            title = { Text("AI 알림 자동 확인", fontWeight = FontWeight.Black) },
-            text = {
-                val run = phoneLatestRun
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("매일 오전 8시 새로운 일정 확인")
-                    Text(
-                        run?.let { latest ->
-                            val timestamp = latest.finishedAt ?: latest.startedAt
-                            "최근 분석 갱신: ${formatPhoneInsightTime(timestamp)}"
-                        } ?: "최근 분석 갱신: 아직 분석 기록이 없습니다.",
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            },
-            confirmButton = { TextButton(onClick = { showPhoneInsightScheduleInfo = false }) { Text("확인") } },
-        )
-    }
-    if (showPropertyTaxAnalysisInfo) {
-        PropertyTaxAnalysisInfoDialog(onDismiss = { showPropertyTaxAnalysisInfo = false })
+    infoScreen?.let { selectedScreen ->
+        headerFeatureInfo(selectedScreen)?.let { info ->
+            HeaderFeatureInfoDialog(
+                info = info,
+                lastAnalysisUpdate = if (selectedScreen == Screen.PHONE_INSIGHT) {
+                    phoneLatestRun?.let { latest ->
+                        val timestamp = latest.finishedAt ?: latest.startedAt
+                        "최근 분석 갱신: ${formatPhoneInsightTime(timestamp)}"
+                    } ?: "최근 분석 갱신: 아직 분석 기록이 없습니다."
+                } else null,
+                onDismiss = { infoScreen = null },
+            )
+        }
     }
     protectedAction?.let { action ->
         PasswordGateDialog(
@@ -462,6 +524,118 @@ internal fun SorimPowerApp(
 private fun formatPhoneInsightTime(timestamp: Long): String =
     java.time.Instant.ofEpochMilli(timestamp).atZone(java.time.ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("M월 d일 HH:mm"))
+
+@Composable
+private fun HeaderInfoButton(
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .padding(end = 14.dp)
+            .size(34.dp)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Rounded.Info,
+            contentDescription = contentDescription,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(21.dp),
+        )
+    }
+}
+
+@Composable
+private fun HeaderFeatureInfoDialog(
+    info: HeaderFeatureInfo,
+    lastAnalysisUpdate: String?,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(34.dp),
+                    shape = RoundedCornerShape(11.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .8f),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
+                    }
+                }
+                Text(
+                    info.title,
+                    modifier = Modifier.padding(start = 10.dp),
+                    fontWeight = FontWeight.Black,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 470.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+                    Text(
+                        info.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                item { HeaderInfoSection("기능 특징", info.features, MaterialTheme.colorScheme.primary) }
+                item { HeaderInfoSection("AI 분석", info.ai, MaterialTheme.colorScheme.secondary) }
+                item {
+                    HeaderInfoSection(
+                        title = "자동 실행 · 알림",
+                        items = buildList {
+                            addAll(info.schedule)
+                            lastAnalysisUpdate?.let(::add)
+                        },
+                        accent = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) { Text("확인") }
+        },
+    )
+}
+
+@Composable
+private fun HeaderInfoSection(
+    title: String,
+    items: List<String>,
+    accent: Color,
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = accent.copy(alpha = .075f),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(13.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Text(title, color = accent, fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelLarge)
+            items.forEach { item ->
+                Row(verticalAlignment = Alignment.Top) {
+                    Box(
+                        Modifier.padding(top = 7.dp).size(5.dp).background(accent, CircleShape),
+                    )
+                    Text(
+                        item,
+                        modifier = Modifier.padding(start = 8.dp).weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
 
 private fun Modifier.horizontalSwipe(onSwipeLeft:()->Unit,onSwipeRight:()->Unit):Modifier=pointerInput(Unit){awaitPointerEventScope{while(true){val down=awaitFirstDown(requireUnconsumed=false,pass=PointerEventPass.Initial);var dx=0f;var dy=0f;while(true){val event=awaitPointerEvent(PointerEventPass.Initial);val change=event.changes.firstOrNull{it.id==down.id}?:break;if(!change.pressed){if(abs(dx)>100f&&abs(dx)>abs(dy)*1.2f){if(dx<0)onSwipeLeft() else onSwipeRight()};break};val delta=change.positionChange();dx+=delta.x;dy+=delta.y}}}}
 
@@ -492,7 +666,7 @@ private fun HealthRecordTabs(
 
 @Composable
 private fun FloatingNavigation(selected: Screen, order: List<BottomNavigationTab>, onSelected: (Screen) -> Unit) {
-    Surface(color = Color.White, shadowElevation = 12.dp) {
+    Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 12.dp) {
         Row(
             Modifier.fillMaxWidth().navigationBarsPadding().height(70.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -507,7 +681,7 @@ private fun FloatingNavigation(selected: Screen, order: List<BottomNavigationTab
                     Text(
                         item.label,
                         modifier = Modifier.padding(top = 3.dp),
-                        color = if (active) AppCobalt else Color(0xFFA9A6AD),
+                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 11.sp,
                         lineHeight = 13.sp,
@@ -541,12 +715,12 @@ private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
             Card(
                 Modifier.fillMaxWidth().clickable(onClick = onOpenSettings),
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(1.dp),
             ) {
                 Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(46.dp).background(AppCobalt.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Settings, null, tint = AppCobalt)
+                    Box(Modifier.size(46.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Settings, null, tint = MaterialTheme.colorScheme.primary)
                     }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text("설정", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
@@ -559,16 +733,16 @@ private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
             Card(
                 Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(1.dp),
             ) {
                 Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(46.dp).background(AppOrange.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Info, null, tint = AppOrange)
+                    Box(Modifier.size(46.dp).background(MaterialTheme.colorScheme.tertiary.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Info, null, tint = MaterialTheme.colorScheme.tertiary)
                     }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text("앱 정보", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                        Text("나잘알 v0.14.6", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = AppNavy)
+                        Text("나잘알 v0.14.15", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         Text("나잘알 개인용 시스템", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -592,7 +766,7 @@ private fun NavIcon(screen: Screen, selected: Boolean) {
     }
     Box(
         Modifier.width(50.dp).height(30.dp).clip(RoundedCornerShape(15.dp))
-            .background(if (selected) Brush.horizontalGradient(listOf(AppCobalt, AppOrange)) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))),
+            .background(if (selected) Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))),
         contentAlignment = Alignment.Center,
     ) { Icon(icon, contentDescription = screen.label, modifier = Modifier.size(20.dp), tint = if (selected) Color.White else Color(0xFFAAA7AE)) }
 }

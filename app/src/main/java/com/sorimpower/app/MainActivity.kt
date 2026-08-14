@@ -21,6 +21,7 @@ import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightViewMode
 import com.sorimpower.app.feature.propertytax.presentation.PropertyTaxViewModel
 import com.sorimpower.app.feature.perspective.presentation.PerspectiveViewModel
 import com.sorimpower.app.core.ui.SorimPowerTheme
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 class MainActivity : ComponentActivity() {
     private val blockerViewModel: BlockerViewModel by viewModels()
@@ -43,7 +44,8 @@ class MainActivity : ComponentActivity() {
         handlePerspectiveTopicIntent(intent)
         enableEdgeToEdge()
         setContent {
-            SorimPowerTheme {
+            val blockerState by blockerViewModel.state.collectAsStateWithLifecycle()
+            SorimPowerTheme(themeMode = blockerState.themeMode) {
                 SorimPowerApp(
                     blockerViewModel,
                     bodyLogViewModel,

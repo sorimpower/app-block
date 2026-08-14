@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import android.content.Intent
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -40,6 +41,7 @@ private enum class InsightTab(val label:String){HOME("챙길 항목"),SOURCES("�
 @Composable fun PhoneInsightScreen(padding:PaddingValues, vm:PhoneInsightViewModel, onSwipeEdgeLeft:()->Unit={}, onSwipeEdgeRight:()->Unit={}){
     val configs by vm.configs.collectAsStateWithLifecycle();val insights by vm.insights.collectAsStateWithLifecycle();val latestRun by vm.latestRun.collectAsStateWithLifecycle();val latestSourceRuns by vm.latestSourceRuns.collectAsStateWithLifecycle();val working by vm.working.collectAsStateWithLifecycle();val message by vm.message.collectAsStateWithLifecycle();var tab by remember{mutableStateOf(InsightTab.HOME)};var rangeDialog by remember{mutableStateOf(false)};var sourceRangeType by remember{mutableStateOf<InsightSourceType?>(null)};var pendingRange by remember{mutableStateOf(SmsScanRange.ONE_YEAR)};var pendingSourceRange by remember{mutableStateOf(SmsScanRange.ONE_MONTH)};var awaitingUsageEstimate by remember{mutableStateOf(false)};var awaitingDownloadsPermission by remember{mutableStateOf(false)};var pendingDownloadsRoot by remember{mutableStateOf(false)};var disableSms by remember{mutableStateOf(false)};var appSelectionType by remember{mutableStateOf<InsightSourceType?>(null)};var usageSelection by remember{mutableStateOf<Set<String>>(emptySet())}
     val context=androidx.compose.ui.platform.LocalContext.current
+    BackHandler(enabled=tab!=InsightTab.HOME){tab=InsightTab.HOME}
     val lifecycleOwner=androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner){val observer=androidx.lifecycle.LifecycleEventObserver{_,event->if(event==androidx.lifecycle.Lifecycle.Event.ON_RESUME){if(awaitingUsageEstimate){awaitingUsageEstimate=false;vm.configureSource(InsightSourceType.APP_USAGE,pendingSourceRange)};if(awaitingDownloadsPermission){awaitingDownloadsPermission=false;if(Build.VERSION.SDK_INT<30||android.os.Environment.isExternalStorageManager())vm.configureSource(InsightSourceType.DOCUMENT,pendingSourceRange,DeviceInsightSources.DOWNLOADS_ROOT)}}};lifecycleOwner.lifecycle.addObserver(observer);onDispose{lifecycleOwner.lifecycle.removeObserver(observer)}}
     val notificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){}
@@ -74,7 +76,7 @@ private fun InsightHome(values: List<PhoneInsightEntity>, sms: InsightSourceConf
     val context=androidx.compose.ui.platform.LocalContext.current;val alarmManager=remember{context.getSystemService(android.app.AlarmManager::class.java)};val exactAllowed=Build.VERSION.SDK_INT<31||alarmManager.canScheduleExactAlarms()
     PullToRefreshBox(isRefreshing=working,onRefresh=onRefresh,modifier=Modifier.fillMaxSize()) { LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (!exactAllowed) item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.padding(18.dp)) {
                     Text("정확한 일정 알림을 켜 주세요", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
                     OutlinedButton({context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,android.net.Uri.parse("package:${context.packageName}")))},Modifier.fillMaxWidth()){Text("정확한 일정 알림 허용")}
@@ -93,7 +95,7 @@ private fun Modifier.horizontalSwipe(onSwipeLeft:()->Unit,onSwipeRight:()->Unit)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InsightItemCard(value:PhoneInsightEntity,onStatus:(String,InsightStatus)->Unit){
-    val dayLabel=PhoneInsightVisibility.dayLabel(value)?:"기한 없음";val days=PhoneInsightVisibility.daysUntil(value);val isToday=days==0L;val isImminent=days!=null&&days in 1L..2L;val isImportant=value.importance==InsightImportance.HIGH;val accent=when{isToday->MaterialTheme.colorScheme.error;isImminent||isImportant->AppOrange;else->AppCobalt};val emphasisLabel=when{isToday->"가장 먼저";isImminent->"임박";isImportant->"중요";value.status==InsightStatus.REVIEW->"확인 필요";else->null}
+    val dayLabel=PhoneInsightVisibility.dayLabel(value)?:"기한 없음";val days=PhoneInsightVisibility.daysUntil(value);val isToday=days==0L;val isImminent=days!=null&&days in 1L..2L;val isImportant=value.importance==InsightImportance.HIGH;val accent=when{isToday->MaterialTheme.colorScheme.error;isImminent||isImportant->MaterialTheme.colorScheme.tertiary;else->MaterialTheme.colorScheme.primary};val emphasisLabel=when{isToday->"가장 먼저";isImminent->"임박";isImportant->"중요";value.status==InsightStatus.REVIEW->"확인 필요";else->null}
     val sourceLabel=value.sourceType.label
     val sourceTooltipState=rememberTooltipState()
     val scope=rememberCoroutineScope()
@@ -140,23 +142,23 @@ private fun SourceManagement(configs: List<InsightSourceConfigEntity>,latestRun:
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         items(InsightSourceType.entries) { type ->
             val config = configs.firstOrNull { it.type == type }; val available = true
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.padding(16.dp)) {
                     Row(Modifier.fillMaxWidth()) { Column(Modifier.weight(1f)) { Text(type.label, fontWeight = FontWeight.Black); Text(type.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Switch(config?.enabled == true, { if(type==InsightSourceType.SMS) onSmsToggle(it) else onToggle(type,it) }, enabled = available && !working) }
-                    if (type == InsightSourceType.NOTIFICATION && config?.enabled == true&&!config.permissionGranted) Text("시스템 설정에서 ‘AI 알림의 알림 접근’을 허용해 주세요.", color = AppCobalt, style = MaterialTheme.typography.labelSmall)
+                    if (type == InsightSourceType.NOTIFICATION && config?.enabled == true&&!config.permissionGranted) Text("시스템 설정에서 ‘AI 알림의 알림 접근’을 허용해 주세요.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
                     if(type==InsightSourceType.NOTIFICATION&&config?.enabled==true){val selected=config.settings.selectedPackages;OutlinedButton({onEditApps(type,selected)},Modifier.fillMaxWidth()){Text(if(selected.isEmpty())"알림을 확인할 앱 · 전체 앱" else "알림을 확인할 앱 · ${selected.size}개")}}
                     if(config?.enabled==true&&!config.permissionGranted)Text("접근 권한을 확인해 주세요. 권한이 없으면 이 데이터는 건너뜁니다.",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.labelSmall)
-                    if (type == InsightSourceType.SCREENSHOT && config?.enabled == true) Text("선택한 사진 폴더의 새 이미지만 분석합니다.", color = AppCobalt, style = MaterialTheme.typography.labelSmall)
-                    if (type == InsightSourceType.DOCUMENT && config?.enabled == true) Text("선택한 파일 폴더의 새 PDF·이미지만 분석합니다.", color = AppCobalt, style = MaterialTheme.typography.labelSmall)
+                    if (type == InsightSourceType.SCREENSHOT && config?.enabled == true) Text("선택한 사진 폴더의 새 이미지만 분석합니다.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+                    if (type == InsightSourceType.DOCUMENT && config?.enabled == true) Text("선택한 파일 폴더의 새 PDF·이미지만 분석합니다.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
                     if(type==InsightSourceType.DOCUMENT)OutlinedButton(onAddDownloads,Modifier.fillMaxWidth(),enabled=!working){Text("Downloads 전체 연결")}
-                    if (type == InsightSourceType.CALL_RECORDING && config?.enabled == true) Text("선택한 녹음 폴더의 새 파일만 전사합니다. 파일당 최대 8MB입니다.", color = AppCobalt, style = MaterialTheme.typography.labelSmall)
+                    if (type == InsightSourceType.CALL_RECORDING && config?.enabled == true) Text("선택한 녹음 폴더의 새 파일만 전사합니다. 파일당 최대 8MB입니다.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
                     if (type in setOf(InsightSourceType.SCREENSHOT,InsightSourceType.DOCUMENT,InsightSourceType.CALL_RECORDING) && config?.enabled == true) {
                         val count=config.settings.accessUris.size
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){Text("선택한 폴더 ${count}개",style=MaterialTheme.typography.labelSmall);TextButton({onAddFolder(type)},enabled=!working){Text("폴더 추가")}}
                     }
-                    if (type == InsightSourceType.CONTACTS && config?.enabled == true) Text("원본 연락처는 AI에 전송하지 않고 번호를 이름으로 바꾸는 데만 사용합니다.", color = AppCobalt, style = MaterialTheme.typography.labelSmall)
-                    if (type == InsightSourceType.CALL_LOG && config?.enabled == true) Text("통화 내용이 아닌 시각·방향·통화 길이만 확인합니다.", color = AppCobalt, style = MaterialTheme.typography.labelSmall)
-                    if (type == InsightSourceType.APP_USAGE && config?.enabled == true) Text("시스템 설정에서 사용 정보 접근을 허용한 뒤, 다음 분석부터 반영됩니다.", color = AppCobalt, style = MaterialTheme.typography.labelSmall)
+                    if (type == InsightSourceType.CONTACTS && config?.enabled == true) Text("원본 연락처는 AI에 전송하지 않고 번호를 이름으로 바꾸는 데만 사용합니다.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+                    if (type == InsightSourceType.CALL_LOG && config?.enabled == true) Text("통화 내용이 아닌 시각·방향·통화 길이만 확인합니다.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+                    if (type == InsightSourceType.APP_USAGE && config?.enabled == true) Text("시스템 설정에서 사용 정보 접근을 허용한 뒤, 다음 분석부터 반영됩니다.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
                     if(type==InsightSourceType.APP_USAGE&&config?.enabled==true){val selected=config.settings.selectedPackages;OutlinedButton({onEditApps(type,selected)},Modifier.fillMaxWidth()){Text("분석할 앱 선택 · ${selected.size}개")}}
                     if (type == InsightSourceType.SMS && config?.enabled == true) {
                         Text("분석 범위 ${config.scanRange.label}", style = MaterialTheme.typography.labelSmall)
@@ -168,4 +170,4 @@ private fun SourceManagement(configs: List<InsightSourceConfigEntity>,latestRun:
     }
 }
 
-@Composable private fun InfoCard(text: String) = Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) { Text(text, Modifier.padding(18.dp)) }
+@Composable private fun InfoCard(text: String) = Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) { Text(text, Modifier.padding(18.dp)) }

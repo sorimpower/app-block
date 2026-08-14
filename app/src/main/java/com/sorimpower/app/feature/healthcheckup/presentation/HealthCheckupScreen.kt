@@ -3,6 +3,7 @@ package com.sorimpower.app.feature.healthcheckup.presentation
 import android.app.DatePickerDialog
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -96,6 +97,11 @@ fun HealthCheckupScreen(
     var page by remember { mutableStateOf(HealthCheckupPage.HOME) }
     var selectedId by remember { mutableStateOf<String?>(null) }
     val selected = checkups.firstOrNull { it.checkup.id == selectedId }
+    BackHandler(enabled = draft != null || page != HealthCheckupPage.HOME) {
+        if (draft != null) viewModel.cancelDraft()
+        page = HealthCheckupPage.HOME
+        selectedId = null
+    }
 
     when {
         draft != null -> HealthExtractionReview(
@@ -161,6 +167,7 @@ private fun HealthCheckupHome(
     onOpen: (HealthCheckupWithMetrics) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(HealthCheckupHomeTab.RECORDS) }
+    BackHandler(enabled = selectedTab != HealthCheckupHomeTab.RECORDS) { selectedTab = HealthCheckupHomeTab.RECORDS }
     LazyColumn(
         Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
@@ -182,12 +189,12 @@ private fun HealthCheckupHome(
             Card(
                 Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             ) {
                 Column(Modifier.padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(46.dp).background(AppOrange.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.FavoriteBorder, null, tint = AppOrange)
+                        Box(Modifier.size(46.dp).background(MaterialTheme.colorScheme.tertiary.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.FavoriteBorder, null, tint = MaterialTheme.colorScheme.tertiary)
                         }
                         Column(Modifier.padding(start = 12.dp).weight(1f)) {
                             Text("건강검진 기록", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
@@ -225,7 +232,7 @@ private fun HealthCheckupHome(
                 Card(
                     Modifier.fillMaxWidth().clickable { onOpen(item) },
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(1.dp),
                 ) {
                     Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -255,7 +262,7 @@ private fun ScreeningOptionCard(
     onAnalyze: (android.net.Uri) -> Unit,
 ) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(onAnalyze) }
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = AppCobalt.copy(alpha = .06f))) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = .08f))) {
         Column(Modifier.padding(18.dp)) {
             Text("유료 선택검사 추천", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
             Text("검사기관의 선택항목 안내 PDF를 올리면 내 검진 기록과 함께 검토해요.", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall)
@@ -267,11 +274,11 @@ private fun ScreeningOptionCard(
             recommendation?.let { result ->
                 Text(result.summary, Modifier.padding(top = 14.dp), fontWeight = FontWeight.Medium)
                 result.recommendations.forEach { item ->
-                    Card(Modifier.fillMaxWidth().padding(top = 8.dp), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(14.dp)) {
+                    Card(Modifier.fillMaxWidth().padding(top = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(14.dp)) {
                         Column(Modifier.padding(12.dp)) {
-                            Text("${item.priority} · ${item.name}", fontWeight = FontWeight.Black, color = AppCobalt)
+                            Text("${item.priority} · ${item.name}", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
                             Text(item.reason, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall)
-                            item.clinicalNote.takeIf(String::isNotBlank)?.let { Text("의학적 소견: $it", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = AppNavy) }
+                            item.clinicalNote.takeIf(String::isNotBlank)?.let { Text("의학적 소견: $it", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface) }
                         }
                     }
                 }
@@ -292,12 +299,12 @@ private fun LongTermTrendCard(
     Card(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(1.dp),
     ) {
         Column(Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.AutoAwesome, null, tint = AppCobalt)
+                Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
                     Text("AI 건강 추이 분석", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
                     Text("검수 완료된 ${checkupCount}건의 검사값만 비교합니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -324,9 +331,9 @@ private fun LongTermTrendCard(
             }
             errorMessage?.let { Text(it, Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             analysis?.let { result ->
-                Card(Modifier.fillMaxWidth().padding(top = 16.dp), colors = CardDefaults.cardColors(containerColor = AppCobalt.copy(alpha = .08f)), shape = RoundedCornerShape(16.dp)) {
+                Card(Modifier.fillMaxWidth().padding(top = 16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = .10f)), shape = RoundedCornerShape(16.dp)) {
                     Column(Modifier.padding(14.dp)) {
-                        Text("핵심 요약", fontWeight = FontWeight.Black, color = AppCobalt)
+                        Text("핵심 요약", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
                         Text(result.summary, Modifier.padding(top = 5.dp), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
@@ -335,7 +342,7 @@ private fun LongTermTrendCard(
                 TrendSection("긍정적인 변화", result.positiveChanges, AppGreen)
                 if (result.missingInformation.isNotEmpty()) TrendSection("해석의 한계", result.missingInformation, MaterialTheme.colorScheme.onSurfaceVariant)
                 if (result.medicalConsultationSuggested) {
-                    Text("일부 변화는 다음 진료 또는 검진에서 의료진과 함께 확인해 볼 가치가 있습니다.", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.labelSmall, color = AppOrange)
+                    Text("일부 변화는 다음 진료 또는 검진에서 의료진과 함께 확인해 볼 가치가 있습니다.", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                 }
             }
         }
@@ -392,7 +399,7 @@ private fun HealthCheckupAdd(
         item { OutlinedTextField(title, { title = it.take(100) }, Modifier.fillMaxWidth(), label = { Text("검진명 (선택)") }, singleLine = true) }
         item { OutlinedTextField(memo, { memo = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("메모 (선택)") }, minLines = 2, maxLines = 4) }
         item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.padding(18.dp)) {
                     Text("원본 문서", fontWeight = FontWeight.Black)
                     Text(selectedName.ifBlank { "PDF 또는 이미지 파일을 선택해 주세요." }, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall)
@@ -503,7 +510,7 @@ private fun HealthCheckupDetail(
     ) {
         item { BackHeader(checkup.checkup.displayTitle(), onBack) }
         item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(22.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(18.dp)) {
                     Text(LocalDate.ofEpochDay(checkup.checkup.checkupDateEpochDay).format(DATE_FORMAT), fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)
                     checkup.checkup.hospitalName.takeIf(String::isNotBlank)?.let { Text(it, Modifier.padding(top = 4.dp)) }
@@ -525,7 +532,7 @@ private fun HealthCheckupDetail(
         grouped.forEach { (categoryName, metrics) ->
             item { Text(enumValues<HealthCategory>().firstOrNull { it.name == categoryName }?.label ?: "기타", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium) }
             items(metrics, key = { it.id }) { metric ->
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(16.dp)) {
                     Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(metric.name, fontWeight = FontWeight.Bold)
@@ -557,13 +564,13 @@ private fun HealthCheckupDetail(
 
 @Composable
 private fun MetricReviewCard(metric: HealthMetricDraft, onEdit: () -> Unit, onDelete: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onEdit), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onEdit), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(16.dp)) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(metric.name.ifBlank { "새 검사 항목" }, fontWeight = FontWeight.Bold)
                 Text(metric.category.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(metric.displayValue(), fontWeight = FontWeight.Black, color = AppCobalt)
+            Text(metric.displayValue(), fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
             IconButton(onClick = onDelete) { Icon(Icons.Rounded.DeleteOutline, "항목 삭제", tint = MaterialTheme.colorScheme.error) }
         }
     }
@@ -616,8 +623,8 @@ private fun BackHeader(title: String, onBack: () -> Unit) {
 
 @Composable
 private fun SimpleInfoCard(text: String) {
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = AppCobalt.copy(alpha = .07f)), shape = RoundedCornerShape(18.dp)) {
-        Text(text, Modifier.padding(16.dp), color = AppNavy)
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = .08f)), shape = RoundedCornerShape(18.dp)) {
+        Text(text, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurface)
     }
 }
 

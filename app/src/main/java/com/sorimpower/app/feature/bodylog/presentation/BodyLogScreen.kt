@@ -181,14 +181,6 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             )
         }
         item {
-            WeightProgressAiCard(
-                analysis = aiAnalysis,
-                isAnalyzing = isAiAnalyzing,
-                errorMessage = aiAnalysisError,
-                onAnalyze = viewModel::analyzeWeightProgress,
-            )
-        }
-        item {
             PeriodNavigation(period, selectedDate, onDateChange = {
                 selectedDate = it
                 if (!showAllRecordHistory) mealFilterDate = it
@@ -200,6 +192,14 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 latestWeightKg = state.latestWeight?.weightKg,
                 targetWeightKg = state.activeGoal?.targetWeightKg,
                 weightsHidden = state.weightsHidden,
+            )
+        }
+        item {
+            WeightProgressAiCard(
+                analysis = aiAnalysis,
+                isAnalyzing = isAiAnalyzing,
+                errorMessage = aiAnalysisError,
+                onAnalyze = viewModel::analyzeWeightProgress,
             )
         }
         item {
@@ -218,7 +218,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 onClick = { showDailyEntry = !showDailyEntry },
                 modifier = Modifier.fillMaxWidth().height(48.dp),
             ) {
-                Icon(Icons.Rounded.Add, null, Modifier.size(18.dp), tint = AppCobalt)
+                Icon(Icons.Rounded.Add, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                 Text(
                     if (showDailyEntry) "기록 추가 닫기" else "${selectedDate.monthValue}월 ${selectedDate.dayOfMonth}일 기록 추가",
                     Modifier.padding(start = 7.dp),
@@ -230,7 +230,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             Card(
                 Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(1.dp),
             ) {
                 Column(Modifier.padding(16.dp)) {
@@ -247,7 +247,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                             modifier = Modifier.weight(1f).height(48.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp),
                         ) {
-                            Icon(Icons.Rounded.MonitorWeight, null, Modifier.size(17.dp), tint = AppCobalt)
+                            Icon(Icons.Rounded.MonitorWeight, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
                             Text("체중", Modifier.padding(start = 4.dp), fontWeight = FontWeight.Bold)
                         }
                         OutlinedButton(
@@ -255,7 +255,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                             modifier = Modifier.weight(1f).height(48.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp),
                         ) {
-                            Icon(Icons.Rounded.Restaurant, null, Modifier.size(18.dp), tint = AppCobalt)
+                            Icon(Icons.Rounded.Restaurant, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                             Text("식사", Modifier.padding(start = 4.dp), fontWeight = FontWeight.Bold)
                         }
                         OutlinedButton(
@@ -263,13 +263,13 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                             modifier = Modifier.weight(1f).height(48.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp),
                         ) {
-                            Icon(Icons.Rounded.Medication, null, Modifier.size(18.dp), tint = AppCobalt)
+                            Icon(Icons.Rounded.Medication, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                             Text("주사", Modifier.padding(start = 4.dp), fontWeight = FontWeight.Bold)
                         }
                     }
                 if (state.quickMealTemplates.isNotEmpty()) {
                     Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("빠른 식사", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text("빠른 식사", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                         OutlinedButton(onClick = { quickMealEditMode = !quickMealEditMode }, modifier = Modifier.height(32.dp)) {
                             Text(if (quickMealEditMode) "완료" else "편집", style = MaterialTheme.typography.labelMedium)
                         }
@@ -514,13 +514,13 @@ private fun BodySummaryCard(
     Card(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(2.dp),
     ) {
         Column(Modifier.padding(10.dp)) {
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF7C2AE8), Color(0xFFB623E6), Color(0xFFE72A99))))
+                    .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.tertiary)))
                     .padding(24.dp),
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -559,10 +559,10 @@ private fun BodySummaryCard(
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BodyMetric(if (state.weightsHidden) HIDDEN_WEIGHT else "${signed(state.startChange)} kg", "시작 대비", Modifier.weight(1f))
                     Column(
-                        Modifier.weight(1f).clickable(onClick = onGoal).background(Color(0xFFF5F4F6), RoundedCornerShape(16.dp)).padding(10.dp),
+                        Modifier.weight(1f).clickable(onClick = onGoal).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)).padding(10.dp),
                     ) {
-                        Text(if (state.weightsHidden) HIDDEN_WEIGHT else state.goalRemaining?.let { "${signed(it)} kg" } ?: "—", color = AppNavy, fontWeight = FontWeight.Black)
-                        Text("목표까지 · 설정", color = AppCobalt, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Text(if (state.weightsHidden) HIDDEN_WEIGHT else state.goalRemaining?.let { "${signed(it)} kg" } ?: "—", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
+                        Text("목표까지 · 설정", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                     }
                     BodyMetric(if (state.weightsHidden) HIDDEN_WEIGHT else state.sevenDayAverage?.let { "${formatWeight(it)} kg" } ?: "—", "7일 평균", Modifier.weight(1f))
                 }
@@ -573,8 +573,8 @@ private fun BodySummaryCard(
 
 @Composable
 private fun BodyMetric(value: String, label: String, modifier: Modifier) {
-    Column(modifier.background(Color(0xFFF5F4F6), RoundedCornerShape(16.dp)).padding(10.dp)) {
-        Text(value, color = AppNavy, fontWeight = FontWeight.Black)
+    Column(modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)).padding(10.dp)) {
+        Text(value, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
     }
 }
@@ -589,12 +589,12 @@ private fun WeightProgressAiCard(
     Card(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(1.dp),
     ) {
         Column(Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = AppCobalt)
+                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
                     Text("AI 건강 경과 분석", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
                     Text("마운자로·식단·섭취 칼로리·체중 추세를 함께 검토해요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -613,20 +613,14 @@ private fun WeightProgressAiCard(
                     Text(if (analysis == null) "내 건강 기록 분석하기" else "현재 기록으로 다시 분석", Modifier.padding(start = 7.dp))
                 }
             }
-            Text(
-                "버튼을 누를 때에만 최근 기록이 ChatGPT Terra(high)에 전송됩니다.",
-                Modifier.padding(top = 10.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             errorMessage?.let {
                 Text(it, Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             analysis?.let { result ->
-                Text(result.headline, Modifier.padding(top = 16.dp), fontWeight = FontWeight.Black, color = AppNavy)
+                Text(result.headline, Modifier.padding(top = 16.dp), fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
                 Text(result.trendSummary, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium)
                 Text("핵심 판단", Modifier.padding(top = 14.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
-                Text(result.encouragement, Modifier.padding(top = 6.dp), color = AppCobalt, style = MaterialTheme.typography.bodyMedium)
+                Text(result.encouragement, Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
                 result.mealAssessment.takeIf(String::isNotBlank)?.let {
                     Text("식사 평가", Modifier.padding(top = 14.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                     Text(it, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium)
@@ -642,7 +636,7 @@ private fun WeightProgressAiCard(
                     }
                 }
                 result.safetyNote.takeIf(String::isNotBlank)?.let {
-                    Text(it, Modifier.padding(top = 14.dp), style = MaterialTheme.typography.labelSmall, color = AppOrange)
+                    Text(it, Modifier.padding(top = 14.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                 }
             }
         }
@@ -710,6 +704,8 @@ private fun moveMonthWeek(date: LocalDate, direction: Int): LocalDate {
 @Composable
 private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dailyCalories: List<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity>, latestWeightKg: Double?, targetWeightKg: Double?, weightsHidden: Boolean) {
     var selectedPoint by remember(points) { mutableStateOf<ChartPoint?>(null) }
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val tertiaryColor = MaterialTheme.colorScheme.tertiary
     val zone = ZoneId.systemDefault()
     val month = YearMonth.from(selectedMonth)
     val minTimestamp = remember(month) { month.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli() }
@@ -721,7 +717,7 @@ private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dail
             day.toString() + "일"
         }.distinct()
     }
-    Card(Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
+    Card(Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(16.dp)) {
             if (points.isEmpty()) {
                 Box(Modifier.fillMaxWidth().height(190.dp), contentAlignment = Alignment.Center) { Text("이 기간에는 체중 기록이 없어요.") }
@@ -736,12 +732,12 @@ private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dail
                     .toList()
                 selectedPoint?.let { point ->
                     Row(
-                        Modifier.fillMaxWidth().background(Color(0xFFF5F4F6), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp),
+                        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(point.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(if (weightsHidden) HIDDEN_WEIGHT else "${formatWeight(point.value)} kg", color = AppCobalt, fontWeight = FontWeight.Black)
+                        Text(if (weightsHidden) HIDDEN_WEIGHT else "${formatWeight(point.value)} kg", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
                     }
                 }
                 Canvas(
@@ -786,15 +782,15 @@ private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dail
                         val y = yFor(point)
                         if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
                     }
-                    drawPath(path, AppCobalt, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
+                    drawPath(path, primaryColor, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
                     selectedPoint?.let { point ->
                         val x = xFor(point)
-                        drawLine(AppCobalt.copy(alpha = .25f), Offset(x, top), Offset(x, bottom), strokeWidth = 1.dp.toPx())
+                        drawLine(primaryColor.copy(alpha = .25f), Offset(x, top), Offset(x, bottom), strokeWidth = 1.dp.toPx())
                     }
                     points.forEach { point ->
                         val x = xFor(point)
                         val y = yFor(point)
-                        drawCircle(if (point == selectedPoint) AppCobalt else AppOrange, if (point == selectedPoint) 5.dp.toPx() else 3.dp.toPx(), Offset(x, y))
+                        drawCircle(if (point == selectedPoint) primaryColor else tertiaryColor, if (point == selectedPoint) 5.dp.toPx() else 3.dp.toPx(), Offset(x, y))
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(start = 32.dp, end = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -820,6 +816,8 @@ private fun DailyCalorieBarChart(
     latestWeightKg: Double?,
     targetWeightKg: Double?,
 ) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val tertiaryColor = MaterialTheme.colorScheme.tertiary
     val values = remember(selectedMonth, dailyCalories) {
         dailyCalories.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == selectedMonth }
             .sortedBy { it.dateEpochDay }
@@ -838,7 +836,7 @@ private fun DailyCalorieBarChart(
         }.distinct()
     }
     var selectedSummary by remember(values) { mutableStateOf<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity?>(null) }
-    Text("일별 섭취 칼로리 · AI 추정", Modifier.padding(top = 16.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+    Text("일별 섭취 칼로리", Modifier.padding(top = 16.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
     calorieReference?.let { reference ->
         Text(
             "현재 체중 기준 · 최소 " + reference.minimumCalories + " / 감량 " + reference.dietCalories + " / 유지 " + reference.maintenanceCalories + " kcal",
@@ -850,9 +848,9 @@ private fun DailyCalorieBarChart(
     selectedSummary?.let { summary ->
         val date = LocalDate.ofEpochDay(summary.dateEpochDay)
         Text(
-            date.format(DateTimeFormatter.ofPattern("M월 d일", Locale.KOREAN)) + " · AI 추정 " + summary.estimatedCalories + " kcal",
+            date.format(DateTimeFormatter.ofPattern("M월 d일", Locale.KOREAN)) + summary.estimatedCalories + " kcal",
             Modifier.padding(top = 4.dp),
-            color = AppCobalt,
+            color = primaryColor,
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.labelMedium,
         )
@@ -891,8 +889,8 @@ private fun DailyCalorieBarChart(
                 val y = bottom - (calories.toFloat() / maxCalories).coerceIn(0f, 1f) * (bottom - top)
                 val color = when (label) {
                     "최소" -> Color(0xFFD14343)
-                    "감량" -> AppOrange
-                    else -> AppCobalt
+                    "감량" -> tertiaryColor
+                    else -> primaryColor
                 }
                 drawLine(color.copy(alpha = .72f), Offset(left, y), Offset(size.width - right, y), strokeWidth = 1.5.dp.toPx())
                 axisLabelPaint.color = when (label) {
@@ -910,7 +908,7 @@ private fun DailyCalorieBarChart(
             val y = bottom - (summary.estimatedCalories.toFloat() / maxCalories).coerceIn(0f, 1f) * (bottom - top)
             val isSelected = summary.dateEpochDay == selectedSummary?.dateEpochDay
             drawLine(
-                if (isSelected) AppCobalt else AppOrange,
+                if (isSelected) primaryColor else tertiaryColor,
                 Offset(x, bottom),
                 Offset(x, y),
                 strokeWidth = if (isSelected) 7.dp.toPx() else 5.dp.toPx(),
@@ -956,7 +954,7 @@ private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (Local
     val mealDates = state.meals.map { it.meal.localDate() }.toSet()
     val injectionDates = state.mounjaroInjections.map { it.localDate() }.toSet()
     val calories = state.dailyCalories.associateBy { LocalDate.ofEpochDay(it.dateEpochDay) }
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(date.format(DateTimeFormatter.ofPattern("yyyy년 M월", Locale.KOREAN)), Modifier.weight(1f), fontWeight = FontWeight.Black)
@@ -976,11 +974,11 @@ private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (Local
                         ) {
                             Text("${current.dayOfMonth}", color = if (current.month == date.month) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
                             weight?.let { Text(if (weightsHidden) "•••" else formatWeight(it.weightKg), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-                            calories[current]?.let { Text("${it.estimatedCalories / 100}k", style = MaterialTheme.typography.labelSmall, color = AppOrange, fontWeight = FontWeight.Bold) }
+                            calories[current]?.let { Text("${it.estimatedCalories / 100}k", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold) }
                             Row(Modifier.height(13.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                if (current in mealDates) Box(Modifier.size(5.dp).background(AppOrange, CircleShape))
+                                if (current in mealDates) Box(Modifier.size(5.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape))
                                 if (current in injectionDates) {
-                                    Box(Modifier.size(13.dp).background(AppCobalt, CircleShape), contentAlignment = Alignment.Center) {
+                                    Box(Modifier.size(13.dp).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
                                         Text("주", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                     }
                                 }
@@ -995,7 +993,7 @@ private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (Local
 
 @Composable
 private fun MealCard(meal: MealWithDetails, calorieEstimate: MealCalorieEstimateEntity?, onPhotoClick: (String) -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             val photo = meal.photos.minByOrNull { it.sortOrder }
             if (photo != null) {
@@ -1008,16 +1006,16 @@ private fun MealCard(meal: MealWithDetails, calorieEstimate: MealCalorieEstimate
                     contentScale = ContentScale.Crop,
                 )
             } else {
-                Box(Modifier.size(56.dp).background(Color(0xFFF2E7FC), CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Restaurant, null, tint = AppCobalt)
+                Box(Modifier.size(56.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Restaurant, null, tint = MaterialTheme.colorScheme.primary)
                 }
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text("${MealType.from(meal.meal.mealType).label} · ${formatRecordTime(meal.meal.eatenAt)}", color = AppCobalt, fontWeight = FontWeight.Black)
+                Text("${MealType.from(meal.meal.mealType).label} · ${formatRecordTime(meal.meal.eatenAt)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
                 Text(meal.items.sortedBy { it.sortOrder }.joinToString(" · ") { it.name }, fontWeight = FontWeight.Bold)
                 meal.meal.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 Text(
-                    calorieEstimate?.let { "AI 추정 ${it.estimatedCalories} kcal" } ?: "AI 칼로리 분석 대기",
+                    calorieEstimate?.let { "${it.estimatedCalories} kcal" } ?: "AI 칼로리 분석 대기",
                     Modifier.padding(top = 4.dp),
                     style = MaterialTheme.typography.labelMedium,
                     color = if (calorieEstimate != null) AppOrange else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1057,14 +1055,14 @@ private fun MounjaroInjectionCard(injection: MounjaroInjectionEntity, isLatest: 
     Card(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF4F0FF)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f)),
     ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(46.dp).background(AppCobalt.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Medication, contentDescription = null, tint = AppCobalt)
+            Box(Modifier.size(46.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Medication, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text("마운자로 · ${formatWeight(injection.doseMg)} mg · ${formatRecordTime(injection.injectedAt)}", color = AppCobalt, fontWeight = FontWeight.Black)
+                Text("마운자로 · ${formatWeight(injection.doseMg)} mg · ${formatRecordTime(injection.injectedAt)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
                 injection.sideEffects.takeIf(String::isNotBlank)?.let {
                     Text("부작용: ${it.replace("|", " · ")}", style = MaterialTheme.typography.bodySmall)
                 }
@@ -1100,8 +1098,8 @@ private fun DeleteRecordDialog(title: String, message: String, onDismiss: () -> 
 @Composable
 private fun RecordDateHeader(date: LocalDate, injectionCount: Int, mealCount: Int, calorieSummary: com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity?, onShowAll: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(36.dp).background(Color(0xFFF2E7FC), CircleShape), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.CalendarMonth, null, tint = AppCobalt, modifier = Modifier.size(19.dp))
+        Box(Modifier.size(36.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.CalendarMonth, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
         }
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
             Text(
@@ -1113,7 +1111,7 @@ private fun RecordDateHeader(date: LocalDate, injectionCount: Int, mealCount: In
                 listOfNotNull(
                     injectionCount.takeIf { it > 0 }?.let { "주사 ${it}회" },
                     mealCount.takeIf { it > 0 }?.let { "식사 ${it}개" },
-                    calorieSummary?.let { "AI 추정 ${it.estimatedCalories} kcal" },
+                    calorieSummary?.let { "${it.estimatedCalories} kcal" },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -11,6 +11,7 @@ import android.os.Build
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -127,6 +128,7 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel, onSwipeEd
     var historyItemToDelete by remember { mutableStateOf<AuctionItem?>(null) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LaunchedEffect(viewModel) { viewModel.refreshIfNeeded() }
+    BackHandler(enabled = state.listMode != AuctionListMode.ACTIVE) { viewModel.setListMode(AuctionListMode.ACTIVE) }
 
     Column(Modifier.fillMaxSize().padding(padding)) {
         AuctionModeTabs(
@@ -186,7 +188,7 @@ fun AuctionScreen(padding: PaddingValues, viewModel: AuctionViewModel, onSwipeEd
                 }
                 state.isRefreshing && !state.hasCache -> item {
                     Box(Modifier.fillMaxWidth().padding(vertical = 64.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = AppCobalt)
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     }
                 }
                 state.refreshCompleted && state.errorMessage == null -> item {
@@ -308,15 +310,15 @@ private fun AuctionAiRecommendationCard(
     Card(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = AppCobalt.copy(alpha = .07f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = .08f)),
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(42.dp).background(AppCobalt.copy(alpha = .13f), CircleShape),
+                    Modifier.size(42.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .13f), CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = AppCobalt)
+                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 }
                 Column(Modifier.padding(start = 12.dp).weight(1f)) {
                     Text("AI 맞춤 경매 추천", fontWeight = FontWeight.Black)
@@ -469,7 +471,7 @@ private fun AuctionAiSettingsDialog(
                 Text(
                     "알림 결과는 공개된 법원 문서 기반의 예비 분석입니다. 등기 원문과 변동 사항은 입찰 전에 별도로 확인해야 합니다.",
                     style = MaterialTheme.typography.labelSmall,
-                    color = AppOrange,
+                    color = MaterialTheme.colorScheme.tertiary,
                 )
                 if (!valid) Text("가격 범위·최소 점수·할인율 입력값을 확인해 주세요.", color = MaterialTheme.colorScheme.error)
             }
@@ -504,12 +506,12 @@ private fun AuctionSummaryCard(state: AuctionUiState) {
     Card(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(2.dp),
     ) {
         Row(
             Modifier.padding(10.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF7C2AE8), Color(0xFFB623E6), Color(0xFFE72A99))))
+                .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.tertiary)))
                 .padding(22.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -549,7 +551,7 @@ private fun AuctionHeader(
     Card(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(1.dp),
     ) {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
@@ -572,7 +574,7 @@ private fun AuctionHeader(
                             modifier = Modifier.padding(end = 4.dp).size(40.dp)
                                 .then(
                                     if (state.filter.isActive) {
-                                        Modifier.background(AppCobalt.copy(alpha = .12f), CircleShape)
+                                        Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = .12f), CircleShape)
                                     } else {
                                         Modifier
                                     },
@@ -581,7 +583,7 @@ private fun AuctionHeader(
                             Icon(
                                 Icons.Rounded.FilterAlt,
                                 contentDescription = if (state.filter.isActive) "필터 적용됨" else "필터",
-                                tint = AppCobalt,
+                                tint = MaterialTheme.colorScheme.primary,
                             )
                         }
                     }
@@ -629,8 +631,8 @@ private fun AuctionHeader(
                 if (state.listMode != AuctionListMode.REMOVED && isAuctionDataStale(state.lastUpdatedAt)) {
                     Text(
                         "데이터가 오래되었어요",
-                        Modifier.background(AppOrange.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
-                        color = AppOrange,
+                        Modifier.background(MaterialTheme.colorScheme.tertiary.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+                        color = MaterialTheme.colorScheme.tertiary,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                     )
@@ -720,7 +722,7 @@ private fun AuctionItemCard(
     Card(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(1.dp),
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -730,13 +732,13 @@ private fun AuctionItemCard(
                         Icon(
                             Icons.Rounded.CalendarMonth,
                             contentDescription = null,
-                            tint = AppCobalt,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 2.dp).size(19.dp),
                         )
                         Text(
                             if (item.isRemoved) item.removedAtLabel()?.let { "종료 감지 $it" } ?: "종료 감지 시각 미상" else auctionDateLabel(item),
                             Modifier.padding(start = 6.dp).weight(1f),
-                            color = AppCobalt,
+                            color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold,
                             maxLines = 2,
                         )
@@ -744,8 +746,8 @@ private fun AuctionItemCard(
                     if (!item.isRemoved) Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             auctionDdayLabel(item),
-                            Modifier.background(AppOrange.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
-                            color = AppOrange,
+                            Modifier.background(MaterialTheme.colorScheme.tertiary.copy(alpha = .12f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+                            color = MaterialTheme.colorScheme.tertiary,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                         )
@@ -778,7 +780,7 @@ private fun AuctionItemCard(
                     .padding(vertical = 4.dp),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Black,
-                color = AppCobalt,
+                color = MaterialTheme.colorScheme.primary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -830,7 +832,7 @@ private fun AuctionItemCard(
             Text(
                 "최저가 ${formatAuctionPrice(item.minimumPrice)} · ${formatRate(item.minimumPriceRate)}",
                 Modifier.padding(top = 3.dp),
-                color = AppCobalt,
+                color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Black,
             )
             Row(Modifier.fillMaxWidth().padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -852,7 +854,7 @@ private fun AuctionItemCard(
                             Icons.Rounded.ContentCopy,
                             contentDescription = "사건번호 복사",
                             modifier = Modifier.padding(horizontal = 6.dp).size(15.dp),
-                            tint = AppCobalt,
+                            tint = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
@@ -902,7 +904,7 @@ private fun AuctionItemCard(
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(15.dp),
                                     strokeWidth = 2.dp,
-                                    color = AppCobalt,
+                                    color = MaterialTheme.colorScheme.primary,
                                 )
                             } else {
                                 Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -991,7 +993,7 @@ private fun AuctionAiAnalysisCard(analysis: AuctionAiAnalysis) {
             Text("추가 확인 · ${analysis.requiredChecks.take(3).map(::auctionAnalysisDisplayText).joinToString(" · ")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (analysis.status == AuctionAnalysisStatus.PRELIMINARY) {
-            Text("등기사항전부증명서 원문이 없어 확정 분석이 아닌 예비 결과입니다.", color = AppOrange, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            Text("등기사항전부증명서 원문이 없어 확정 분석이 아닌 예비 결과입니다.", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -1088,7 +1090,7 @@ private fun openNaverMap(context: Context, query: String) {
 
 @Composable
 private fun AuctionErrorCard(message: String, hasCache: Boolean, onRetry: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF2F0)), shape = RoundedCornerShape(18.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), shape = RoundedCornerShape(18.dp)) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(if (hasCache) "최신 정보를 불러오지 못했어요." else message, fontWeight = FontWeight.Bold)
@@ -1101,7 +1103,7 @@ private fun AuctionErrorCard(message: String, hasCache: Boolean, onRetry: () -> 
 
 @Composable
 private fun EmptyAuctionCard(isSearchResult: Boolean, listMode: AuctionListMode) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Rounded.Gavel, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
             Text(
