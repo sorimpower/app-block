@@ -194,8 +194,8 @@ private fun headerFeatureInfo(screen: Screen): HeaderFeatureInfo? = when (screen
     Screen.PERSPECTIVE -> HeaderFeatureInfo(
         title = "유튜브 분석 안내",
         description = "시청한 유튜브 영상을 주제와 관점으로 정리해, 다른 시각의 영상을 발견하도록 돕습니다.",
-        features = listOf("2분 이상 시청한 YouTube 영상만 기록 후보로 감지", "주제 등록 제안, 사고 지도, 다른 관점의 실제 YouTube 영상 추천"),
-        ai = listOf("주제 분류: GPT-5.6 Luna", "공개 메타데이터·자막 분석: GPT-5.6 Terra · medium 추론", "영상 정밀 분석: Gemini 3.5 Flash (공개 YouTube URL 필요)"),
+        features = listOf("5분 이상 시청한 YouTube 영상을 관심 지도에 반영", "뇌 지도에서 주제별 관점과 다음 질문 탐색"),
+        ai = listOf("시청한 내용을 주제별로 정리", "다음에 확인할 수 있는 구체적인 질문과 관련 영상 추천"),
         schedule = listOf("고정 시각 스케줄 없음", "영상 재생 종료 직후 주제 또는 다른 관점 알림을 판단하며 하루 최대 2회 발송"),
     )
     else -> null
@@ -217,6 +217,8 @@ internal fun SorimPowerApp(
     openPhoneInsightRequest: Int = 0,
     openPerspectiveRequest: Int = 0,
     openPerspectiveTopicsRequest: Int = 0,
+    sharedYoutubeUrl: String? = null,
+    onSharedYoutubeUrlConsumed: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val phoneLatestRun by phoneInsightViewModel.latestRun.collectAsStateWithLifecycle()
@@ -434,6 +436,8 @@ internal fun SorimPowerApp(
                 viewModel = perspectiveViewModel,
                 openExploreRequest = openPerspectiveRequest,
                 openTopicsRequest = openPerspectiveTopicsRequest,
+                sharedYoutubeUrl = sharedYoutubeUrl,
+                onSharedYoutubeUrlConsumed = onSharedYoutubeUrlConsumed,
                 onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } },
                 onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } },
             )

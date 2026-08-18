@@ -6,6 +6,9 @@ import kotlinx.coroutines.tasks.await
 internal data class YoutubeAnalysisContext(
     val videoId: String,
     val url: String,
+    val title: String = "",
+    val channelName: String = "",
+    val thumbnailUrl: String = "",
     val description: String = "",
     val tags: List<String> = emptyList(),
     val category: String = "",
@@ -42,6 +45,9 @@ internal class YoutubeVideoResolver {
         return YoutubeAnalysisContext(
             videoId = videoId,
             url = url,
+            title = data["title"] as? String ?: "",
+            channelName = data["channelName"] as? String ?: "",
+            thumbnailUrl = data["thumbnailUrl"] as? String ?: "",
             description = data["description"] as? String ?: "",
             tags = strings("tags"),
             category = data["category"] as? String ?: "",

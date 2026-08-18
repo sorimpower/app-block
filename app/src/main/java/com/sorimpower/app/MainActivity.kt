@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.sorimpower.app.core.app.SorimPowerApp
 import com.sorimpower.app.feature.blocker.presentation.BlockerViewModel
@@ -35,6 +36,7 @@ class MainActivity : ComponentActivity() {
     private var openPhoneInsightRequest by mutableIntStateOf(0)
     private var openPerspectiveRequest by mutableIntStateOf(0)
     private var openPerspectiveTopicsRequest by mutableIntStateOf(0)
+    private var sharedYoutubeUrl by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +44,7 @@ class MainActivity : ComponentActivity() {
         handlePhoneInsightIntent(intent)
         handlePerspectiveIntent(intent)
         handlePerspectiveTopicIntent(intent)
+        handleYoutubeShareIntent(intent)
         enableEdgeToEdge()
         setContent {
             val blockerState by blockerViewModel.state.collectAsStateWithLifecycle()
@@ -60,6 +63,8 @@ class MainActivity : ComponentActivity() {
                     openPhoneInsightRequest,
                     openPerspectiveRequest,
                     openPerspectiveTopicsRequest,
+                    sharedYoutubeUrl,
+                    { sharedYoutubeUrl = null },
                 )
             }
         }
@@ -73,6 +78,7 @@ class MainActivity : ComponentActivity() {
         handlePhoneInsightIntent(intent)
         handlePerspectiveIntent(intent)
         handlePerspectiveTopicIntent(intent)
+        handleYoutubeShareIntent(intent)
     }
 
     private fun handleAuctionAnalysisIntent(intent: Intent?) {
@@ -96,6 +102,14 @@ class MainActivity : ComponentActivity() {
         ) {
             openPerspectiveTopicsRequest++
         }
+    }
+    private fun handleYoutubeShareIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND || intent.type != "text/plain") return
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+        val url = Regex("https?://(?:www\\.)?(?:youtube\\.com/(?:watch\\?[^\\s]*v=|shorts/)|youtu\\.be/)[A-Za-z0-9_-]{11}[^\\s]*", RegexOption.IGNORE_CASE)
+            .find(text)?.value ?: return
+        sharedYoutubeUrl = url
+        openPerspectiveRequest++
     }
     private fun isAccessibilityServiceEnabled(): Boolean {
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)

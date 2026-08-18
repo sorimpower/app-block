@@ -109,19 +109,22 @@ object TopicSuggestionNotifier {
     private fun canNotify(context: Context): Boolean = Build.VERSION.SDK_INT < 33 ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    /** 기존 주제의 다른 관점 제안은 영상을 끝낸 뒤 하루 두 번까지만 보낸다. */
+    /** 기존 주제의 다른 관점 제안은 영상을 끝낸 뒤 하루 두 번, 최소 6시간 간격으로만 보낸다. */
     private fun claimExploreDailySlot(context: Context): Boolean {
         val preferences = context.getSharedPreferences("perspective_explore_notifications", Context.MODE_PRIVATE)
         val today = LocalDate.now().toString()
         val savedDay = preferences.getString("day", null)
         val count = if (savedDay == today) preferences.getInt("count", 0) else 0
+        val lastSentAt = if (savedDay == today) preferences.getLong("last_sent_at", 0L) else 0L
         if (count >= MAX_EXPLORE_NOTIFICATIONS_PER_DAY) return false
-        preferences.edit().putString("day", today).putInt("count", count + 1).apply()
+        if (System.currentTimeMillis() - lastSentAt < MIN_EXPLORE_INTERVAL_MS) return false
+        preferences.edit().putString("day", today).putInt("count", count + 1).putLong("last_sent_at", System.currentTimeMillis()).apply()
         return true
     }
 
     private fun notificationId(videoId: String): Int = 52_000 + (videoId.hashCode() and 0x0FFF)
     private const val MAX_EXPLORE_NOTIFICATIONS_PER_DAY = 2
+    private const val MIN_EXPLORE_INTERVAL_MS = 6 * 60 * 60 * 1_000L
 }
 
 class TopicSuggestionActionReceiver : BroadcastReceiver() {

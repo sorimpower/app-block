@@ -26,8 +26,18 @@ class PerspectiveViewModel(application: Application) : AndroidViewModel(applicat
         _busyVideoId.value = videoId
         _message.value = null
         runCatching { repository.deepAnalyze(videoId, premiumVideo) }
-            .onSuccess { _message.value = if (premiumVideo) "Gemini 영상 정밀 분석으로 4개의 관점을 만들었어요." else "Terra 공개 정보 분석으로 4개의 관점을 만들었어요." }
+            .onSuccess { _message.value = "확인해볼 만한 구체적인 관점 4개를 만들었어요." }
             .onFailure { _message.value = it.message ?: "관점 분석을 완료하지 못했어요." }
+        _busyVideoId.value = null
+    }
+
+    fun analyzeSharedUrl(url: String) = viewModelScope.launch {
+        if (_busyVideoId.value != null) return@launch
+        _busyVideoId.value = "shared"
+        _message.value = null
+        runCatching { repository.analyzeSharedUrl(url) }
+            .onSuccess { _message.value = "공유한 영상에서 구체적인 관점 4개를 만들었어요." }
+            .onFailure { _message.value = it.message ?: "공유한 영상을 분석하지 못했어요." }
         _busyVideoId.value = null
     }
 

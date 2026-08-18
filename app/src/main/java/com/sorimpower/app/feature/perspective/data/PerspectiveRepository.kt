@@ -108,6 +108,40 @@ class PerspectiveRepository(context: Context) {
         saveVideo(youtubeId, url, title.trim(), channel.trim(), "auto", durationSec, watchedSec, playbackEnded)
     }
 
+    /** YouTube 공유 메뉴에서 들어온 URL은 사용자가 분석을 눌렀을 때만 저장하고 관점을 만든다. */
+    suspend fun analyzeSharedUrl(url: String): VideoAnalysisEntity = withContext(Dispatchers.IO) {
+        val youtubeId = extractYoutubeVideoId(url) ?: error("올바른 YouTube 영상 주소를 찾지 못했어요.")
+        val context = youtubeVideoResolver.resolve(youtubeId, "", "")
+            ?: error("YouTube 공개 정보를 불러오지 못했어요.")
+        val video = saveVideo(
+            youtubeId = context.videoId,
+            url = context.url,
+            title = context.title.ifBlank { "공유한 YouTube 영상" },
+            channel = context.channelName,
+            source = "share",
+            durationSec = 0,
+            watchedSec = 0,
+        )
+        if (dao.topicIdsForVideo(video.id).isEmpty()) {
+            val currentSuggestion = dao.topicSuggestion(video.id)
+            if (currentSuggestion == null || currentSuggestion.status !in setOf("pending", "approved")) {
+                suggestTopic(video)
+            }
+            dao.topicSuggestion(video.id)?.takeIf { it.status == "pending" }?.let { acceptTopicSuggestion(video.id) }
+        }
+        check(dao.topicIdsForVideo(video.id).isNotEmpty()) { "영상의 주제를 분류하지 못했어요. 잠시 후 다시 시도해 주세요." }
+        deepAnalyze(video.id)
+    }
+
+    private fun extractYoutubeVideoId(value: String): String? = runCatching {
+        val uri = android.net.Uri.parse(value.trim())
+        when {
+            uri.host?.contains("youtu.be", ignoreCase = true) == true -> uri.pathSegments.firstOrNull()
+            uri.pathSegments.firstOrNull() == "shorts" -> uri.pathSegments.getOrNull(1)
+            else -> uri.getQueryParameter("v")
+        }?.takeIf(::isVideoId)
+    }.getOrNull()
+
     private suspend fun saveVideo(
         youtubeId: String,
         url: String,
@@ -134,14 +168,20 @@ class PerspectiveRepository(context: Context) {
             durationSec = maxOf(durationSec, existing?.durationSec ?: 0),
             watchedSec = maxOf(watchedSec, existing?.watchedSec ?: 0),
             watchedAt = now,
-            source = if (existing?.source == "share") "share" else source,
+            // 공유 분석 뒤 실제 재생이 감지되면 일반 시청으로 승격하고,
+            // 이미 감지한 시청 기록을 나중의 공유 분석이 덮어쓰지는 않는다.
+            source = when {
+                source == "auto" -> "auto"
+                existing != null -> existing.source
+                else -> source
+            },
             analysisStatus = existing?.analysisStatus ?: "unclassified",
             playbackEnded = playbackEnded,
             contentHash = sha256("$resolvedYoutubeId|$title|$channel"),
         )
         dao.upsertVideo(item)
-        val meaningful = item.watchedSec >= 120
-        // 추천 영상을 단순히 연 것이 아니라 실제로 2분 이상 시청한 경우에만
+        val meaningful = item.source != "share" && item.watchedSec >= MINIMUM_WATCH_SECONDS
+        // 추천 영상을 단순히 연 것이 아니라 실제로 5분 이상 시청한 경우에만
         // '사고 확장'으로 확정한다. MediaSession에 ID가 없는 경우에는 추천 카드의
         // 정확한 제목·채널도 함께 대조한다.
         if (meaningful) {
@@ -208,8 +248,7 @@ class PerspectiveRepository(context: Context) {
     }
 
     private fun isExploreEligible(video: WatchedVideoEntity): Boolean =
-        video.watchedSec >= MINIMUM_WATCH_SECONDS &&
-            (video.durationSec <= 0 || video.watchedSec.toDouble() / video.durationSec >= MINIMUM_WATCH_RATIO)
+        video.source != "share" && video.watchedSec >= MINIMUM_WATCH_SECONDS
 
     suspend fun acceptTopicSuggestion(videoId: String) = withContext(Dispatchers.IO) {
         val suggestion = dao.topicSuggestion(videoId)?.takeIf { it.status == "pending" } ?: return@withContext
@@ -341,7 +380,7 @@ class PerspectiveRepository(context: Context) {
         generateWeeklyReport()
     }
 
-    /** 추천 카드의 YouTube 링크를 연 사실만 기록한다. 확장은 2분 이상 시청 후 확정된다. */
+    /** 추천 카드의 YouTube 링크를 연 사실만 기록한다. 확장은 5분 이상 시청 후 확정된다. */
     suspend fun markPerspectiveOpened(id: String) = withContext(Dispatchers.IO) {
         dao.markPerspectiveOpened(id)
     }
@@ -353,7 +392,9 @@ class PerspectiveRepository(context: Context) {
     suspend fun generateWeeklyReport() = withContext(Dispatchers.IO) {
         val weekStart = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         val from = weekStart.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val videos = dao.videoSnapshot().filter { it.watchedAt >= from && it.watchedSec >= 120 }
+        val videos = dao.videoSnapshot().filter {
+            it.source != "share" && it.watchedAt >= from && it.watchedSec >= MINIMUM_WATCH_SECONDS
+        }
         val topics = dao.topics()
         val links = dao.videoTopicSnapshot()
         val topicCounts = links.filter { link -> videos.any { it.id == link.videoId } }.groupingBy(VideoTopicEntity::topicId).eachCount()
@@ -368,12 +409,11 @@ class PerspectiveRepository(context: Context) {
     }
 
     private companion object {
-        const val PROMPT_VERSION = "perspective-analysis-v2"
+        const val PROMPT_VERSION = "perspective-analysis-v3"
         const val GEMINI_VIDEO_MODEL = "gemini-3.5-flash-video"
         const val TOPIC_MODEL = "gpt-5.6-luna"
         const val TOPIC_RETRY_INTERVAL_MS = 24 * 60 * 60 * 1_000L
-        const val MINIMUM_WATCH_SECONDS = 120L
-        const val MINIMUM_WATCH_RATIO = 0.5
+        const val MINIMUM_WATCH_SECONDS = 300L
     }
 }
 
