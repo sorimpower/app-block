@@ -6,8 +6,6 @@ build/
 
 # Local Android configuration
 local.properties
-.tmp-jdk17/
-.tmp-jdk17.zip
 google-services.json
 .idea/
 *.iml
