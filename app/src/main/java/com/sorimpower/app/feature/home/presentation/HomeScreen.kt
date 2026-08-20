@@ -54,7 +54,6 @@ internal fun HomeScreen(
     openBodyLog: () -> Unit,
     openAuction: () -> Unit,
     openPhoneInsight: () -> Unit,
-    openPropertyTax: () -> Unit,
     openPerspective: () -> Unit,
     openAccessibilitySettings: () -> Unit,
 ) {
@@ -90,25 +89,17 @@ internal fun HomeScreen(
             }
         }
         item {
-            HomeSectionTitle("자산 관리", "경매와 세금 시뮬레이션")
+            HomeSectionTitle("자산 관리", "관심 경매 물건을 살펴봐요")
         }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 HomeFeatureTile(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     title = "부동산 경매",
                     description = "조건에 맞는 물건을 찾아요",
                     icon = Icons.Rounded.Gavel,
                     accent = AppGreen,
                     onClick = openAuction,
-                )
-                HomeFeatureTile(
-                    modifier = Modifier.weight(1f),
-                    title = "부동산 세금",
-                    description = "보유·양도 계획을 검토해요",
-                    icon = Icons.Rounded.AccountBalance,
-                    accent = MaterialTheme.colorScheme.primary,
-                    onClick = openPropertyTax,
                 )
             }
         }

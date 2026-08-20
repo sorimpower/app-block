@@ -32,21 +32,45 @@ data class InterestAiComment(
     val observations: List<String>,
 )
 
+data class InterestProfile(
+    val ageGroup: String = "",
+    val gender: String = "",
+    val lifeInterests: Set<String> = emptySet(),
+    val viewingPurpose: String = "",
+    val analysisTone: String = "",
+) {
+    val isConfigured: Boolean get() = ageGroup.isNotBlank() || gender.isNotBlank() || lifeInterests.isNotEmpty() || viewingPurpose.isNotBlank() || analysisTone.isNotBlank()
+    fun promptSummary(): String = buildList {
+        if (ageGroup.isNotBlank()) add("연령대=$ageGroup")
+        if (gender.isNotBlank()) add("성별=$gender")
+        if (lifeInterests.isNotEmpty()) add("생활 관심사=${lifeInterests.sorted().joinToString(", ")}")
+        if (viewingPurpose.isNotBlank()) add("시청 목적=$viewingPurpose")
+        if (analysisTone.isNotBlank()) add("선호 말투=$analysisTone")
+    }.joinToString(", ").ifBlank { "설정하지 않음" }
+}
+
 internal class TerraInterestCommentAnalyzer(context: Context) {
     private val router = AiModelRouter(context)
 
-    suspend fun analyze(periodLabel: String, exposureSummary: String, videoSummary: String): InterestAiComment {
+    suspend fun analyze(periodLabel: String, exposureSummary: String, videoSummary: String, profile: InterestProfile): InterestAiComment {
         val response = router.generate(
             request = AiRequest(
                 taskType = AiTaskType.PERSPECTIVE_METADATA_ANALYSIS,
                 userPrompt = """
-                    사용자의 YouTube 관심 분포를 관찰해 짧고 구체적인 한국어 코멘트를 작성한다.
-                    사용자의 성격·정치성향·의도·중독 여부를 단정하거나 평가하지 않는다.
-                    추상적인 칭찬 대신 실제 주제 비중과 영상 제목에서 확인되는 패턴만 말한다.
-                    headline은 18자 이내, summary는 2문장 이내다.
-                    observations는 서로 다른 관찰 2~3개이며 각 35자 이내다.
+                    사용자가 직접 설정한 맞춤 기준과 YouTube 시청 기록을 바탕으로, 친구가 기록을 같이 훑어보며 말해주는 듯한 짧고 구체적인 한국어 코멘트를 작성한다.
+                    보고서나 컨설팅 문체를 절대 쓰지 않는다. 문장은 자연스러운 구어체 존댓말(예: “~네요”, “~보이네요”, “~챙겼네요”)로 쓴다.
+                    말투는 생동감 있고 살짝 재치 있게 쓴다. 가벼운 비유나 조합 표현은 좋지만, 밈·과장·훈계·억지 칭찬은 금지한다.
+                    이 정보는 가벼운 자기 관찰용이다. 실제 생활·성향을 사실처럼 단정하지 말고 반드시 "~일 수도 있어요", "~처럼 보여요", "기록만 보면"처럼 가능성으로 말한다.
+                    맞춤 기준이 설정되었다면 이를 보조 신호로만 사용해, 관심사와 연결한 현실적인 생활 장면이나 선택 스타일을 재미있게 추측할 수 있다. 연령대·성별을 근거로 능력·가치관·소득·가족 상태·건강 상태를 추정하지 않는다.
+                    선호 말투가 있다면 그 말투의 밀도로 쓰되, 가벼운 자기 관찰이라는 안전선은 유지한다.
+                    실제 주제 비중과 영상 제목에서 확인되는 패턴을 근거로 쓴다. 제공되지 않은 사실은 지어내지 않는다.
+                    headline은 12~22자이며 호기심을 부르는 한 줄 훅으로 쓴다. 예: "실속과 호기심의 동거", "생활 업그레이드 레이더".
+                    summary는 2문장 이내다. 첫 문장은 관심사의 조합을 바탕으로 생활 장면 또는 선택 스타일을 재치 있게 '가능성'으로 연결하고, 둘째 문장은 대표 영상이나 주제를 근거로 든다.
+                    observations는 서로 다른 관찰 2~3개이며 각 35자 이내다. "기록만 보면", "혹시 요즘"처럼 흥미로운 가설·다음 질문 형태로 쓴다.
+                    다음처럼 딱딱한 표현은 절대 쓰지 않는다: "정확히 균형을 이룹니다", "뚜렷하게 보여줍니다", "대표적으로 보입니다", "관심 분포", "패턴입니다", "흐름입니다".
 
                     기간: $periodLabel
+                    사용자가 직접 설정한 맞춤 기준: ${profile.promptSummary()}
                     관심 분포:
                     $exposureSummary
 
@@ -62,8 +86,8 @@ internal class TerraInterestCommentAnalyzer(context: Context) {
         )
         val root = JSONObject(response.text.extractJsonObject())
         return InterestAiComment(
-            headline = root.optString("headline").trim().ifBlank { "요즘 관심의 흐름" }.take(30),
-            summary = root.optString("summary").trim().ifBlank { "최근 시청 기록에서 관심 주제의 흐름을 확인했어요." }.take(240),
+            headline = root.optString("headline").trim().ifBlank { "요즘 관심사, 한판 정리" }.take(30),
+            summary = root.optString("summary").trim().ifBlank { "요즘은 서로 다른 관심사가 한 화면에서 만나는 흐름이 보여요. 영상 기록을 따라 다음 관심사를 골라보세요." }.take(240),
             observations = root.optJSONArray("observations").strings().take(3),
         )
     }

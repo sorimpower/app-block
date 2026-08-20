@@ -33,6 +33,11 @@ data class PerspectiveState(
     fun videoTopicIds(videoId: String): Set<String> = videoTopics.filter { it.videoId == videoId }.mapTo(mutableSetOf(), VideoTopicEntity::topicId)
 }
 
+data class CrossTopicVideoRecommendation(
+    val topic: String,
+    val video: YoutubeRecommendation,
+)
+
 private data class PerspectiveCoreState(
     val topics: List<PerspectiveTopicEntity>,
     val videos: List<WatchedVideoEntity>,
@@ -44,6 +49,7 @@ private data class PerspectiveCoreState(
 
 class PerspectiveRepository(context: Context) {
     private val appContext = context.applicationContext
+    private val interestProfilePreferences = appContext.getSharedPreferences("perspective_interest_profile", Context.MODE_PRIVATE)
     private val dao = PerspectiveDatabase.get(appContext).dao()
     private val terraAnalyzer = TerraPerspectiveAnalyzer(appContext)
     private val interestCommentAnalyzer = TerraInterestCommentAnalyzer(appContext)
@@ -70,7 +76,25 @@ class PerspectiveRepository(context: Context) {
         generateWeeklyReport()
     }
 
-    suspend fun analyzeInterest(days: Long): InterestAiComment = withContext(Dispatchers.IO) {
+    fun interestProfile(): InterestProfile = InterestProfile(
+        ageGroup = interestProfilePreferences.getString("age_group", "").orEmpty(),
+        gender = interestProfilePreferences.getString("gender", "").orEmpty(),
+        lifeInterests = interestProfilePreferences.getStringSet("life_interests", emptySet()).orEmpty(),
+        viewingPurpose = interestProfilePreferences.getString("viewing_purpose", "").orEmpty(),
+        analysisTone = interestProfilePreferences.getString("analysis_tone", "").orEmpty(),
+    )
+
+    fun saveInterestProfile(profile: InterestProfile) {
+        interestProfilePreferences.edit()
+            .putString("age_group", profile.ageGroup)
+            .putString("gender", profile.gender)
+            .putStringSet("life_interests", profile.lifeInterests)
+            .putString("viewing_purpose", profile.viewingPurpose)
+            .putString("analysis_tone", profile.analysisTone)
+            .apply()
+    }
+
+    suspend fun analyzeInterest(days: Long, profile: InterestProfile = interestProfile()): InterestAiComment = withContext(Dispatchers.IO) {
         val from = System.currentTimeMillis() - days * 86_400_000L
         val videos = dao.videoSnapshot().filter { it.source != "share" && it.watchedAt >= from && it.watchedSec >= MINIMUM_WATCH_SECONDS }
         require(videos.isNotEmpty()) { "분석할 시청 기록이 아직 없어요." }
@@ -86,7 +110,50 @@ class PerspectiveRepository(context: Context) {
             "- ${video.title.take(100)} / ${video.channelName.take(40)}"
         }
         val periodLabel = when (days) { 7L -> "이번 주"; 31L -> "이번 달"; else -> "올해" }
-        interestCommentAnalyzer.analyze(periodLabel, exposureSummary, videoSummary)
+        interestCommentAnalyzer.analyze(periodLabel, exposureSummary, videoSummary, profile)
+    }
+
+    suspend fun crossTopicVideoRecommendations(currentTopics: List<String>): List<CrossTopicVideoRecommendation> = withContext(Dispatchers.IO) {
+        val candidates = listOf(
+            "AI와 직업" to "AI 일자리 변화 직업 전망",
+            "수면과 집중력" to "수면 집중력 개선 과학",
+            "인구 변화" to "한국 인구 감소 변화 분석",
+            "근력 운동" to "근력 운동 초보 루틴 과학",
+        ).filter { (topic, _) -> currentTopics.none { it.contains(topic) || topic.contains(it) } }.take(3)
+        val found = youtubePerspectiveSearch.find(candidates.map { it.second })
+        candidates.mapNotNull { (topic, query) ->
+            found[query]?.firstOrNull()?.let { video -> CrossTopicVideoRecommendation(topic, video) }
+        }
+    }
+
+    suspend fun resolveWatchedVideoPlayback(video: WatchedVideoEntity): WatchedVideoPlayback? = withContext(Dispatchers.IO) {
+        val knownVideoId = video.youtubeVideoId.takeIf(::isVideoId) ?: extractYoutubeVideoId(video.url)
+        if (knownVideoId != null) {
+            val canonicalUrl = "https://www.youtube.com/watch?v=$knownVideoId"
+            if (video.youtubeVideoId != knownVideoId || video.url != canonicalUrl) {
+                dao.updateVideoAddress(video.id, knownVideoId, canonicalUrl)
+            }
+            return@withContext WatchedVideoPlayback(
+                videoId = knownVideoId,
+                url = canonicalUrl,
+                thumbnailUrl = "https://i.ytimg.com/vi/$knownVideoId/mqdefault.jpg",
+            )
+        }
+
+        val resolved = youtubeVideoResolver.resolve(null, video.title, video.channelName)
+        if (resolved != null) {
+            dao.updateVideoAddress(video.id, resolved.videoId, resolved.url)
+            return@withContext WatchedVideoPlayback(
+                videoId = resolved.videoId,
+                url = resolved.url,
+                thumbnailUrl = resolved.thumbnailUrl.ifBlank { "https://i.ytimg.com/vi/${resolved.videoId}/mqdefault.jpg" },
+            )
+        }
+
+        val query = listOf(video.title, video.channelName).filter(String::isNotBlank).joinToString(" ")
+        val found = youtubePerspectiveSearch.find(listOf(query))[query]?.firstOrNull() ?: return@withContext null
+        dao.updateVideoAddress(video.id, found.videoId, found.url)
+        WatchedVideoPlayback(found.videoId, found.url, found.thumbnailUrl.ifBlank { "https://i.ytimg.com/vi/${found.videoId}/mqdefault.jpg" })
     }
 
     suspend fun setTopicEnabled(id: String, enabled: Boolean) = dao.setTopicEnabled(id, enabled)

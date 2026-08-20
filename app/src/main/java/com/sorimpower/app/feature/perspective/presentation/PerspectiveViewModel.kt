@@ -6,6 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.sorimpower.app.feature.perspective.data.PerspectiveRepository
 import com.sorimpower.app.feature.perspective.data.PerspectiveState
 import com.sorimpower.app.feature.perspective.data.InterestAiComment
+import com.sorimpower.app.feature.perspective.data.InterestProfile
+import com.sorimpower.app.feature.perspective.data.CrossTopicVideoRecommendation
+import com.sorimpower.app.feature.perspective.data.WatchedVideoEntity
+import com.sorimpower.app.feature.perspective.data.WatchedVideoPlayback
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,8 +28,19 @@ class PerspectiveViewModel(application: Application) : AndroidViewModel(applicat
     val interestComment = _interestComment.asStateFlow()
     private val _interestCommentLoading = MutableStateFlow(false)
     val interestCommentLoading = _interestCommentLoading.asStateFlow()
+    private val _interestProfile = MutableStateFlow(repository.interestProfile())
+    val interestProfile = _interestProfile.asStateFlow()
     private val interestCommentCache = mutableMapOf<Pair<Long, Int>, InterestAiComment>()
     private var interestCommentJob: Job? = null
+    private var lastInterestRequest: Pair<Long, Int>? = null
+    private val _crossTopicVideos = MutableStateFlow<List<CrossTopicVideoRecommendation>>(emptyList())
+    val crossTopicVideos = _crossTopicVideos.asStateFlow()
+    private val _crossTopicLoading = MutableStateFlow(false)
+    val crossTopicLoading = _crossTopicLoading.asStateFlow()
+    private var crossTopicKey: String? = null
+    private val _watchedVideoPlayback = MutableStateFlow<Map<String, WatchedVideoPlayback>>(emptyMap())
+    val watchedVideoPlayback = _watchedVideoPlayback.asStateFlow()
+    private val resolvingWatchedVideos = mutableSetOf<String>()
 
     init { viewModelScope.launch { repository.initialize() } }
 
@@ -51,17 +66,51 @@ class PerspectiveViewModel(application: Application) : AndroidViewModel(applicat
 
     fun loadInterestComment(days: Long, dataVersion: Int, refresh: Boolean = false) {
         val key = days to dataVersion
+        lastInterestRequest = key
         if (!refresh) interestCommentCache[key]?.let { _interestComment.value = it; return }
         interestCommentJob?.cancel()
         _interestComment.value = null
         interestCommentJob = viewModelScope.launch {
             _interestCommentLoading.value = true
-            runCatching { repository.analyzeInterest(days) }
+            runCatching { repository.analyzeInterest(days, _interestProfile.value) }
                 .onSuccess { result -> interestCommentCache[key] = result; _interestComment.value = result }
                 .onFailure { error ->
                     if (error !is kotlinx.coroutines.CancellationException) _message.value = error.message ?: "관심 분석 코멘트를 만들지 못했어요."
                 }
             _interestCommentLoading.value = false
+        }
+    }
+
+    fun saveInterestProfile(profile: InterestProfile) {
+        repository.saveInterestProfile(profile)
+        _interestProfile.value = profile
+        interestCommentCache.clear()
+        lastInterestRequest?.let { (days, dataVersion) -> loadInterestComment(days, dataVersion, refresh = true) }
+    }
+
+    fun loadCrossTopicVideos(currentTopics: List<String>, refresh: Boolean = false) {
+        val key = currentTopics.sorted().joinToString("|")
+        if (!refresh && key == crossTopicKey && _crossTopicVideos.value.isNotEmpty()) return
+        if (_crossTopicLoading.value) return
+        crossTopicKey = key
+        _crossTopicLoading.value = true
+        viewModelScope.launch {
+            runCatching { repository.crossTopicVideoRecommendations(currentTopics) }
+                .onSuccess { _crossTopicVideos.value = it }
+                .onFailure { _message.value = it.message ?: "추천 영상을 찾지 못했어요." }
+            _crossTopicLoading.value = false
+        }
+    }
+
+    fun resolveWatchedVideo(video: WatchedVideoEntity) {
+        if (video.id in _watchedVideoPlayback.value || !resolvingWatchedVideos.add(video.id)) return
+        viewModelScope.launch {
+            runCatching { repository.resolveWatchedVideoPlayback(video) }
+                .onSuccess { playback ->
+                    if (playback != null) _watchedVideoPlayback.value = _watchedVideoPlayback.value + (video.id to playback)
+                }
+                .onFailure { _message.value = "영상 정보를 불러오지 못했어요." }
+            resolvingWatchedVideos.remove(video.id)
         }
     }
 

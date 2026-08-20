@@ -120,8 +120,6 @@ import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupScreen
 import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupViewModel
 import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightScreen
 import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightViewModel
-import com.sorimpower.app.feature.propertytax.presentation.PropertyTaxScreen
-import com.sorimpower.app.feature.propertytax.presentation.PropertyTaxViewModel
 import com.sorimpower.app.feature.perspective.presentation.PerspectiveScreen
 import com.sorimpower.app.feature.perspective.presentation.PerspectiveViewModel
 import com.sorimpower.app.core.ui.AppCobalt
@@ -142,7 +140,7 @@ import com.sorimpower.app.feature.blocker.presentation.ScheduleScreen
 import com.sorimpower.app.feature.settings.presentation.SettingsScreen
 
 private enum class Screen(val label: String) {
-    HOME("홈"), PERSPECTIVE("유튜브"), BLOCKER("차단"), BODY_LOG("건강"), AUCTION("경매"), PHONE_INSIGHT("알림"), PROPERTY_TAX("세금"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
+    HOME("홈"), PERSPECTIVE("유튜브"), BLOCKER("차단"), BODY_LOG("건강"), AUCTION("경매"), PHONE_INSIGHT("알림"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
 }
 
 private enum class HealthRecordTab(val label: String) { DAILY("데일리 기록"), CHECKUP("건강검진") }
@@ -178,13 +176,6 @@ private fun headerFeatureInfo(screen: Screen): HeaderFeatureInfo? = when (screen
         ai = listOf("수동 권리분석: GPT-5.6 Luna 또는 Terra 선택", "매일 추천 분석: GPT-5.6 Luna · 법원 문서와 사용자 조건을 함께 검토"),
         schedule = listOf("AI 추천을 켠 경우 설정한 오전 시간(6~10시)에 아직 분석하지 않은 사건을 분석", "추천 알림은 조건을 통과한 사건이 있을 때만 발송"),
     )
-    Screen.PROPERTY_TAX -> HeaderFeatureInfo(
-        title = "부동산 세금 안내",
-        description = "보유 자산과 매도 계획을 타임라인으로 정리해 세금상 유의점을 비교합니다.",
-        features = listOf("취득·보유·양도 흐름, 공동명의·분양권·재개발 상황을 시나리오로 비교", "이전 분석과 비교해 달라진 전제와 추가 확인 사항을 표시"),
-        ai = listOf("GPT-5.6 Sol · max 추론", "분석 시 공식 법령·국세청 등 근거를 확인해 계획과 조건부 결과를 정리"),
-        schedule = listOf("정해진 자동 분석은 없음", "새로 분석하기를 누를 때마다 최신 근거 확인과 이전 결과 비교 실행"),
-    )
     Screen.BLOCKER -> HeaderFeatureInfo(
         title = "앱 차단 안내",
         description = "집중 시간에 지정한 앱을 차단하고, 조건별 예외와 일정을 관리합니다.",
@@ -210,7 +201,6 @@ internal fun SorimPowerApp(
     auctionViewModel: AuctionViewModel,
     healthCheckupViewModel: HealthCheckupViewModel,
     phoneInsightViewModel: PhoneInsightViewModel,
-    propertyTaxViewModel: PropertyTaxViewModel,
     perspectiveViewModel: PerspectiveViewModel,
     accessibilityEnabled: () -> Boolean,
     openAccessibilitySettings: () -> Unit,
@@ -257,7 +247,6 @@ internal fun SorimPowerApp(
                 StartDestination.BODY_LOG -> Screen.BODY_LOG
                 StartDestination.REAL_ESTATE_AUCTION -> Screen.AUCTION
                 StartDestination.PHONE_INSIGHT -> Screen.PHONE_INSIGHT
-                StartDestination.PROPERTY_TAX -> Screen.PROPERTY_TAX
                 StartDestination.PERSPECTIVE -> Screen.PERSPECTIVE
                 StartDestination.MORE -> Screen.MORE
             }
@@ -327,7 +316,6 @@ internal fun SorimPowerApp(
                             Screen.AUCTION -> "부동산 경매"
                             Screen.MORE -> "더보기"
                             Screen.PHONE_INSIGHT -> "AI 알림"
-                            Screen.PROPERTY_TAX -> "부동산 세금"
                             Screen.PERSPECTIVE -> "유튜브 분석"
                             Screen.SCHEDULE -> "조건 편집"
                             Screen.APP_RULES -> "앱별 조건"
@@ -374,14 +362,14 @@ internal fun SorimPowerApp(
         Box(
                 Modifier.fillMaxSize().horizontalSwipe(
                 onSwipeLeft = {
-                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PROPERTY_TAX && screen != Screen.PERSPECTIVE) {
+                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE) {
                         val tabs = state.bottomNavigationOrder.map(BottomNavigationTab::screen)
                         val index = tabs.indexOf(screen)
                         if (index >= 0 && index < tabs.lastIndex) screen = tabs[index + 1]
                     }
                 },
                 onSwipeRight = {
-                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PROPERTY_TAX && screen != Screen.PERSPECTIVE) {
+                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE) {
                         val tabs = state.bottomNavigationOrder.map(BottomNavigationTab::screen)
                         val index = tabs.indexOf(screen)
                         if (index > 0) screen = tabs[index - 1]
@@ -410,7 +398,6 @@ internal fun SorimPowerApp(
                 { screen = Screen.BODY_LOG },
                 { screen = Screen.AUCTION },
                 { screen = Screen.PHONE_INSIGHT },
-                { screen = Screen.PROPERTY_TAX },
                 { screen = Screen.PERSPECTIVE },
                 openAccessibilitySettings,
             )
@@ -431,7 +418,6 @@ internal fun SorimPowerApp(
             }
             Screen.AUCTION -> AuctionScreen(padding, auctionViewModel, onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } }, onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } })
             Screen.PHONE_INSIGHT -> PhoneInsightScreen(padding, phoneInsightViewModel, onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } }, onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } })
-            Screen.PROPERTY_TAX -> PropertyTaxScreen(padding, propertyTaxViewModel, onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } }, onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } })
             Screen.PERSPECTIVE -> PerspectiveScreen(
                 padding = padding,
                 viewModel = perspectiveViewModel,
@@ -704,7 +690,6 @@ private fun BottomNavigationTab.screen() = when (this) {
     BottomNavigationTab.BLOCKER -> Screen.BLOCKER
     BottomNavigationTab.BODY_LOG -> Screen.BODY_LOG
     BottomNavigationTab.AUCTION -> Screen.AUCTION
-    BottomNavigationTab.PROPERTY_TAX -> Screen.PROPERTY_TAX
     BottomNavigationTab.PERSPECTIVE -> Screen.PERSPECTIVE
     BottomNavigationTab.MORE -> Screen.MORE
 }
@@ -764,7 +749,6 @@ private fun NavIcon(screen: Screen, selected: Boolean) {
         Screen.BODY_LOG -> Icons.Rounded.FavoriteBorder
         Screen.AUCTION -> Icons.Rounded.Gavel
         Screen.PHONE_INSIGHT -> Icons.Rounded.NotificationsNone
-        Screen.PROPERTY_TAX -> Icons.Rounded.AccountBalance
         Screen.PERSPECTIVE -> Icons.Rounded.Psychology
         Screen.MORE -> Icons.Rounded.MoreHoriz
         else -> Icons.Rounded.Settings

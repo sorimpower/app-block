@@ -21,13 +21,19 @@ internal data class YoutubeAnalysisContext(
     val hasTranscript: Boolean get() = transcript.isNotBlank()
 }
 
-internal data class YoutubeRecommendation(
+data class YoutubeRecommendation(
     val videoId: String,
     val title: String,
     val channelName: String,
     val thumbnailUrl: String,
     val url: String,
     val publishedAt: String,
+)
+
+data class WatchedVideoPlayback(
+    val videoId: String,
+    val url: String,
+    val thumbnailUrl: String,
 )
 
 /** 서버에서만 보관하는 YouTube Data API 키로 정확 일치 영상만 찾는다. */
