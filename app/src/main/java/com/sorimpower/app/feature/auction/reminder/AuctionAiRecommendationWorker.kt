@@ -28,7 +28,6 @@ import com.sorimpower.app.feature.auction.domain.AuctionItem
 import com.sorimpower.app.feature.auction.domain.auctionDiscountRate
 import com.sorimpower.app.feature.auction.domain.displayTitle
 import com.sorimpower.app.feature.auction.domain.formatAuctionPrice
-import com.sorimpower.app.feature.auction.domain.isAuctionNewToday
 import com.sorimpower.app.feature.auction.domain.isPreliminaryRecommendationEligible
 import com.sorimpower.app.feature.auction.domain.matchesAiPreferences
 import com.sorimpower.app.feature.auction.domain.parseAuctionDate
@@ -60,7 +59,6 @@ class AuctionAiRecommendationWorker(
 
         val criteria = preferences.toCriteria()
         val candidates = items.asSequence()
-            .filter { isAuctionNewToday(it.isNew, it.firstSeenAt) }
             .filter { it.itemKey !in analyzedKeys }
             .filter { it.matchesAiPreferences(preferences) }
             .sortedWith(

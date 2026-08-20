@@ -46,6 +46,7 @@ class PerspectiveRepository(context: Context) {
     private val appContext = context.applicationContext
     private val dao = PerspectiveDatabase.get(appContext).dao()
     private val terraAnalyzer = TerraPerspectiveAnalyzer(appContext)
+    private val interestCommentAnalyzer = TerraInterestCommentAnalyzer(appContext)
     private val geminiAnalyzer = GeminiPerspectiveAnalyzer(appContext)
     private val youtubeVideoResolver = YoutubeVideoResolver()
     private val youtubePerspectiveSearch = YoutubePerspectiveSearch()
@@ -67,6 +68,25 @@ class PerspectiveRepository(context: Context) {
 
     suspend fun initialize() = withContext(Dispatchers.IO) {
         generateWeeklyReport()
+    }
+
+    suspend fun analyzeInterest(days: Long): InterestAiComment = withContext(Dispatchers.IO) {
+        val from = System.currentTimeMillis() - days * 86_400_000L
+        val videos = dao.videoSnapshot().filter { it.source != "share" && it.watchedAt >= from && it.watchedSec >= MINIMUM_WATCH_SECONDS }
+        require(videos.isNotEmpty()) { "분석할 시청 기록이 아직 없어요." }
+        val topics = dao.topics()
+        val links = dao.videoTopicSnapshot().filter { link -> videos.any { it.id == link.videoId } }
+        val counts = links.groupingBy(VideoTopicEntity::topicId).eachCount()
+        val total = counts.values.sum().coerceAtLeast(1)
+        val exposureSummary = counts.entries.sortedByDescending(Map.Entry<String, Int>::value).take(7).joinToString("\n") { (topicId, count) ->
+            val name = topics.firstOrNull { it.id == topicId }?.name ?: "기타"
+            "- $name: ${count * 100 / total}% (${count}개)"
+        }
+        val videoSummary = videos.sortedByDescending(WatchedVideoEntity::watchedAt).take(12).joinToString("\n") { video ->
+            "- ${video.title.take(100)} / ${video.channelName.take(40)}"
+        }
+        val periodLabel = when (days) { 7L -> "이번 주"; 31L -> "이번 달"; else -> "올해" }
+        interestCommentAnalyzer.analyze(periodLabel, exposureSummary, videoSummary)
     }
 
     suspend fun setTopicEnabled(id: String, enabled: Boolean) = dao.setTopicEnabled(id, enabled)
@@ -411,7 +431,7 @@ class PerspectiveRepository(context: Context) {
     private companion object {
         const val PROMPT_VERSION = "perspective-analysis-v3"
         const val GEMINI_VIDEO_MODEL = "gemini-3.5-flash-video"
-        const val TOPIC_MODEL = "gpt-5.6-luna"
+        const val TOPIC_MODEL = "gpt-5.6-terra-topic-v2"
         const val TOPIC_RETRY_INTERVAL_MS = 24 * 60 * 60 * 1_000L
         const val MINIMUM_WATCH_SECONDS = 300L
     }

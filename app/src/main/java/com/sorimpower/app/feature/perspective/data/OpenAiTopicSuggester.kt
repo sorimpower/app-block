@@ -14,7 +14,7 @@ internal data class TopicSuggestionResult(
     val confidence: Double,
 )
 
-/** 제목·채널과 승인된 주제명만 보내는 저비용 Luna 분류기. 영상·음성은 전송하지 않는다. */
+/** 제목·채널과 승인된 주제명만 보내 구체적인 관심 주제를 분류한다. 영상·음성은 전송하지 않는다. */
 internal class OpenAiTopicSuggester(context: Context) {
     private val router = AiModelRouter(context)
 
@@ -24,10 +24,13 @@ internal class OpenAiTopicSuggester(context: Context) {
             request = AiRequest(
                 taskType = AiTaskType.PERSPECTIVE_TOPIC_SUGGESTION,
                 userPrompt = """
-                    YouTube 제목과 채널만 보고 재사용 가능한 상위 관심 주제 하나를 분류한다.
-                    기존 주제와 의미가 같으면 existingTopicId에 그 ID를 쓰고 proposedName은 빈 문자열로 둔다.
-                    맞는 기존 주제가 없으면 existingTopicId는 빈 문자열, proposedName은 2~12자의 넓고 안정적인 한국어 주제명으로 쓴다.
-                    채널명·인물명·영상 한 편의 고유 문구처럼 너무 좁은 이름은 금지한다. description은 25자 이내다.
+                    YouTube 제목과 채널만 보고 한눈에 내용을 알 수 있는 구체적인 관심 주제 하나를 분류한다.
+                    '주거생활', '금융시장', '사회', '경제', '건강', '자기계발'처럼 넓고 추상적인 이름은 금지한다.
+                    대신 '집 구하기', '이사 준비', '전세 계약', '미국 주식', '반도체 주식', '채권 투자', '허리 운동'처럼
+                    사용자가 무엇을 봤는지 바로 떠올릴 수 있는 대상·활동·시장 단위의 2~12자 한국어 이름을 쓴다.
+                    기존 주제가 영상의 구체적인 대상을 정확히 나타낼 때만 existingTopicId를 사용한다.
+                    기존 주제가 더 넓고 추상적이면 재사용하지 말고 세부 proposedName을 새로 제안한다.
+                    채널명·인물명·영상 한 편만의 고유 문구처럼 재사용 불가능하게 좁은 이름은 금지한다. description은 25자 이내다.
 
                     제목: ${video.title.take(180)}
                     채널: ${video.channelName.take(80)}
@@ -38,7 +41,7 @@ internal class OpenAiTopicSuggester(context: Context) {
                     {"existingTopicId":"","proposedName":"","description":"","confidence":0.0}
                 """.trimIndent(),
             ),
-            model = AiModelId.OPENAI_FAST,
+            model = AiModelId.OPENAI_SMART,
         )
         val root = JSONObject(response.text.jsonObject())
         val existingId = root.optString("existingTopicId").trim().takeIf { id -> approvedTopics.any { it.id == id } }

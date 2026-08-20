@@ -14,8 +14,8 @@ android {
         applicationId = "com.sorimpower.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 88
-        versionName = "0.14.15"
+        versionCode = 113
+        versionName = "0.14.40"
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {

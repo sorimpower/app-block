@@ -6,6 +6,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sorimpower.app.feature.bodylog.data.BodyLogRepository
 import com.sorimpower.app.feature.bodylog.data.OpenAiBodyLogAnalyzer
+import com.sorimpower.app.feature.bodylog.data.OpenAiInBodyAnalyzer
+import com.sorimpower.app.feature.bodylog.data.ExerciseEntryEntity
+import com.sorimpower.app.feature.bodylog.data.InBodyResultEntity
 import com.sorimpower.app.feature.bodylog.data.MealItemInput
 import com.sorimpower.app.feature.bodylog.data.MealWithDetails
 import com.sorimpower.app.feature.bodylog.data.MealQuickTemplate
@@ -25,18 +28,36 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.time.LocalDate
+import java.util.UUID
 
 class BodyLogViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = BodyLogRepository(application)
     private val aiAnalyzer = OpenAiBodyLogAnalyzer(application)
+    private val inBodyAnalyzer = OpenAiInBodyAnalyzer(application)
     private val _aiAnalysis = MutableStateFlow<BodyLogAiAnalysis?>(null)
     val aiAnalysis = _aiAnalysis.asStateFlow()
     private val _isAiAnalyzing = MutableStateFlow(false)
     val isAiAnalyzing = _isAiAnalyzing.asStateFlow()
     private val _aiAnalysisError = MutableStateFlow<String?>(null)
     val aiAnalysisError = _aiAnalysisError.asStateFlow()
+    private val _isInBodyAnalyzing = MutableStateFlow(false)
+    val isInBodyAnalyzing = _isInBodyAnalyzing.asStateFlow()
+    private val _inBodyError = MutableStateFlow<String?>(null)
+    val inBodyError = _inBodyError.asStateFlow()
     val state = repository.data.map {
-        BodyLogState(it.weights, it.meals, it.goal, it.mounjaroInjections, it.weightsHidden, it.quickMealTemplates, dailyCalories = it.dailyCalories, mealCalories = it.mealCalories, loaded = true)
+        BodyLogState(
+            weights = it.weights,
+            meals = it.meals,
+            activeGoal = it.goal,
+            mounjaroInjections = it.mounjaroInjections,
+            weightsHidden = it.weightsHidden,
+            quickMealTemplates = it.quickMealTemplates,
+            dailyCalories = it.dailyCalories,
+            mealCalories = it.mealCalories,
+            exercises = it.exercises,
+            inBodyResults = it.inBodyResults,
+            loaded = true,
+        )
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BodyLogState())
 
@@ -106,6 +127,71 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
             MounjaroReminder.schedule(getApplication(), latest.injectedAt, latest.reminderIntervalWeeks, latest.reminderEnabled)
         }
     }
+
+    fun saveExercise(
+        existing: ExerciseEntryEntity? = null,
+        exercisedAt: Long,
+        exerciseType: String,
+        durationMinutes: Int,
+        intensity: String,
+        caloriesBurned: Int?,
+        note: String?,
+        onSaved: () -> Unit,
+    ) = viewModelScope.launch {
+        repository.saveExercise(existing, exercisedAt, exerciseType, durationMinutes, intensity, caloriesBurned, note)
+        onSaved()
+    }
+
+    fun deleteExercise(exercise: ExerciseEntryEntity) = viewModelScope.launch { repository.deleteExercise(exercise) }
+
+    fun importAndAnalyzeInBody(uri: Uri, measuredAt: Long) {
+        if (_isInBodyAnalyzing.value) return
+        viewModelScope.launch {
+            _isInBodyAnalyzing.value = true
+            _inBodyError.value = null
+            var pending: InBodyResultEntity? = null
+            runCatching {
+                val document = repository.importInBodyFile(uri)
+                val now = System.currentTimeMillis()
+                pending = InBodyResultEntity(
+                    id = UUID.randomUUID().toString(),
+                    measuredAt = measuredAt,
+                    originalFilePath = document.localPath,
+                    originalFileName = document.displayName,
+                    originalMimeType = document.mimeType,
+                    metricsJson = "{}",
+                    aiSummary = "인바디 결과를 분석하고 있어요.",
+                    analysisStatus = "ANALYZING",
+                    errorMessage = null,
+                    createdAt = now,
+                    updatedAt = now,
+                )
+                repository.saveInBodyResult(pending!!)
+                val extraction = withTimeout(120_000L) { inBodyAnalyzer.analyze(document) }
+                repository.saveInBodyResult(
+                    pending!!.copy(
+                        metricsJson = extraction.metricsJson,
+                        aiSummary = extraction.summary,
+                        analysisStatus = "COMPLETE",
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                )
+            }.onFailure { error ->
+                val message = if (error is TimeoutCancellationException) {
+                    "인바디 분석 시간이 초과됐어요. 다시 시도해 주세요."
+                } else error.message?.takeIf(String::isNotBlank) ?: "인바디 결과를 분석하지 못했어요."
+                pending?.let {
+                    repository.saveInBodyResult(
+                        it.copy(aiSummary = "인바디 분석 실패", analysisStatus = "FAILED", errorMessage = message, updatedAt = System.currentTimeMillis()),
+                    )
+                }
+                _inBodyError.value = message
+            }
+            _isInBodyAnalyzing.value = false
+        }
+    }
+
+    fun deleteInBodyResult(result: InBodyResultEntity) = viewModelScope.launch { repository.deleteInBodyResult(result) }
 
     fun saveMeal(
         existing: MealWithDetails? = null,

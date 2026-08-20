@@ -9,7 +9,7 @@ const MODELS = Object.freeze({
   OPENAI_SMART: "gpt-5.6-terra",
   OPENAI_DEEP: "gpt-5.6-sol",
 });
-const TASKS = new Set(["BODY_LOG_PROGRESS_ANALYSIS", "BODY_LOG_DAILY_CALORIE_ANALYSIS", "HEALTH_CHECKUP_PAGE_SELECTION", "HEALTH_CHECKUP_EXTRACTION", "HEALTH_TREND_ANALYSIS", "HEALTH_SCREENING_OPTION_RECOMMENDATION", "AUCTION_RIGHTS_ANALYSIS", "PHONE_INSIGHT_BATCH", "PROPERTY_TAX_DEEP_ANALYSIS", "PROPERTY_TAX_RULE_CHANGE_ANALYSIS", "PROPERTY_TAX_SCENARIO_COMPARISON", "PERSPECTIVE_TOPIC_SUGGESTION", "PERSPECTIVE_METADATA_ANALYSIS"]);
+const TASKS = new Set(["BODY_LOG_PROGRESS_ANALYSIS", "BODY_LOG_DAILY_CALORIE_ANALYSIS", "BODY_LOG_INBODY_EXTRACTION", "HEALTH_CHECKUP_PAGE_SELECTION", "HEALTH_CHECKUP_EXTRACTION", "HEALTH_TREND_ANALYSIS", "HEALTH_SCREENING_OPTION_RECOMMENDATION", "AUCTION_RIGHTS_ANALYSIS", "PHONE_INSIGHT_BATCH", "PROPERTY_TAX_DEEP_ANALYSIS", "PROPERTY_TAX_RULE_CHANGE_ANALYSIS", "PROPERTY_TAX_SCENARIO_COMPARISON", "PERSPECTIVE_TOPIC_SUGGESTION", "PERSPECTIVE_METADATA_ANALYSIS"]);
 const MAX_PROMPT_LENGTH = 60_000;
 // Base64 expands files by about one third. Keep this safely below the Gen 2
 // callable request limit while allowing typical high-resolution checkup PDFs.
@@ -252,7 +252,7 @@ exports.openAiGenerate = onCall(
     }
 
     const hasImages = Array.isArray(images) && images.length > 0;
-    if (hasImages && !["HEALTH_CHECKUP_PAGE_SELECTION", "HEALTH_CHECKUP_EXTRACTION", "HEALTH_SCREENING_OPTION_RECOMMENDATION", "PHONE_INSIGHT_BATCH"].includes(taskType)) throw new HttpsError("invalid-argument", "이 작업에는 이미지를 첨부할 수 없습니다.");
+    if (hasImages && !["BODY_LOG_INBODY_EXTRACTION", "HEALTH_CHECKUP_PAGE_SELECTION", "HEALTH_CHECKUP_EXTRACTION", "HEALTH_SCREENING_OPTION_RECOMMENDATION", "PHONE_INSIGHT_BATCH"].includes(taskType)) throw new HttpsError("invalid-argument", "이 작업에는 이미지를 첨부할 수 없습니다.");
     const imageSize = hasImages ? images.reduce((total, image) => total + (typeof image.base64 === "string" ? image.base64.length : MAX_IMAGES_BASE64_LENGTH + 1), 0) : 0;
     if (imageSize > MAX_IMAGES_BASE64_LENGTH || (hasImages && images.some(image => typeof image.mimeType !== "string"))) throw new HttpsError("invalid-argument", "검진 이미지 형식 또는 크기가 올바르지 않습니다.");
     const hasAudios = Array.isArray(audios) && audios.length > 0;

@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -41,7 +42,11 @@ data class BodyLogData(
     val quickMealTemplates: List<MealQuickTemplate>,
     val dailyCalories: List<DailyCalorieSummaryEntity>,
     val mealCalories: List<MealCalorieEstimateEntity>,
+    val exercises: List<ExerciseEntryEntity>,
+    val inBodyResults: List<InBodyResultEntity>,
 )
+
+data class ImportedInBodyFile(val localPath: String, val displayName: String, val mimeType: String)
 
 data class SavedMealResult(val mealId: String, val calorieAnalysisMealIds: List<String>)
 
@@ -70,10 +75,12 @@ class BodyLogRepository(private val context: Context) {
         dao.observeMounjaroInjections(),
         weightsHidden,
     ) { weights, meals, goal, injections, hidden ->
-        BodyLogData(weights, meals, goal, injections, hidden, emptyList(), emptyList(), emptyList())
+        BodyLogData(weights, meals, goal, injections, hidden, emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
     }.combine(quickMealTemplates) { data, templates -> data.copy(quickMealTemplates = templates) }
         .combine(dao.observeDailyCalorieSummaries()) { data, calories -> data.copy(dailyCalories = calories) }
         .combine(dao.observeMealCalorieEstimates()) { data, calories -> data.copy(mealCalories = calories) }
+        .combine(dao.observeExercises()) { data, exercises -> data.copy(exercises = exercises) }
+        .combine(dao.observeInBodyResults()) { data, results -> data.copy(inBodyResults = results) }
 
     init {
         CoroutineScope(Dispatchers.IO).launch { cleanupOrphanedMealPhotos() }
@@ -181,6 +188,66 @@ class BodyLogRepository(private val context: Context) {
     }
 
     suspend fun latestMounjaroInjection(): MounjaroInjectionEntity? = dao.latestMounjaroInjection()
+
+    suspend fun saveExercise(
+        existing: ExerciseEntryEntity? = null,
+        exercisedAt: Long,
+        exerciseType: String,
+        durationMinutes: Int,
+        intensity: String,
+        caloriesBurned: Int?,
+        note: String?,
+    ) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        dao.upsertExercise(ExerciseEntryEntity(
+            id = existing?.id ?: UUID.randomUUID().toString(),
+            exercisedAt = exercisedAt,
+            exerciseType = exerciseType.trim().take(60),
+            durationMinutes = durationMinutes.coerceIn(1, 1_440),
+            intensity = intensity.trim().take(20),
+            caloriesBurned = caloriesBurned?.coerceIn(1, 10_000),
+            note = note?.trim()?.take(300)?.ifBlank { null },
+            createdAt = existing?.createdAt ?: now,
+            updatedAt = now,
+        ))
+    }
+
+    suspend fun deleteExercise(value: ExerciseEntryEntity) = withContext(Dispatchers.IO) { dao.deleteExercise(value) }
+
+    suspend fun importInBodyFile(uri: Uri): ImportedInBodyFile = withContext(Dispatchers.IO) {
+        val metadata = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) null else {
+                val name = cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                name to if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) cursor.getLong(sizeIndex) else -1L
+            }
+        }
+        val displayName = metadata?.first?.take(120) ?: "인바디_${System.currentTimeMillis()}"
+        val mimeType = context.contentResolver.getType(uri).orEmpty().ifBlank {
+            if (displayName.endsWith(".pdf", ignoreCase = true)) "application/pdf" else "image/jpeg"
+        }
+        require(mimeType == "application/pdf" || mimeType.startsWith("image/")) { "인바디 결과지는 PDF 또는 이미지로 등록해 주세요." }
+        metadata?.second?.takeIf { it > MAX_INBODY_FILE_BYTES }?.let { error("인바디 파일은 15MB 이하여야 해요.") }
+        val extension = displayName.substringAfterLast('.', if (mimeType == "application/pdf") "pdf" else "jpg")
+            .filter(Char::isLetterOrDigit).take(8).ifBlank { "bin" }
+        val directory = File(context.filesDir, "inbody_files").apply { mkdirs() }
+        val target = File(directory, "${UUID.randomUUID()}.$extension")
+        val copied = context.contentResolver.openInputStream(uri)?.use { input ->
+            target.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+        } ?: error("선택한 인바디 파일을 읽을 수 없어요.")
+        if (copied > MAX_INBODY_FILE_BYTES) {
+            target.delete()
+            error("인바디 파일은 15MB 이하여야 해요.")
+        }
+        ImportedInBodyFile(target.absolutePath, displayName, mimeType)
+    }
+
+    suspend fun saveInBodyResult(value: InBodyResultEntity) = withContext(Dispatchers.IO) { dao.upsertInBodyResult(value) }
+
+    suspend fun deleteInBodyResult(value: InBodyResultEntity) = withContext(Dispatchers.IO) {
+        dao.deleteInBodyResult(value)
+        value.originalFilePath.takeIf(String::isNotBlank)?.let { File(it).delete() }
+    }
 
     suspend fun saveMeal(
         existing: MealWithDetails? = null,
@@ -371,6 +438,7 @@ class BodyLogRepository(private val context: Context) {
         const val THUMBNAIL_SIDE = 360
         val quickMealTemplatesKey = stringPreferencesKey("quick_meal_templates")
         const val MAX_QUICK_MEAL_TEMPLATES = 12
+        const val MAX_INBODY_FILE_BYTES = 15L * 1024L * 1024L
     }
 }
 

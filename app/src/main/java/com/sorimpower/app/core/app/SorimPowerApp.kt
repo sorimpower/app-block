@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.provider.Settings
 import android.text.TextUtils
+import com.sorimpower.app.BuildConfig
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -165,9 +166,9 @@ private fun headerFeatureInfo(screen: Screen): HeaderFeatureInfo? = when (screen
     )
     Screen.BODY_LOG -> HeaderFeatureInfo(
         title = "건강 기록 안내",
-        description = "체중·식사·마운자로 기록과 건강검진을 한 흐름으로 관리합니다.",
-        features = listOf("체중 추이, 식사와 일별 추정 칼로리, 주사 기록을 함께 확인", "검진 PDF에서 검사값을 추출하고 여러 해의 추이를 비교"),
-        ai = listOf("식사별 칼로리 추정: GPT-5.6 Luna", "건강 경과 분석: GPT-5.6 Terra · high 추론", "검진 문서 추출·추이·선택검사 추천: GPT-5.6 Luna"),
+        description = "체중·식사·마운자로·운동·인바디 기록과 건강검진을 한 흐름으로 관리합니다.",
+        features = listOf("체중 추이, 식사와 일별 추정 칼로리, 주사·운동 기록을 함께 확인", "인바디·검진 PDF에서 검사값을 추출하고 변화를 비교"),
+        ai = listOf("식사별 칼로리·인바디 수치 추출: GPT-5.6 Luna", "건강 경과 분석: GPT-5.6 Terra · high 추론", "검진 문서 추출·추이·선택검사 추천: GPT-5.6 Luna"),
         schedule = listOf("식사를 저장하거나 수정하면 해당 식사를 바로 분석하고 하루 합계 갱신", "주사 알림을 켠 경우, 설정한 투여 주기에 맞춰 다음 알림 예약"),
     )
     Screen.AUCTION -> HeaderFeatureInfo(
@@ -175,7 +176,7 @@ private fun headerFeatureInfo(screen: Screen): HeaderFeatureInfo? = when (screen
         description = "서울 아파트 진행 사건을 모아 보고, 법원 문서 기반의 예비 권리분석을 제공합니다.",
         features = listOf("서울·아파트·진행 중·감정가 15억 원 이상·매각기일 90일 이내 사건 수집", "관심·종료 사건을 별도로 보관하고 종료 결과를 다시 확인"),
         ai = listOf("수동 권리분석: GPT-5.6 Luna 또는 Terra 선택", "매일 추천 분석: GPT-5.6 Luna · 법원 문서와 사용자 조건을 함께 검토"),
-        schedule = listOf("AI 추천을 켠 경우 설정한 오전 시간(6~10시)에 새 사건만 분석", "추천 알림은 조건을 통과한 사건이 있을 때만 발송"),
+        schedule = listOf("AI 추천을 켠 경우 설정한 오전 시간(6~10시)에 아직 분석하지 않은 사건을 분석", "추천 알림은 조건을 통과한 사건이 있을 때만 발송"),
     )
     Screen.PROPERTY_TAX -> HeaderFeatureInfo(
         title = "부동산 세금 안내",
@@ -746,7 +747,7 @@ private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
                     }
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text("앱 정보", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                        Text("나잘알 v0.14.15", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        Text("나잘알 v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         Text("나잘알 개인용 시스템", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }

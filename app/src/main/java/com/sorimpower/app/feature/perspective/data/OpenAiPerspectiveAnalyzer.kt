@@ -26,6 +26,49 @@ data class DeepVideoResult(
     val model: String,
 )
 
+data class InterestAiComment(
+    val headline: String,
+    val summary: String,
+    val observations: List<String>,
+)
+
+internal class TerraInterestCommentAnalyzer(context: Context) {
+    private val router = AiModelRouter(context)
+
+    suspend fun analyze(periodLabel: String, exposureSummary: String, videoSummary: String): InterestAiComment {
+        val response = router.generate(
+            request = AiRequest(
+                taskType = AiTaskType.PERSPECTIVE_METADATA_ANALYSIS,
+                userPrompt = """
+                    사용자의 YouTube 관심 분포를 관찰해 짧고 구체적인 한국어 코멘트를 작성한다.
+                    사용자의 성격·정치성향·의도·중독 여부를 단정하거나 평가하지 않는다.
+                    추상적인 칭찬 대신 실제 주제 비중과 영상 제목에서 확인되는 패턴만 말한다.
+                    headline은 18자 이내, summary는 2문장 이내다.
+                    observations는 서로 다른 관찰 2~3개이며 각 35자 이내다.
+
+                    기간: $periodLabel
+                    관심 분포:
+                    $exposureSummary
+
+                    대표 시청 영상:
+                    $videoSummary
+
+                    JSON만 반환:
+                    {"headline":"","summary":"","observations":[""]}
+                """.trimIndent(),
+                reasoningEffort = "high",
+            ),
+            model = AiModelId.OPENAI_SMART,
+        )
+        val root = JSONObject(response.text.extractJsonObject())
+        return InterestAiComment(
+            headline = root.optString("headline").trim().ifBlank { "요즘 관심의 흐름" }.take(30),
+            summary = root.optString("summary").trim().ifBlank { "최근 시청 기록에서 관심 주제의 흐름을 확인했어요." }.take(240),
+            observations = root.optJSONArray("observations").strings().take(3),
+        )
+    }
+}
+
 @Suppress("UNUSED_PARAMETER")
 internal class TerraPerspectiveAnalyzer(context: Context) {
     private val router = AiModelRouter(context)

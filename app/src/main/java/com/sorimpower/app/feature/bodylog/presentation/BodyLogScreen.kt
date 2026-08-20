@@ -61,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.nativeCanvas
@@ -73,6 +74,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -84,6 +86,8 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.FitnessCenter
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Medication
 import androidx.compose.material.icons.rounded.MonitorWeight
 import androidx.compose.material.icons.rounded.Restaurant
@@ -97,6 +101,8 @@ import com.sorimpower.app.feature.bodylog.data.MealWithDetails
 import com.sorimpower.app.feature.bodylog.data.MealCalorieEstimateEntity
 import com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity
 import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
+import com.sorimpower.app.feature.bodylog.data.ExerciseEntryEntity
+import com.sorimpower.app.feature.bodylog.data.InBodyResultEntity
 import com.sorimpower.app.feature.bodylog.domain.BodyLogState
 import com.sorimpower.app.feature.bodylog.domain.BodyLogAiAnalysis
 import com.sorimpower.app.feature.bodylog.domain.ChartPeriod
@@ -120,6 +126,7 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.abs
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 @Composable
 fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
@@ -127,6 +134,8 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     val aiAnalysis by viewModel.aiAnalysis.collectAsStateWithLifecycle()
     val isAiAnalyzing by viewModel.isAiAnalyzing.collectAsStateWithLifecycle()
     val aiAnalysisError by viewModel.aiAnalysisError.collectAsStateWithLifecycle()
+    val isInBodyAnalyzing by viewModel.isInBodyAnalyzing.collectAsStateWithLifecycle()
+    val inBodyError by viewModel.inBodyError.collectAsStateWithLifecycle()
     val period = ChartPeriod.MONTH
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var mealFilterDate by remember { mutableStateOf<LocalDate?>(LocalDate.now()) }
@@ -140,6 +149,10 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     var deletingQuickMealTemplate by remember { mutableStateOf<MealQuickTemplate?>(null) }
     var showGoalInput by remember { mutableStateOf(false) }
     var showMounjaroInput by remember { mutableStateOf(false) }
+    var showExerciseInput by remember { mutableStateOf(false) }
+    var editingExercise by remember { mutableStateOf<ExerciseEntryEntity?>(null) }
+    var deletingExercise by remember { mutableStateOf<ExerciseEntryEntity?>(null) }
+    var deletingInBodyResult by remember { mutableStateOf<InBodyResultEntity?>(null) }
     var editingMeal by remember { mutableStateOf<MealWithDetails?>(null) }
     var editingMounjaroInjection by remember { mutableStateOf<MounjaroInjectionEntity?>(null) }
     var editingMounjaroReminder by remember { mutableStateOf<MounjaroInjectionEntity?>(null) }
@@ -149,6 +162,9 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val inBodyPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.importAndAnalyzeInBody(it, timestampForDate(selectedDate, LocalTime.NOON)) }
+    }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val points = remember(state.weights, period, selectedDate) { chartPoints(state.weights, period, selectedDate) }
     val mealsByDate = remember(state.meals, mealFilterDate) {
@@ -163,7 +179,21 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             .groupBy { it.localDate() }
             .mapValues { (_, injections) -> injections.sortedByDescending { it.injectedAt } }
     }
-    val recordDates = remember(mealsByDate, injectionsByDate) { (mealsByDate.keys + injectionsByDate.keys).distinct().sortedDescending() }
+    val exercisesByDate = remember(state.exercises, mealFilterDate) {
+        state.exercises.asSequence()
+            .filter { exercise -> mealFilterDate == null || exercise.localDate() == mealFilterDate }
+            .groupBy { it.localDate() }
+            .mapValues { (_, exercises) -> exercises.sortedByDescending { it.exercisedAt } }
+    }
+    val inBodyByDate = remember(state.inBodyResults, mealFilterDate) {
+        state.inBodyResults.asSequence()
+            .filter { result -> mealFilterDate == null || result.localDate() == mealFilterDate }
+            .groupBy { it.localDate() }
+            .mapValues { (_, results) -> results.sortedByDescending { it.measuredAt } }
+    }
+    val recordDates = remember(mealsByDate, injectionsByDate, exercisesByDate, inBodyByDate) {
+        (mealsByDate.keys + injectionsByDate.keys + exercisesByDate.keys + inBodyByDate.keys).distinct().sortedDescending()
+    }
     val dailyCaloriesByDate = remember(state.dailyCalories) { state.dailyCalories.associateBy { LocalDate.ofEpochDay(it.dateEpochDay) } }
     val mealCaloriesById = remember(state.mealCalories) { state.mealCalories.associateBy(MealCalorieEstimateEntity::mealId) }
 
@@ -267,6 +297,27 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                             Text("주사", Modifier.padding(start = 4.dp), fontWeight = FontWeight.Bold)
                         }
                     }
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(
+                            onClick = { showExerciseInput = true },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                        ) {
+                            Icon(Icons.Rounded.FitnessCenter, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            Text("운동", Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { inBodyPicker.launch(arrayOf("application/pdf", "image/*")) },
+                            enabled = !isInBodyAnalyzing,
+                            modifier = Modifier.weight(1f).height(48.dp),
+                        ) {
+                            if (isInBodyAnalyzing) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Rounded.Description, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            Text(if (isInBodyAnalyzing) "분석 중" else "인바디", Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    inBodyError?.let {
+                        Text(it, Modifier.padding(top = 7.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
                 if (state.quickMealTemplates.isNotEmpty()) {
                     Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("빠른 식사", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
@@ -334,17 +385,21 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (showAllRecordHistory) "선택 날짜 기록만 보기" else "전체 식사 · 주사 기록 보기")
+                Text(if (showAllRecordHistory) "선택 날짜 기록만 보기" else "전체 식사 · 주사 · 운동 · 인바디 기록 보기")
             }
         }
         if (recordDates.isNotEmpty()) recordDates.forEach { date ->
             val injections = injectionsByDate[date].orEmpty()
             val meals = mealsByDate[date].orEmpty()
+            val exercises = exercisesByDate[date].orEmpty()
+            val inBodyResults = inBodyByDate[date].orEmpty()
             item(key = "record-date-$date") {
                 RecordDateHeader(
                     date,
                     injections.size,
                     meals.size,
+                    exercises.size,
+                    inBodyResults.size,
                     dailyCaloriesByDate[date],
                 )
             }
@@ -356,6 +411,12 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                     onDelete = { deletingMounjaroInjection = injection },
                     onEditReminder = { editingMounjaroReminder = injection },
                 )
+            }
+            items(exercises, key = { it.id }) { exercise ->
+                ExerciseCard(exercise, onEdit = { editingExercise = exercise }, onDelete = { deletingExercise = exercise })
+            }
+            items(inBodyResults, key = { it.id }) { result ->
+                InBodyResultCard(result, onDelete = { deletingInBodyResult = result })
             }
             items(meals, key = { it.meal.id }) { meal ->
                 MealCard(
@@ -395,6 +456,22 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             message = "투여 기록과 해당 기록의 알림 설정이 삭제되며 복구할 수 없어요.",
             onDismiss = { deletingMounjaroInjection = null },
             onConfirm = { viewModel.deleteMounjaroInjection(injection); deletingMounjaroInjection = null },
+        )
+    }
+    deletingExercise?.let { exercise ->
+        DeleteRecordDialog(
+            title = "운동 기록을 삭제할까요?",
+            message = "삭제한 운동 기록은 복구할 수 없어요.",
+            onDismiss = { deletingExercise = null },
+            onConfirm = { viewModel.deleteExercise(exercise); deletingExercise = null },
+        )
+    }
+    deletingInBodyResult?.let { result ->
+        DeleteRecordDialog(
+            title = "인바디 결과를 삭제할까요?",
+            message = "추출한 체성분 수치와 원본 파일이 함께 삭제돼요.",
+            onDismiss = { deletingInBodyResult = null },
+            onConfirm = { viewModel.deleteInBodyResult(result); deletingInBodyResult = null },
         )
     }
 
@@ -440,6 +517,24 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             }
         },
     )
+    if (showExerciseInput) ExerciseInputDialog(
+        existing = null,
+        selectedDate = selectedDate,
+        onDismiss = { showExerciseInput = false },
+        onSave = { exercisedAt, type, minutes, intensity, calories, note ->
+            viewModel.saveExercise(null, exercisedAt, type, minutes, intensity, calories, note) { showExerciseInput = false }
+        },
+    )
+    editingExercise?.let { exercise ->
+        ExerciseInputDialog(
+            existing = exercise,
+            selectedDate = exercise.localDate(),
+            onDismiss = { editingExercise = null },
+            onSave = { exercisedAt, type, minutes, intensity, calories, note ->
+                viewModel.saveExercise(exercise, exercisedAt, type, minutes, intensity, calories, note) { editingExercise = null }
+            },
+        )
+    }
     editingMounjaroInjection?.let { injection ->
         MounjaroInputDialog(
             existing = injection,
@@ -597,7 +692,7 @@ private fun WeightProgressAiCard(
                 Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
                     Text("AI 건강 경과 분석", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
-                    Text("마운자로·식단·섭취 칼로리·체중 추세를 함께 검토해요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("마운자로·식단·칼로리·체중·인바디·운동을 종합해요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Button(
@@ -706,11 +801,7 @@ private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dail
     var selectedPoint by remember(points) { mutableStateOf<ChartPoint?>(null) }
     val primaryColor = MaterialTheme.colorScheme.primary
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
-    val zone = ZoneId.systemDefault()
     val month = YearMonth.from(selectedMonth)
-    val minTimestamp = remember(month) { month.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli() }
-    val maxTimestamp = remember(month) { month.atEndOfMonth().atTime(LocalTime.MAX).atZone(zone).toInstant().toEpochMilli() }
-    val timestampRange = maxTimestamp - minTimestamp
     val xAxisLabels = remember(month) {
         List(7) { index ->
             val day = 1 + ((month.lengthOfMonth() - 1) * index / 6)
@@ -722,10 +813,8 @@ private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dail
             if (points.isEmpty()) {
                 Box(Modifier.fillMaxWidth().height(190.dp), contentAlignment = Alignment.Center) { Text("이 기간에는 체중 기록이 없어요.") }
             } else {
-                val minValue = points.minOf(ChartPoint::value)
-                val maxValue = points.maxOf(ChartPoint::value)
-                val displayMin = kotlin.math.floor(minOf(60.0, minValue) / 5.0) * 5.0
-                val displayMax = kotlin.math.ceil(maxOf(100.0, maxValue) / 5.0) * 5.0
+                val displayMin = 70.0
+                val displayMax = 90.0
                 val displayRange = displayMax - displayMin
                 val yAxisValues = generateSequence(displayMin) { it + 5.0 }
                     .takeWhile { it <= displayMax + 0.001 }
@@ -743,23 +832,25 @@ private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dail
                 Canvas(
                     Modifier.fillMaxWidth().height(210.dp).pointerInput(points) {
                         detectTapGestures { tap ->
-                            val left = 38.dp.toPx()
-                            val right = 8.dp.toPx()
+                            val left = 42.dp.toPx()
+                            val right = 2.dp.toPx()
                             val usableWidth = size.width - left - right
                             val tapped = points.minByOrNull { point ->
-                                val x = if (timestampRange == 0L) size.width / 2f
-                                else left + usableWidth * ((point.timestamp - minTimestamp).toFloat() / timestampRange.toFloat())
+                                val day = Instant.ofEpochMilli(point.timestamp).atZone(ZoneId.systemDefault()).dayOfMonth
+                                val x = left + usableWidth * (day - 1).toFloat() / (month.lengthOfMonth() - 1).coerceAtLeast(1)
                                 abs(tap.x - x)
                             }
                             selectedPoint = tapped
                         }
                     },
                 ) {
-                    val left = 38.dp.toPx(); val right = 8.dp.toPx(); val top = 12.dp.toPx(); val bottom = size.height - 12.dp.toPx()
+                    val left = 42.dp.toPx(); val right = 2.dp.toPx(); val top = 12.dp.toPx(); val bottom = size.height - 12.dp.toPx()
                     val usableWidth = size.width - left - right
-                    fun xFor(point: ChartPoint): Float = if (timestampRange == 0L) size.width / 2f
-                    else left + usableWidth * ((point.timestamp - minTimestamp).toFloat() / timestampRange.toFloat())
-                    fun yForValue(value: Double): Float = bottom - ((value - displayMin) / displayRange).toFloat() * (bottom - top)
+                    fun xFor(point: ChartPoint): Float {
+                        val day = Instant.ofEpochMilli(point.timestamp).atZone(ZoneId.systemDefault()).dayOfMonth
+                        return left + usableWidth * (day - 1).toFloat() / (month.lengthOfMonth() - 1).coerceAtLeast(1)
+                    }
+                    fun yForValue(value: Double): Float = bottom - ((value.coerceIn(displayMin, displayMax) - displayMin) / displayRange).toFloat() * (bottom - top)
                     fun yFor(point: ChartPoint): Float = yForValue(point.value)
 
                     val axisLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -793,7 +884,7 @@ private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dail
                         drawCircle(if (point == selectedPoint) primaryColor else tertiaryColor, if (point == selectedPoint) 5.dp.toPx() else 3.dp.toPx(), Offset(x, y))
                     }
                 }
-                Row(Modifier.fillMaxWidth().padding(start = 32.dp, end = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth().padding(start = 40.dp, end = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     xAxisLabels.forEach { label ->
                         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -818,6 +909,7 @@ private fun DailyCalorieBarChart(
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
+    val minimumColor = MaterialTheme.colorScheme.error
     val values = remember(selectedMonth, dailyCalories) {
         dailyCalories.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == selectedMonth }
             .sortedBy { it.dateEpochDay }
@@ -848,7 +940,7 @@ private fun DailyCalorieBarChart(
     selectedSummary?.let { summary ->
         val date = LocalDate.ofEpochDay(summary.dateEpochDay)
         Text(
-            date.format(DateTimeFormatter.ofPattern("M월 d일", Locale.KOREAN)) + summary.estimatedCalories + " kcal",
+            date.format(DateTimeFormatter.ofPattern("M월 d일", Locale.KOREAN)) + " · " + summary.estimatedCalories + " kcal",
             Modifier.padding(top = 4.dp),
             color = primaryColor,
             fontWeight = FontWeight.Bold,
@@ -858,8 +950,8 @@ private fun DailyCalorieBarChart(
     Canvas(
         Modifier.fillMaxWidth().height(126.dp).padding(top = 6.dp).pointerInput(values, selectedMonth) {
             detectTapGestures { tap ->
-                val left = 70.dp.toPx()
-                val right = 8.dp.toPx()
+                val left = 38.dp.toPx()
+                val right = 2.dp.toPx()
                 val usableWidth = size.width - left - right
                 selectedSummary = values.minByOrNull { summary ->
                     val day = LocalDate.ofEpochDay(summary.dateEpochDay).dayOfMonth
@@ -869,8 +961,8 @@ private fun DailyCalorieBarChart(
             }
         },
     ) {
-        val left = 70.dp.toPx()
-        val right = 8.dp.toPx()
+        val left = 38.dp.toPx()
+        val right = 2.dp.toPx()
         val top = 5.dp.toPx()
         val bottom = size.height - 22.dp.toPx()
         val usableWidth = size.width - left - right
@@ -888,17 +980,13 @@ private fun DailyCalorieBarChart(
             listOf("최소" to reference.minimumCalories, "감량" to reference.dietCalories, "유지" to reference.maintenanceCalories).forEach { (label, calories) ->
                 val y = bottom - (calories.toFloat() / maxCalories).coerceIn(0f, 1f) * (bottom - top)
                 val color = when (label) {
-                    "최소" -> Color(0xFFD14343)
+                    "최소" -> minimumColor
                     "감량" -> tertiaryColor
                     else -> primaryColor
                 }
                 drawLine(color.copy(alpha = .72f), Offset(left, y), Offset(size.width - right, y), strokeWidth = 1.5.dp.toPx())
-                axisLabelPaint.color = when (label) {
-                    "최소" -> android.graphics.Color.rgb(209, 67, 67)
-                    "감량" -> android.graphics.Color.rgb(216, 116, 36)
-                    else -> android.graphics.Color.rgb(41, 92, 176)
-                }
-                drawContext.canvas.nativeCanvas.drawText(label + " " + calories, left - 6.dp.toPx(), y + 4.dp.toPx(), axisLabelPaint)
+                axisLabelPaint.color = color.toArgb()
+                drawContext.canvas.nativeCanvas.drawText(calories.toString(), left - 6.dp.toPx(), y + 4.dp.toPx(), axisLabelPaint)
                 axisLabelPaint.color = android.graphics.Color.rgb(105, 102, 110)
             }
         }
@@ -946,6 +1034,12 @@ private fun dailyCalorieReference(currentWeightKg: Double, targetWeightKg: Doubl
     )
 }
 
+private fun calendarCalorieLabel(calories: Int): String = when {
+    calories < 1_000 -> calories.toString()
+    calories % 1_000 == 0 -> "${calories / 1_000}k"
+    else -> String.format(Locale.US, "%.1fk", calories / 1_000.0)
+}
+
 @Composable
 private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (LocalDate) -> Unit, weightsHidden: Boolean) {
     val first = date.withDayOfMonth(1)
@@ -953,6 +1047,7 @@ private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (Local
     val weights = state.weights.dailyRepresentatives()
     val mealDates = state.meals.map { it.meal.localDate() }.toSet()
     val injectionDates = state.mounjaroInjections.map { it.localDate() }.toSet()
+    val inBodyDates = state.inBodyResults.map { it.localDate() }.toSet()
     val calories = state.dailyCalories.associateBy { LocalDate.ofEpochDay(it.dateEpochDay) }
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(12.dp)) {
@@ -974,12 +1069,17 @@ private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (Local
                         ) {
                             Text("${current.dayOfMonth}", color = if (current.month == date.month) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
                             weight?.let { Text(if (weightsHidden) "•••" else formatWeight(it.weightKg), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-                            calories[current]?.let { Text("${it.estimatedCalories / 100}k", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold) }
-                            Row(Modifier.height(13.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            calories[current]?.let { Text(calendarCalorieLabel(it.estimatedCalories), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold) }
+                            Row(Modifier.height(16.dp), horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
                                 if (current in mealDates) Box(Modifier.size(5.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape))
                                 if (current in injectionDates) {
-                                    Box(Modifier.size(13.dp).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
-                                        Text("주", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                    Box(Modifier.size(16.dp).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
+                                        Text("주", color = Color.White, fontSize = 8.sp, lineHeight = 8.sp, fontWeight = FontWeight.Black)
+                                    }
+                                }
+                                if (current in inBodyDates) {
+                                    Box(Modifier.size(16.dp).background(Color(0xFF249FE6), CircleShape), contentAlignment = Alignment.Center) {
+                                        Text("인", color = Color.White, fontSize = 8.sp, lineHeight = 8.sp, fontWeight = FontWeight.Black)
                                     }
                                 }
                             }
@@ -1085,6 +1185,77 @@ private fun MounjaroInjectionCard(injection: MounjaroInjectionEntity, isLatest: 
 }
 
 @Composable
+private fun ExerciseCard(exercise: ExerciseEntryEntity, onEdit: () -> Unit, onDelete: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(1.dp),
+    ) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.secondaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.FitnessCenter, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text("${exercise.exerciseType} · ${exercise.durationMinutes}분", fontWeight = FontWeight.Black)
+                Text("${formatRecordTime(exercise.exercisedAt)} · 강도 ${exercise.intensity}" + exercise.caloriesBurned?.let { " · ${it} kcal" }.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                exercise.note?.let { Text(it, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall) }
+            }
+            Row {
+                IconButton(onClick = onEdit) { Icon(Icons.Rounded.Edit, "운동 수정", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                IconButton(onClick = onDelete) { Icon(Icons.Rounded.DeleteOutline, "운동 삭제", tint = MaterialTheme.colorScheme.error) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InBodyResultCard(result: InBodyResultEntity, onDelete: () -> Unit) {
+    val metrics = remember(result.metricsJson) { runCatching { JSONObject(result.metricsJson) }.getOrNull() }
+    val values = listOfNotNull(
+        metrics?.optMetric("weightKg")?.let { "체중 ${it}kg" },
+        metrics?.optMetric("skeletalMuscleMassKg")?.let { "골격근 ${it}kg" },
+        metrics?.optMetric("bodyFatPercent")?.let { "체지방 ${it}%" },
+        metrics?.optMetric("inBodyScore")?.let { "점수 $it" },
+    )
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(1.dp),
+    ) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Description, null, tint = MaterialTheme.colorScheme.primary)
+            }
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text("인바디 결과 · ${result.originalFileName}", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Black)
+                Text(
+                    when (result.analysisStatus) {
+                        "ANALYZING" -> "AI 검사값 추출 중"
+                        "FAILED" -> result.errorMessage ?: "AI 검사값 추출 실패"
+                        else -> values.joinToString(" · ").ifBlank { result.aiSummary }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (result.analysisStatus == "FAILED") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (result.analysisStatus == "COMPLETE" && values.isNotEmpty()) {
+                    Text(result.aiSummary, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            IconButton(onClick = onDelete) { Icon(Icons.Rounded.DeleteOutline, "인바디 삭제", tint = MaterialTheme.colorScheme.error) }
+        }
+    }
+}
+
+private fun JSONObject.optMetric(key: String): String? =
+    takeUnless { isNull(key) }?.optDouble(key)?.takeIf { !it.isNaN() }?.let { value ->
+        if (value % 1.0 == 0.0) value.toInt().toString() else String.format(Locale.US, "%.1f", value)
+    }
+
+@Composable
 private fun DeleteRecordDialog(title: String, message: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1096,7 +1267,15 @@ private fun DeleteRecordDialog(title: String, message: String, onDismiss: () -> 
 }
 
 @Composable
-private fun RecordDateHeader(date: LocalDate, injectionCount: Int, mealCount: Int, calorieSummary: com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity?, onShowAll: (() -> Unit)? = null) {
+private fun RecordDateHeader(
+    date: LocalDate,
+    injectionCount: Int,
+    mealCount: Int,
+    exerciseCount: Int,
+    inBodyCount: Int,
+    calorieSummary: com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity?,
+    onShowAll: (() -> Unit)? = null,
+) {
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(36.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
             Icon(Icons.Rounded.CalendarMonth, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
@@ -1111,6 +1290,8 @@ private fun RecordDateHeader(date: LocalDate, injectionCount: Int, mealCount: In
                 listOfNotNull(
                     injectionCount.takeIf { it > 0 }?.let { "주사 ${it}회" },
                     mealCount.takeIf { it > 0 }?.let { "식사 ${it}개" },
+                    exerciseCount.takeIf { it > 0 }?.let { "운동 ${it}회" },
+                    inBodyCount.takeIf { it > 0 }?.let { "인바디 ${it}건" },
                     calorieSummary?.let { "${it.estimatedCalories} kcal" },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
@@ -1178,6 +1359,50 @@ private fun GoalInputDialog(start: Double?, currentTarget: Double?, currentTarge
             OutlinedTextField(targetDateText, { targetDateText = it.filter { char -> char.isDigit() || char == '-' }.take(10) }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("목표일 (선택, YYYY-MM-DD)") }, singleLine = true)
         } },
         confirmButton = { Button(enabled = startValue != null && startValue in 20.0..400.0 && targetValue != null && targetValue in 20.0..400.0 && (targetDateText.isBlank() || targetDate != null), onClick = { onSave(startValue!!, targetValue!!, targetDate) }) { Text("저장") } },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+@Composable
+private fun ExerciseInputDialog(
+    existing: ExerciseEntryEntity?,
+    selectedDate: LocalDate,
+    onDismiss: () -> Unit,
+    onSave: (Long, String, Int, String, Int?, String?) -> Unit,
+) {
+    var exerciseType by remember(existing?.id) { mutableStateOf(existing?.exerciseType.orEmpty()) }
+    var duration by remember(existing?.id) { mutableStateOf(existing?.durationMinutes?.toString().orEmpty()) }
+    var intensity by remember(existing?.id) { mutableStateOf(existing?.intensity ?: "보통") }
+    var calories by remember(existing?.id) { mutableStateOf(existing?.caloriesBurned?.toString().orEmpty()) }
+    var note by remember(existing?.id) { mutableStateOf(existing?.note.orEmpty()) }
+    var recordDate by remember(existing?.id, selectedDate) { mutableStateOf(existing?.localDate() ?: selectedDate) }
+    var recordTime by remember(existing?.id) { mutableStateOf(timeForTimestamp(existing?.exercisedAt)) }
+    val minutes = duration.toIntOrNull()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing == null) "운동 기록" else "운동 기록 수정", fontWeight = FontWeight.Black) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                RecordDateButton(recordDate, onDateChange = { recordDate = it })
+                RecordTimeButton(recordTime, onTimeChange = { recordTime = it })
+                OutlinedTextField(exerciseType, { exerciseType = it.take(60) }, Modifier.fillMaxWidth(), label = { Text("운동 종류") }, placeholder = { Text("예: 걷기, 웨이트, 수영") }, singleLine = true)
+                OutlinedTextField(duration, { duration = it.filter(Char::isDigit).take(4) }, Modifier.fillMaxWidth(), label = { Text("운동 시간 (분)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                Text("운동 강도", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("가벼움", "보통", "높음").forEach { value ->
+                        FilterChip(selected = intensity == value, onClick = { intensity = value }, label = { Text(value) })
+                    }
+                }
+                OutlinedTextField(calories, { calories = it.filter(Char::isDigit).take(5) }, Modifier.fillMaxWidth(), label = { Text("소모 칼로리 (선택)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                OutlinedTextField(note, { note = it.take(300) }, Modifier.fillMaxWidth(), label = { Text("메모 (선택)") }, minLines = 2)
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = exerciseType.isNotBlank() && minutes != null && minutes in 1..1_440,
+                onClick = { onSave(timestampForDate(recordDate, recordTime), exerciseType.trim(), minutes!!, intensity, calories.toIntOrNull(), note.ifBlank { null }) },
+            ) { Text("저장") }
+        },
         dismissButton = { OutlinedButton(onClick = onDismiss) { Text("취소") } },
     )
 }

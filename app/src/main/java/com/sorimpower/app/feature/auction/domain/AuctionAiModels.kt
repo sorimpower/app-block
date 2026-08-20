@@ -136,11 +136,9 @@ fun AuctionAiAnalysis.isPreliminaryRecommendationEligible(criteria: AuctionAiCri
         AuctionRiskLevel.UNKNOWN -> emptySet()
     }
     if (riskLevel !in allowedRisks) return false
-    return setOf(
-        AuctionDocumentType.CASE_DETAIL,
-        AuctionDocumentType.SALE_SPECIFICATION,
-        AuctionDocumentType.OCCUPANCY_REPORT,
-    ).all(evidenceTypes::contains)
+    // 추천 후보를 문서 종류 개수로 제한하지 않는다. 사건상세를 확보하지 못한
+    // 경우는 이미 WAITING_FOR_DOCUMENTS 상태라 위 상태 검사에서 제외된다.
+    return true
 }
 
 fun validateAuctionAiAnalysis(

@@ -7,6 +7,12 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -20,6 +26,8 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.positionChange
@@ -28,8 +36,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.sorimpower.app.core.ui.AppCobalt
-import com.sorimpower.app.core.ui.AppOrange
 import com.sorimpower.app.feature.phoneinsight.data.*
 import com.sorimpower.app.feature.phoneinsight.domain.*
 import java.time.*
@@ -95,14 +101,20 @@ private fun Modifier.horizontalSwipe(onSwipeLeft:()->Unit,onSwipeRight:()->Unit)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InsightItemCard(value:PhoneInsightEntity,onStatus:(String,InsightStatus)->Unit){
-    val dayLabel=PhoneInsightVisibility.dayLabel(value)?:"기한 없음";val days=PhoneInsightVisibility.daysUntil(value);val isToday=days==0L;val isImminent=days!=null&&days in 1L..2L;val isImportant=value.importance==InsightImportance.HIGH;val accent=when{isToday->MaterialTheme.colorScheme.error;isImminent||isImportant->MaterialTheme.colorScheme.tertiary;else->MaterialTheme.colorScheme.primary};val emphasisLabel=when{isToday->"가장 먼저";isImminent->"임박";isImportant->"중요";value.status==InsightStatus.REVIEW->"확인 필요";else->null}
+    val dayLabel=PhoneInsightVisibility.dayLabel(value)?:"기한 없음";val days=PhoneInsightVisibility.daysUntil(value);val isToday=days==0L;val isDueWithinTwoWeeks=days!=null&&days in 1L..14L;val isImportant=value.importance==InsightImportance.HIGH;val isEmphasized=isToday||isDueWithinTwoWeeks||isImportant;val isGeneral=!isEmphasized&&value.status!=InsightStatus.REVIEW
+    val accent=when{isToday||isImportant->MaterialTheme.colorScheme.tertiary;isDueWithinTwoWeeks->MaterialTheme.colorScheme.primary;else->MaterialTheme.colorScheme.primary};val emphasisLabel=when{isImportant->"중요";value.status==InsightStatus.REVIEW->"확인 필요";else->null}
+    val unicornColors=listOf(Color(0xFFFFE76A),Color(0xFFFF78BA),Color(0xFF79CDFF),Color.White,Color(0xFFD6FF54),Color(0xFFFF9DDA),Color(0xFF88D9FF))
+    val borderSweep=rememberInfiniteTransition(label="todayInsightBorder").animateFloat(initialValue=-640f,targetValue=640f,animationSpec=infiniteRepeatable(tween(1_150,easing=LinearEasing),RepeatMode.Restart),label="todayInsightBorderSweep").value
+    val unicornBrush=Brush.linearGradient(colors=unicornColors,start=Offset(borderSweep,0f),end=Offset(borderSweep+640f,640f))
+    val todayBorder=if(isToday) BorderStroke(2.dp,unicornBrush) else BorderStroke(1.dp,accent.copy(alpha=if(emphasisLabel!=null).55f else .2f))
+    val unicornPill=RoundedCornerShape(50.dp)
     val sourceLabel=value.sourceType.label
     val sourceTooltipState=rememberTooltipState()
     val scope=rememberCoroutineScope()
-    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface),border=BorderStroke(1.dp,accent.copy(alpha=if(emphasisLabel!=null).5f else .2f)),elevation=CardDefaults.cardElevation(defaultElevation=if(emphasisLabel!=null)3.dp else 1.dp),shape=RoundedCornerShape(20.dp)){
+    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=if(isToday) Color(0xFFFFFBFE) else MaterialTheme.colorScheme.surface),border=todayBorder,elevation=CardDefaults.cardElevation(defaultElevation=if(isToday)4.dp else if(emphasisLabel!=null)3.dp else 1.dp),shape=RoundedCornerShape(20.dp)){
         Column(Modifier.padding(horizontal=16.dp,vertical=15.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                Surface(color=accent,shape=RoundedCornerShape(50)){Text(dayLabel,Modifier.padding(horizontal=10.dp,vertical=5.dp),color=Color.White,fontWeight=FontWeight.Black,style=MaterialTheme.typography.labelMedium)}
+                Surface(color=if(isGeneral) Color.White else accent,contentColor=if(isGeneral) accent else Color.White,border=if(isGeneral) BorderStroke(1.dp,accent.copy(alpha=.35f)) else null,shape=unicornPill){Text(dayLabel,Modifier.padding(horizontal=10.dp,vertical=5.dp),color=if(isGeneral) accent else Color.White,fontWeight=FontWeight.Black,style=MaterialTheme.typography.labelMedium)}
                 emphasisLabel?.let{Surface(color=accent.copy(alpha=.14f),shape=RoundedCornerShape(50)){Text(it,Modifier.padding(horizontal=9.dp,vertical=5.dp),color=accent,fontWeight=FontWeight.Black,style=MaterialTheme.typography.labelMedium)}}
                 Spacer(Modifier.weight(1f))
                 value.dueAt?.let{
@@ -124,7 +136,7 @@ private fun InsightItemCard(value:PhoneInsightEntity,onStatus:(String,InsightSta
             if(value.description.isNotBlank())Text(value.description,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
             HorizontalDivider(color=accent.copy(alpha=.14f))
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(9.dp)){
-                Button({onStatus(value.id,InsightStatus.COMPLETED)},Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=accent)){Text("완료")}
+                Button({onStatus(value.id,InsightStatus.COMPLETED)},Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=if(isGeneral) Color.White else accent,contentColor=if(isGeneral) accent else Color.White),border=if(isGeneral) BorderStroke(1.dp,accent.copy(alpha=.45f)) else null){Text("완료")}
                 OutlinedButton({onStatus(value.id,InsightStatus.DISMISSED)},Modifier.weight(1f),border=BorderStroke(1.dp,MaterialTheme.colorScheme.outline.copy(alpha=.55f))){Text("넘기기")}
             }
         }

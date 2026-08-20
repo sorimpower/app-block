@@ -11,6 +11,7 @@ internal class AiModelRouter(context: Context) {
     suspend fun generate(request: AiRequest, model: AiModelId = AiModelId.OPENAI_FAST): AiResponse = when (request.taskType) {
         AiTaskType.BODY_LOG_PROGRESS_ANALYSIS,
         AiTaskType.BODY_LOG_DAILY_CALORIE_ANALYSIS,
+        AiTaskType.BODY_LOG_INBODY_EXTRACTION,
         AiTaskType.HEALTH_CHECKUP_PAGE_SELECTION,
         AiTaskType.HEALTH_CHECKUP_EXTRACTION,
         AiTaskType.HEALTH_TREND_ANALYSIS,

@@ -324,7 +324,7 @@ private fun AuctionAiRecommendationCard(
                     Text("AI 맞춤 경매 추천", fontWeight = FontWeight.Black)
                     Text(
                         if (preferences.dailyRecommendationEnabled) {
-                            "매일 오전 ${preferences.notificationHour}시 · 새 사건만 최대 5건 자동 분석"
+                            "매일 오전 ${preferences.notificationHour}시 · 미분석 사건 최대 5건 자동 분석"
                         } else {
                             "예산과 위험 조건에 맞는 사건을 매일 아침 알려드려요."
                         },

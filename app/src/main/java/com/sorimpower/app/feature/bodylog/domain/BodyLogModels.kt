@@ -7,6 +7,8 @@ import com.sorimpower.app.feature.bodylog.data.WeightGoalEntity
 import com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity
 import com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity
 import com.sorimpower.app.feature.bodylog.data.MealCalorieEstimateEntity
+import com.sorimpower.app.feature.bodylog.data.ExerciseEntryEntity
+import com.sorimpower.app.feature.bodylog.data.InBodyResultEntity
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -30,6 +32,8 @@ data class BodyLogState(
     val quickMealTemplates: List<MealQuickTemplate> = emptyList(),
     val dailyCalories: List<DailyCalorieSummaryEntity> = emptyList(),
     val mealCalories: List<MealCalorieEstimateEntity> = emptyList(),
+    val exercises: List<ExerciseEntryEntity> = emptyList(),
+    val inBodyResults: List<InBodyResultEntity> = emptyList(),
     val loaded: Boolean = false,
 ) {
     val latestWeight get() = weights.maxByOrNull(WeightEntryEntity::measuredAt)
@@ -56,6 +60,10 @@ fun com.sorimpower.app.feature.bodylog.data.MealEntryEntity.localDate(): LocalDa
     Instant.ofEpochMilli(eatenAt).atZone(ZoneId.systemDefault()).toLocalDate()
 fun MounjaroInjectionEntity.localDate(): LocalDate =
     Instant.ofEpochMilli(injectedAt).atZone(ZoneId.systemDefault()).toLocalDate()
+fun ExerciseEntryEntity.localDate(): LocalDate =
+    Instant.ofEpochMilli(exercisedAt).atZone(ZoneId.systemDefault()).toLocalDate()
+fun InBodyResultEntity.localDate(): LocalDate =
+    Instant.ofEpochMilli(measuredAt).atZone(ZoneId.systemDefault()).toLocalDate()
 
 fun List<WeightEntryEntity>.dailyRepresentatives(): Map<LocalDate, WeightEntryEntity> =
     groupBy(WeightEntryEntity::localDate).mapValues { (_, entries) -> entries.maxBy(WeightEntryEntity::measuredAt) }

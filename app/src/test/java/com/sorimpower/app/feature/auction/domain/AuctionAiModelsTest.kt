@@ -60,7 +60,7 @@ class AuctionAiModelsTest {
     }
 
     @Test
-    fun `매각명세서가 없거나 허용 위험도를 넘으면 예비 추천하지 않는다`() {
+    fun `문서 종류와 관계없이 허용 위험도를 넘으면 예비 추천하지 않는다`() {
         val missingSpecification = completedAnalysis().copy(
             status = AuctionAnalysisStatus.PRELIMINARY,
             evidenceTypes = setOf(AuctionDocumentType.CASE_DETAIL, AuctionDocumentType.OCCUPANCY_REPORT),
@@ -75,7 +75,7 @@ class AuctionAiModelsTest {
             ),
         )
 
-        assertFalse(missingSpecification.isPreliminaryRecommendationEligible(AuctionAiCriteria()))
+        assertTrue(missingSpecification.isPreliminaryRecommendationEligible(AuctionAiCriteria()))
         assertFalse(highRisk.isPreliminaryRecommendationEligible(AuctionAiCriteria(maximumRiskLevel = AuctionRiskLevel.MEDIUM)))
     }
 

@@ -5,10 +5,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sorimpower.app.feature.perspective.data.PerspectiveRepository
 import com.sorimpower.app.feature.perspective.data.PerspectiveState
+import com.sorimpower.app.feature.perspective.data.InterestAiComment
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class PerspectiveViewModel(application: Application) : AndroidViewModel(application) {
@@ -18,6 +20,12 @@ class PerspectiveViewModel(application: Application) : AndroidViewModel(applicat
     val busyVideoId = _busyVideoId.asStateFlow()
     private val _message = MutableStateFlow<String?>(null)
     val message = _message.asStateFlow()
+    private val _interestComment = MutableStateFlow<InterestAiComment?>(null)
+    val interestComment = _interestComment.asStateFlow()
+    private val _interestCommentLoading = MutableStateFlow(false)
+    val interestCommentLoading = _interestCommentLoading.asStateFlow()
+    private val interestCommentCache = mutableMapOf<Pair<Long, Int>, InterestAiComment>()
+    private var interestCommentJob: Job? = null
 
     init { viewModelScope.launch { repository.initialize() } }
 
@@ -39,6 +47,22 @@ class PerspectiveViewModel(application: Application) : AndroidViewModel(applicat
             .onSuccess { _message.value = "공유한 영상에서 구체적인 관점 4개를 만들었어요." }
             .onFailure { _message.value = it.message ?: "공유한 영상을 분석하지 못했어요." }
         _busyVideoId.value = null
+    }
+
+    fun loadInterestComment(days: Long, dataVersion: Int, refresh: Boolean = false) {
+        val key = days to dataVersion
+        if (!refresh) interestCommentCache[key]?.let { _interestComment.value = it; return }
+        interestCommentJob?.cancel()
+        _interestComment.value = null
+        interestCommentJob = viewModelScope.launch {
+            _interestCommentLoading.value = true
+            runCatching { repository.analyzeInterest(days) }
+                .onSuccess { result -> interestCommentCache[key] = result; _interestComment.value = result }
+                .onFailure { error ->
+                    if (error !is kotlinx.coroutines.CancellationException) _message.value = error.message ?: "관심 분석 코멘트를 만들지 못했어요."
+                }
+            _interestCommentLoading.value = false
+        }
     }
 
     fun explorePerspective(id: String) = viewModelScope.launch { repository.markPerspectiveVisited(id) }
