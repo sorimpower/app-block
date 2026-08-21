@@ -8,14 +8,14 @@ plugins {
 
 android {
     namespace = "com.sorimpower.app"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.sorimpower.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 127
-        versionName = "0.14.54"
+        versionCode = 138
+        versionName = "0.15.3"
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -46,6 +46,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.health.connect)
     ksp(libs.androidx.room.compiler)
     implementation(libs.coil.compose)
     implementation(platform(libs.firebase.bom))

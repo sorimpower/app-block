@@ -155,6 +155,17 @@ data class ExerciseEntryEntity(
     val updatedAt: Long,
 )
 
+@Entity(tableName = "daily_health_activity")
+data class DailyHealthActivityEntity(
+    @androidx.room.PrimaryKey val dateEpochDay: Long,
+    val steps: Long,
+    val distanceMeters: Double,
+    val activeCalories: Double,
+    val activeCaloriesEstimated: Boolean,
+    val exerciseMinutes: Long,
+    val updatedAt: Long,
+)
+
 @Entity(tableName = "inbody_results", indices = [Index("measuredAt")])
 data class InBodyResultEntity(
     @androidx.room.PrimaryKey val id: String,
@@ -197,6 +208,9 @@ interface BodyLogDao {
     @Query("SELECT * FROM exercise_entries ORDER BY exercisedAt DESC")
     fun observeExercises(): Flow<List<ExerciseEntryEntity>>
 
+    @Query("SELECT * FROM daily_health_activity ORDER BY dateEpochDay DESC")
+    fun observeHealthActivity(): Flow<List<DailyHealthActivityEntity>>
+
     @Query("SELECT * FROM inbody_results ORDER BY measuredAt DESC")
     fun observeInBodyResults(): Flow<List<InBodyResultEntity>>
 
@@ -225,6 +239,9 @@ interface BodyLogDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertExercise(value: ExerciseEntryEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertHealthActivity(values: List<DailyHealthActivityEntity>)
 
     @Delete
     suspend fun deleteExercise(value: ExerciseEntryEntity)
@@ -281,8 +298,8 @@ interface BodyLogDao {
 }
 
 @Database(
-    entities = [WeightEntryEntity::class, WeightGoalEntity::class, MounjaroInjectionEntity::class, MealEntryEntity::class, MealItemEntity::class, MealPhotoEntity::class, MealCalorieEstimateEntity::class, DailyCalorieSummaryEntity::class, ExerciseEntryEntity::class, InBodyResultEntity::class],
-    version = 6,
+    entities = [WeightEntryEntity::class, WeightGoalEntity::class, MounjaroInjectionEntity::class, MealEntryEntity::class, MealItemEntity::class, MealPhotoEntity::class, MealCalorieEstimateEntity::class, DailyCalorieSummaryEntity::class, ExerciseEntryEntity::class, DailyHealthActivityEntity::class, InBodyResultEntity::class],
+    version = 8,
     exportSchema = false,
 )
 abstract class BodyLogDatabase : RoomDatabase() {
@@ -369,6 +386,16 @@ abstract class BodyLogDatabase : RoomDatabase() {
                 database.execSQL("CREATE INDEX IF NOT EXISTS `index_inbody_results_measuredAt` ON `inbody_results` (`measuredAt`)")
             }
         }
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS `daily_health_activity` (`dateEpochDay` INTEGER NOT NULL, `steps` INTEGER NOT NULL, `distanceMeters` REAL NOT NULL, `activeCalories` REAL NOT NULL, `exerciseMinutes` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`dateEpochDay`))")
+            }
+        }
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE `daily_health_activity` ADD COLUMN `activeCaloriesEstimated` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
         @Volatile private var instance: BodyLogDatabase? = null
 
         fun get(context: Context): BodyLogDatabase = instance ?: synchronized(this) {
@@ -376,7 +403,7 @@ abstract class BodyLogDatabase : RoomDatabase() {
                 context.applicationContext,
                 BodyLogDatabase::class.java,
                 "body_log.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build().also { instance = it }
         }
     }
 }

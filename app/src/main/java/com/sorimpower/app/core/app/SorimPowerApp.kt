@@ -122,6 +122,8 @@ import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightScreen
 import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightViewModel
 import com.sorimpower.app.feature.perspective.presentation.PerspectiveScreen
 import com.sorimpower.app.feature.perspective.presentation.PerspectiveViewModel
+import com.sorimpower.app.feature.assets.presentation.AssetScreen
+import com.sorimpower.app.feature.assets.presentation.AssetViewModel
 import com.sorimpower.app.core.ui.AppCobalt
 import com.sorimpower.app.core.ui.AppLilac
 import com.sorimpower.app.core.ui.AppNavy
@@ -140,7 +142,7 @@ import com.sorimpower.app.feature.blocker.presentation.ScheduleScreen
 import com.sorimpower.app.feature.settings.presentation.SettingsScreen
 
 private enum class Screen(val label: String) {
-    HOME("홈"), PERSPECTIVE("유튜브"), BLOCKER("차단"), BODY_LOG("건강"), AUCTION("경매"), PHONE_INSIGHT("알림"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
+    HOME("홈"), ASSETS("내 자산"), PERSPECTIVE("유튜브"), BLOCKER("차단"), BODY_LOG("건강"), AUCTION("경매"), PHONE_INSIGHT("알림"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
 }
 
 private enum class HealthRecordTab(val label: String) { DAILY("데일리 기록"), CHECKUP("건강검진") }
@@ -190,6 +192,13 @@ private fun headerFeatureInfo(screen: Screen): HeaderFeatureInfo? = when (screen
         ai = listOf("시청한 내용을 주제별로 정리", "다음에 확인할 수 있는 구체적인 질문과 관련 영상 추천"),
         schedule = listOf("고정 시각 스케줄 없음", "영상 재생 종료 직후 주제 또는 다른 관점 알림을 판단하며 하루 최대 2회 발송"),
     )
+    Screen.ASSETS -> HeaderFeatureInfo(
+        title = "내 자산 안내",
+        description = "현금·투자·부동산·자동차·부채를 한곳에서 보고, 각 금액이 어디서 왔는지 함께 기록합니다.",
+        features = listOf("순자산과 자산군별 평가액 확인", "부동산 유사 실거래 중앙값 추정과 일별 스냅샷 보관"),
+        ai = listOf("AI가 임의로 자산 가격을 만들지 않음", "연동 전 직접 입력값은 MANUAL로 구분"),
+        schedule = listOf("자산을 수정할 때 오늘 스냅샷 갱신", "Provider 연결 전에는 외부 시세를 가져온 것처럼 표시하지 않음"),
+    )
     else -> null
 }
 
@@ -202,6 +211,7 @@ internal fun SorimPowerApp(
     healthCheckupViewModel: HealthCheckupViewModel,
     phoneInsightViewModel: PhoneInsightViewModel,
     perspectiveViewModel: PerspectiveViewModel,
+    assetViewModel: AssetViewModel,
     accessibilityEnabled: () -> Boolean,
     openAccessibilitySettings: () -> Unit,
     openAuctionAnalysesRequest: Int = 0,
@@ -248,6 +258,7 @@ internal fun SorimPowerApp(
                 StartDestination.REAL_ESTATE_AUCTION -> Screen.AUCTION
                 StartDestination.PHONE_INSIGHT -> Screen.PHONE_INSIGHT
                 StartDestination.PERSPECTIVE -> Screen.PERSPECTIVE
+                StartDestination.ASSETS -> Screen.ASSETS
                 StartDestination.MORE -> Screen.MORE
             }
         }
@@ -311,6 +322,7 @@ internal fun SorimPowerApp(
                     Column {
                         Text(when (screen) {
                             Screen.HOME -> "나잘알"
+                            Screen.ASSETS -> "내 자산"
                             Screen.BLOCKER -> "앱 차단"
                             Screen.BODY_LOG -> "건강"
                             Screen.AUCTION -> "부동산 경매"
@@ -362,14 +374,14 @@ internal fun SorimPowerApp(
         Box(
                 Modifier.fillMaxSize().horizontalSwipe(
                 onSwipeLeft = {
-                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE) {
+                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE && screen != Screen.ASSETS) {
                         val tabs = state.bottomNavigationOrder.map(BottomNavigationTab::screen)
                         val index = tabs.indexOf(screen)
                         if (index >= 0 && index < tabs.lastIndex) screen = tabs[index + 1]
                     }
                 },
                 onSwipeRight = {
-                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE) {
+                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE && screen != Screen.ASSETS) {
                         val tabs = state.bottomNavigationOrder.map(BottomNavigationTab::screen)
                         val index = tabs.indexOf(screen)
                         if (index > 0) screen = tabs[index - 1]
@@ -399,7 +411,14 @@ internal fun SorimPowerApp(
                 { screen = Screen.AUCTION },
                 { screen = Screen.PHONE_INSIGHT },
                 { screen = Screen.PERSPECTIVE },
+                { screen = Screen.ASSETS },
                 openAccessibilitySettings,
+            )
+            Screen.ASSETS -> AssetScreen(
+                padding = padding,
+                viewModel = assetViewModel,
+                onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } },
+                onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } },
             )
             Screen.BODY_LOG -> Column(Modifier.fillMaxSize().padding(padding)) {
                 HealthRecordTabs(
@@ -691,6 +710,7 @@ private fun BottomNavigationTab.screen() = when (this) {
     BottomNavigationTab.BODY_LOG -> Screen.BODY_LOG
     BottomNavigationTab.AUCTION -> Screen.AUCTION
     BottomNavigationTab.PERSPECTIVE -> Screen.PERSPECTIVE
+    BottomNavigationTab.ASSETS -> Screen.ASSETS
     BottomNavigationTab.MORE -> Screen.MORE
 }
 
@@ -750,6 +770,7 @@ private fun NavIcon(screen: Screen, selected: Boolean) {
         Screen.AUCTION -> Icons.Rounded.Gavel
         Screen.PHONE_INSIGHT -> Icons.Rounded.NotificationsNone
         Screen.PERSPECTIVE -> Icons.Rounded.Psychology
+        Screen.ASSETS -> Icons.Rounded.AccountBalance
         Screen.MORE -> Icons.Rounded.MoreHoriz
         else -> Icons.Rounded.Settings
     }

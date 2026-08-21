@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.AccountBalance
+import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.Card
@@ -55,6 +56,7 @@ internal fun HomeScreen(
     openAuction: () -> Unit,
     openPhoneInsight: () -> Unit,
     openPerspective: () -> Unit,
+    openAssets: () -> Unit,
     openAccessibilitySettings: () -> Unit,
 ) {
     LazyColumn(
@@ -89,12 +91,20 @@ internal fun HomeScreen(
             }
         }
         item {
-            HomeSectionTitle("자산 관리", "관심 경매 물건을 살펴봐요")
+            HomeSectionTitle("자산 관리", "순자산과 관심 경매를 살펴봐요")
         }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 HomeFeatureTile(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.weight(1f),
+                    title = "내 자산",
+                    description = "내 자산과 부채를 한눈에 봐요",
+                    icon = Icons.Rounded.Savings,
+                    accent = MaterialTheme.colorScheme.primary,
+                    onClick = openAssets,
+                )
+                HomeFeatureTile(
+                    modifier = Modifier.weight(1f),
                     title = "부동산 경매",
                     description = "조건에 맞는 물건을 찾아요",
                     icon = Icons.Rounded.Gavel,

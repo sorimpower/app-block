@@ -7,7 +7,8 @@ npm --prefix functions install
 firebase login
 firebase functions:secrets:set OPENAI_API_KEY
 firebase functions:secrets:set YOUTUBE_DATA_API_KEY
-firebase deploy --only functions:openAiGenerate,functions:resolveYoutubeVideoContext,functions:findYoutubePerspectiveVideos
+firebase functions:secrets:set MOLIT_SERVICE_KEY
+firebase deploy --only functions:openAiGenerate,functions:resolveYoutubeVideoContext,functions:findYoutubePerspectiveVideos,functions:lookupMolitApartmentTrades
 ```
 
 Firebase Functions deployment requires the Firebase project to be on a billing-enabled plan. The function enforces Firebase App Check and accepts only allowlisted tasks and models.

@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.health.connect.client.PermissionController
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,6 +51,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,6 +104,7 @@ import com.sorimpower.app.feature.bodylog.data.MealCalorieEstimateEntity
 import com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity
 import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
 import com.sorimpower.app.feature.bodylog.data.ExerciseEntryEntity
+import com.sorimpower.app.feature.bodylog.data.HealthConnectActivityReader
 import com.sorimpower.app.feature.bodylog.data.InBodyResultEntity
 import com.sorimpower.app.feature.bodylog.domain.BodyLogState
 import com.sorimpower.app.feature.bodylog.domain.BodyLogAiAnalysis
@@ -136,6 +139,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     val aiAnalysisError by viewModel.aiAnalysisError.collectAsStateWithLifecycle()
     val isInBodyAnalyzing by viewModel.isInBodyAnalyzing.collectAsStateWithLifecycle()
     val inBodyError by viewModel.inBodyError.collectAsStateWithLifecycle()
+    val healthSyncMessage by viewModel.healthSyncMessage.collectAsStateWithLifecycle()
     val period = ChartPeriod.MONTH
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var mealFilterDate by remember { mutableStateOf<LocalDate?>(LocalDate.now()) }
@@ -166,6 +170,9 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
         uri?.let { viewModel.importAndAnalyzeInBody(it, timestampForDate(selectedDate, LocalTime.NOON)) }
     }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val healthConnectPermission = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionResultContract(),
+    ) { granted -> if (granted.containsAll(HealthConnectActivityReader.requiredPermissions)) viewModel.syncHealthConnect() }
     val points = remember(state.weights, period, selectedDate) { chartPoints(state.weights, period, selectedDate) }
     val mealsByDate = remember(state.meals, mealFilterDate) {
         state.meals.asSequence()
@@ -196,6 +203,8 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     }
     val dailyCaloriesByDate = remember(state.dailyCalories) { state.dailyCalories.associateBy { LocalDate.ofEpochDay(it.dateEpochDay) } }
     val mealCaloriesById = remember(state.mealCalories) { state.mealCalories.associateBy(MealCalorieEstimateEntity::mealId) }
+    val healthByDate = remember(state.healthActivity) { state.healthActivity.associateBy { LocalDate.ofEpochDay(it.dateEpochDay) } }
+    LaunchedEffect(Unit) { viewModel.syncHealthConnectIfAuthorized() }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(padding),
@@ -219,6 +228,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 points = points,
                 selectedMonth = selectedDate,
                 dailyCalories = state.dailyCalories,
+                healthActivity = state.healthActivity,
                 latestWeightKg = state.latestWeight?.weightKg,
                 targetWeightKg = state.activeGoal?.targetWeightKg,
                 weightsHidden = state.weightsHidden,
@@ -241,6 +251,14 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                     if (!showAllRecordHistory) mealFilterDate = it
                 },
                 weightsHidden = state.weightsHidden,
+            )
+        }
+        item {
+            HealthConnectActivityCard(
+                activity = healthByDate[selectedDate],
+                message = healthSyncMessage,
+                onConnect = { healthConnectPermission.launch(HealthConnectActivityReader.requiredPermissions) },
+                onRefresh = viewModel::syncHealthConnect,
             )
         }
         item {
@@ -739,6 +757,32 @@ private fun WeightProgressAiCard(
 }
 
 @Composable
+private fun HealthConnectActivityCard(
+    activity: com.sorimpower.app.feature.bodylog.data.DailyHealthActivityEntity?,
+    message: String?,
+    onConnect: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F7FF))) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.FitnessCenter, null, tint = MaterialTheme.colorScheme.primary)
+                Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                    Text("Health Connect 활동", fontWeight = FontWeight.Black)
+                    Text("걸음·운동·활동 칼로리·거리", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                OutlinedButton(onClick = if (activity == null) onConnect else onRefresh) { Text(if (activity == null) "연결" else "새로고침") }
+            }
+            activity?.let {
+                Text("${"%,d".format(it.steps)}걸음 · ${"%.1f".format(it.distanceMeters / 1000)}km · ${it.activeCalories.toInt()}kcal 활동" + if (it.activeCaloriesEstimated) " (걸음 추정)" else "", fontWeight = FontWeight.Bold)
+                if (it.exerciseMinutes > 0) Text("운동 세션 ${it.exerciseMinutes}분", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } ?: Text("연결 후 이 날짜의 활동 기록을 자동으로 가져와요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            message?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
+        }
+    }
+}
+
+@Composable
 private fun PeriodNavigation(period: ChartPeriod, date: LocalDate, onDateChange: (LocalDate) -> Unit) {
     val title = when (period) {
         ChartPeriod.DAY -> date.format(DateTimeFormatter.ofPattern("M월 d일"))
@@ -797,7 +841,7 @@ private fun moveMonthWeek(date: LocalDate, direction: Int): LocalDate {
 }
 
 @Composable
-private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dailyCalories: List<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity>, latestWeightKg: Double?, targetWeightKg: Double?, weightsHidden: Boolean) {
+private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dailyCalories: List<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity>, healthActivity: List<com.sorimpower.app.feature.bodylog.data.DailyHealthActivityEntity>, latestWeightKg: Double?, targetWeightKg: Double?, weightsHidden: Boolean) {
     var selectedPoint by remember(points) { mutableStateOf<ChartPoint?>(null) }
     val primaryColor = MaterialTheme.colorScheme.primary
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
@@ -892,6 +936,7 @@ private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dail
                 DailyCalorieBarChart(
                     selectedMonth = month,
                     dailyCalories = dailyCalories,
+                    healthActivity = healthActivity,
                     latestWeightKg = latestWeightKg,
                     targetWeightKg = targetWeightKg,
                 )
@@ -904,6 +949,7 @@ private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dail
 private fun DailyCalorieBarChart(
     selectedMonth: YearMonth,
     dailyCalories: List<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity>,
+    healthActivity: List<com.sorimpower.app.feature.bodylog.data.DailyHealthActivityEntity>,
     latestWeightKg: Double?,
     targetWeightKg: Double?,
 ) {
@@ -914,13 +960,17 @@ private fun DailyCalorieBarChart(
         dailyCalories.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == selectedMonth }
             .sortedBy { it.dateEpochDay }
     }
+    val activityByDate = remember(selectedMonth, healthActivity) {
+        healthActivity.filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == selectedMonth }.associateBy { it.dateEpochDay }
+    }
     if (values.isEmpty()) return
     val calorieReference = remember(latestWeightKg, targetWeightKg) {
         latestWeightKg?.let { dailyCalorieReference(it, targetWeightKg) }
     }
-    val maxCalories = remember(values, calorieReference) {
+    val maxCalories = remember(values, activityByDate, calorieReference) {
         val highestReference = calorieReference?.maintenanceCalories ?: 0
-        (kotlin.math.ceil(maxOf(values.maxOf { it.estimatedCalories }, highestReference) / 500.0) * 500.0).toInt().coerceAtLeast(1_500)
+        val highestActivity = activityByDate.values.maxOfOrNull { it.activeCalories.toInt() } ?: 0
+        (kotlin.math.ceil(maxOf(values.maxOf { it.estimatedCalories }, highestReference, highestActivity) / 500.0) * 500.0).toInt().coerceAtLeast(1_500)
     }
     val xAxisDays = remember(selectedMonth) {
         List(7) { index ->
@@ -928,7 +978,11 @@ private fun DailyCalorieBarChart(
         }.distinct()
     }
     var selectedSummary by remember(values) { mutableStateOf<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity?>(null) }
-    Text("일별 섭취 칼로리", Modifier.padding(top = 16.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+    Text("일별 총 칼로리", Modifier.padding(top = 16.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+    Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("● 섭취", color = tertiaryColor, style = MaterialTheme.typography.labelSmall)
+        Text("● 활동 소모", color = Color(0xFF129C8C), style = MaterialTheme.typography.labelSmall)
+    }
     calorieReference?.let { reference ->
         Text(
             "현재 체중 기준 · 최소 " + reference.minimumCalories + " / 감량 " + reference.dietCalories + " / 유지 " + reference.maintenanceCalories + " kcal",
@@ -940,7 +994,7 @@ private fun DailyCalorieBarChart(
     selectedSummary?.let { summary ->
         val date = LocalDate.ofEpochDay(summary.dateEpochDay)
         Text(
-            date.format(DateTimeFormatter.ofPattern("M월 d일", Locale.KOREAN)) + " · " + summary.estimatedCalories + " kcal",
+            date.format(DateTimeFormatter.ofPattern("M월 d일", Locale.KOREAN)) + " · 섭취 " + summary.estimatedCalories + " kcal · 활동 소모 " + (activityByDate[summary.dateEpochDay]?.activeCalories?.toInt() ?: 0) + if (activityByDate[summary.dateEpochDay]?.activeCaloriesEstimated == true) " kcal (추정)" else " kcal",
             Modifier.padding(top = 4.dp),
             color = primaryColor,
             fontWeight = FontWeight.Bold,
@@ -993,14 +1047,20 @@ private fun DailyCalorieBarChart(
         values.forEach { summary ->
             val day = LocalDate.ofEpochDay(summary.dateEpochDay).dayOfMonth
             val x = left + usableWidth * (day - 1).toFloat() / (selectedMonth.lengthOfMonth() - 1).coerceAtLeast(1)
-            val y = bottom - (summary.estimatedCalories.toFloat() / maxCalories).coerceIn(0f, 1f) * (bottom - top)
+            val intakeY = bottom - (summary.estimatedCalories.toFloat() / maxCalories).coerceIn(0f, 1f) * (bottom - top)
+            val activityCalories = activityByDate[summary.dateEpochDay]?.activeCalories ?: 0.0
+            val activityY = bottom - (activityCalories.toFloat() / maxCalories).coerceIn(0f, 1f) * (bottom - top)
             val isSelected = summary.dateEpochDay == selectedSummary?.dateEpochDay
             drawLine(
                 if (isSelected) primaryColor else tertiaryColor,
                 Offset(x, bottom),
-                Offset(x, y),
+                Offset(x, intakeY),
                 strokeWidth = if (isSelected) 7.dp.toPx() else 5.dp.toPx(),
                 cap = StrokeCap.Round,
+            )
+            if (activityCalories > 0.0) drawLine(
+                Color(0xFF129C8C), Offset(x, bottom), Offset(x, activityY),
+                strokeWidth = if (isSelected) 3.dp.toPx() else 2.5.dp.toPx(), cap = StrokeCap.Round,
             )
         }
         val dateLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

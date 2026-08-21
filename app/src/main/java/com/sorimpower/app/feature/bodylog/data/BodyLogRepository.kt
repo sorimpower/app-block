@@ -43,6 +43,7 @@ data class BodyLogData(
     val dailyCalories: List<DailyCalorieSummaryEntity>,
     val mealCalories: List<MealCalorieEstimateEntity>,
     val exercises: List<ExerciseEntryEntity>,
+    val healthActivity: List<DailyHealthActivityEntity>,
     val inBodyResults: List<InBodyResultEntity>,
 )
 
@@ -75,11 +76,12 @@ class BodyLogRepository(private val context: Context) {
         dao.observeMounjaroInjections(),
         weightsHidden,
     ) { weights, meals, goal, injections, hidden ->
-        BodyLogData(weights, meals, goal, injections, hidden, emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+        BodyLogData(weights, meals, goal, injections, hidden, emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
     }.combine(quickMealTemplates) { data, templates -> data.copy(quickMealTemplates = templates) }
         .combine(dao.observeDailyCalorieSummaries()) { data, calories -> data.copy(dailyCalories = calories) }
         .combine(dao.observeMealCalorieEstimates()) { data, calories -> data.copy(mealCalories = calories) }
         .combine(dao.observeExercises()) { data, exercises -> data.copy(exercises = exercises) }
+        .combine(dao.observeHealthActivity()) { data, activity -> data.copy(healthActivity = activity) }
         .combine(dao.observeInBodyResults()) { data, results -> data.copy(inBodyResults = results) }
 
     init {
@@ -213,6 +215,8 @@ class BodyLogRepository(private val context: Context) {
     }
 
     suspend fun deleteExercise(value: ExerciseEntryEntity) = withContext(Dispatchers.IO) { dao.deleteExercise(value) }
+
+    suspend fun saveHealthActivity(values: List<DailyHealthActivityEntity>) = withContext(Dispatchers.IO) { dao.upsertHealthActivity(values) }
 
     suspend fun importInBodyFile(uri: Uri): ImportedInBodyFile = withContext(Dispatchers.IO) {
         val metadata = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->

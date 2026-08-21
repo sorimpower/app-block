@@ -9,6 +9,7 @@ import com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity
 import com.sorimpower.app.feature.bodylog.data.MealCalorieEstimateEntity
 import com.sorimpower.app.feature.bodylog.data.ExerciseEntryEntity
 import com.sorimpower.app.feature.bodylog.data.InBodyResultEntity
+import com.sorimpower.app.feature.bodylog.data.DailyHealthActivityEntity
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -33,6 +34,7 @@ data class BodyLogState(
     val dailyCalories: List<DailyCalorieSummaryEntity> = emptyList(),
     val mealCalories: List<MealCalorieEstimateEntity> = emptyList(),
     val exercises: List<ExerciseEntryEntity> = emptyList(),
+    val healthActivity: List<DailyHealthActivityEntity> = emptyList(),
     val inBodyResults: List<InBodyResultEntity> = emptyList(),
     val loaded: Boolean = false,
 ) {

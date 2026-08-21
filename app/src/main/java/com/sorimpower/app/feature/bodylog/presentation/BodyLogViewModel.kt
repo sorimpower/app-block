@@ -14,6 +14,7 @@ import com.sorimpower.app.feature.bodylog.data.MealWithDetails
 import com.sorimpower.app.feature.bodylog.data.MealQuickTemplate
 import com.sorimpower.app.feature.bodylog.data.MounjaroInjectionEntity
 import com.sorimpower.app.feature.bodylog.data.WeightEntryEntity
+import com.sorimpower.app.feature.bodylog.data.HealthConnectActivityReader
 import com.sorimpower.app.feature.bodylog.domain.BodyLogState
 import com.sorimpower.app.feature.bodylog.domain.BodyLogAiAnalysis
 import com.sorimpower.app.feature.bodylog.reminder.MounjaroReminder
@@ -34,6 +35,7 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
     private val repository = BodyLogRepository(application)
     private val aiAnalyzer = OpenAiBodyLogAnalyzer(application)
     private val inBodyAnalyzer = OpenAiInBodyAnalyzer(application)
+    private val healthConnectReader = HealthConnectActivityReader(application)
     private val _aiAnalysis = MutableStateFlow<BodyLogAiAnalysis?>(null)
     val aiAnalysis = _aiAnalysis.asStateFlow()
     private val _isAiAnalyzing = MutableStateFlow(false)
@@ -44,6 +46,8 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
     val isInBodyAnalyzing = _isInBodyAnalyzing.asStateFlow()
     private val _inBodyError = MutableStateFlow<String?>(null)
     val inBodyError = _inBodyError.asStateFlow()
+    private val _healthSyncMessage = MutableStateFlow<String?>(null)
+    val healthSyncMessage = _healthSyncMessage.asStateFlow()
     val state = repository.data.map {
         BodyLogState(
             weights = it.weights,
@@ -55,6 +59,7 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
             dailyCalories = it.dailyCalories,
             mealCalories = it.mealCalories,
             exercises = it.exercises,
+            healthActivity = it.healthActivity,
             inBodyResults = it.inBodyResults,
             loaded = true,
         )
@@ -143,6 +148,22 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun deleteExercise(exercise: ExerciseEntryEntity) = viewModelScope.launch { repository.deleteExercise(exercise) }
+
+    fun syncHealthConnect() = viewModelScope.launch {
+        _healthSyncMessage.value = null
+        runCatching { healthConnectReader.syncRecentDays(state.value.latestWeight?.weightKg) }
+            .onSuccess { values ->
+                repository.saveHealthActivity(values)
+                _healthSyncMessage.value = if (values.isEmpty()) "가져올 활동 데이터가 아직 없어요." else "최근 활동 기록을 동기화했어요."
+            }
+            .onFailure { _healthSyncMessage.value = it.message ?: "Health Connect 활동 기록을 가져오지 못했어요." }
+    }
+
+    fun syncHealthConnectIfAuthorized() = viewModelScope.launch {
+        if (healthConnectReader.hasPermissions()) {
+            runCatching { healthConnectReader.syncRecentDays(state.value.latestWeight?.weightKg) }.getOrNull()?.let { repository.saveHealthActivity(it) }
+        }
+    }
 
     fun importAndAnalyzeInBody(uri: Uri, measuredAt: Long) {
         if (_isInBodyAnalyzing.value) return

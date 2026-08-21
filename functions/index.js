@@ -3,6 +3,7 @@ const { defineSecret } = require("firebase-functions/params");
 
 const openAiApiKey = defineSecret("OPENAI_API_KEY");
 const youtubeDataApiKey = defineSecret("YOUTUBE_DATA_API_KEY");
+const molitServiceKey = defineSecret("MOLIT_SERVICE_KEY");
 
 const MODELS = Object.freeze({
   OPENAI_FAST: "gpt-5.6-luna",
@@ -86,6 +87,106 @@ function tokenSimilarity(first, second) {
   for (const token of a) if (b.has(token)) intersection += 1;
   return intersection / Math.max(a.size, b.size);
 }
+
+function decodeXml(value) {
+  return String(value || "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+}
+
+function xmlValue(block, ...names) {
+  for (const name of names) {
+    const match = block.match(new RegExp(`<${name}>([\\s\\S]*?)<\\/${name}>`, "i"));
+    if (match) return decodeXml(match[1]).trim();
+  }
+  return "";
+}
+
+function normalizeApartmentName(value) {
+  return String(value || "").normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/[\s·._-]+/g, "");
+}
+
+function recentYearMonths(count) {
+  const now = new Date();
+  return Array.from({ length: count }, (_, offset) => {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
+    return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  });
+}
+
+/** 국토부 아파트 실거래를 고정 Canonical Dataset에서만 조회한다. */
+exports.lookupMolitApartmentTrades = onCall(
+  {
+    region: "asia-northeast3",
+    timeoutSeconds: 60,
+    enforceAppCheck: true,
+    serviceAccount: "sorimpower-ff78e@appspot.gserviceaccount.com",
+    secrets: [molitServiceKey],
+  },
+  async (request) => {
+    const lawdCd = typeof request.data?.lawdCd === "string" ? request.data.lawdCd.trim() : "";
+    const apartmentName = typeof request.data?.apartmentName === "string" ? request.data.apartmentName.trim() : "";
+    const exclusiveAreaSqm = Number(request.data?.exclusiveAreaSqm);
+    const months = Math.min(24, Math.max(3, Number(request.data?.months) || 12));
+    if (!/^\d{5}$/.test(lawdCd)) throw new HttpsError("invalid-argument", "법정동 지역코드 5자리를 확인해 주세요.");
+    if (!apartmentName || apartmentName.length > 100) throw new HttpsError("invalid-argument", "아파트 단지명을 확인해 주세요.");
+    if (!Number.isFinite(exclusiveAreaSqm) || exclusiveAreaSqm <= 0 || exclusiveAreaSqm > 500) throw new HttpsError("invalid-argument", "전용면적을 확인해 주세요.");
+
+    const key = molitServiceKey.value().trim();
+    if (!key) throw new HttpsError("failed-precondition", "국토부 인증키가 등록되지 않았습니다.");
+    const expectedName = normalizeApartmentName(apartmentName);
+    const areaTolerance = Math.max(2.0, exclusiveAreaSqm * 0.03);
+    const pages = [];
+    const yearMonths = recentYearMonths(months);
+    // 공공데이터 게이트웨이의 초당 호출 제한을 피하려고 최대 3개월씩만 병렬 조회한다.
+    for (let index = 0; index < yearMonths.length; index += 3) {
+      const chunk = await Promise.all(yearMonths.slice(index, index + 3).map(async (dealYmd) => {
+        const params = new URLSearchParams({ serviceKey: key, LAWD_CD: lawdCd, DEAL_YMD: dealYmd, pageNo: "1", numOfRows: "1000" });
+        const response = await fetch(`https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade?${params}`, { signal: AbortSignal.timeout(15_000) });
+        const xml = await response.text();
+        if (!response.ok || /<resultCode>\s*(?:20|30|31)\s*<\/resultCode>/i.test(xml)) {
+          console.error("MOLIT request failed", response.status, dealYmd, xml.slice(0, 300));
+          throw new HttpsError("internal", "국토부 실거래가 인증 또는 조회에 실패했습니다.");
+        }
+        return xml;
+      }));
+      pages.push(...chunk);
+    }
+
+    const trades = pages.flatMap(xml => [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map(match => match[1]))
+      .map(item => {
+        const name = xmlValue(item, "aptNm", "아파트");
+        const area = Number(xmlValue(item, "excluUseAr", "전용면적"));
+        const amountManwon = Number(xmlValue(item, "dealAmount", "거래금액").replace(/,/g, ""));
+        const year = xmlValue(item, "dealYear", "년");
+        const month = xmlValue(item, "dealMonth", "월").padStart(2, "0");
+        const day = xmlValue(item, "dealDay", "일").padStart(2, "0");
+        const cancelledOn = xmlValue(item, "cdealDay", "해제사유발생일");
+        return {
+          apartmentName: name,
+          exclusiveAreaSqm: area,
+          priceKrw: Math.round(amountManwon * 10_000),
+          tradeDate: /^\d{4}$/.test(year) && month !== "00" && day !== "00" ? `${year}-${month}-${day}` : "",
+          floor: xmlValue(item, "floor", "층"),
+          cancelledOn,
+        };
+      })
+      .filter(trade => !trade.cancelledOn && trade.priceKrw > 0 && Number.isFinite(trade.exclusiveAreaSqm))
+      .filter(trade => normalizeApartmentName(trade.apartmentName) === expectedName)
+      .filter(trade => Math.abs(trade.exclusiveAreaSqm - exclusiveAreaSqm) <= areaTolerance)
+      .sort((a, b) => b.tradeDate.localeCompare(a.tradeDate))
+      .slice(0, 20)
+      .map(({ cancelledOn, ...trade }) => trade);
+
+    return {
+      providerId: "MOLIT_RTMS",
+      algorithmVersion: "REAL_ESTATE_APT_V1",
+      queriedAt: new Date().toISOString(),
+      trades,
+    };
+  },
+);
 
 /**
  * MediaSession이 실제 video ID를 주지 않는 YouTube 재생을 보완한다.

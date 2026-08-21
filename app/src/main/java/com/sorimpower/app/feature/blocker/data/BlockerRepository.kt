@@ -374,6 +374,7 @@ enum class StartDestination {
     REAL_ESTATE_AUCTION,
     PHONE_INSIGHT,
     PERSPECTIVE,
+    ASSETS,
     MORE;
 
     companion object {
@@ -382,7 +383,7 @@ enum class StartDestination {
 }
 
 enum class BottomNavigationTab(val label: String) {
-    HOME("홈"), PHONE_INSIGHT("알림"), PERSPECTIVE("유튜브"), BLOCKER("차단"), BODY_LOG("건강"), AUCTION("경매"), MORE("더보기");
+    HOME("홈"), PHONE_INSIGHT("알림"), PERSPECTIVE("유튜브"), ASSETS("자산"), BLOCKER("차단"), BODY_LOG("건강"), AUCTION("경매"), MORE("더보기");
 
     companion object {
         val defaultOrder = entries.toList()

@@ -13,13 +13,13 @@ class MorningDigestScheduleTest {
         assertEquals(ZonedDateTime.of(2026,8,11,8,0,0,0,seoul), InsightDigestSchedule.next(now,InsightDigestSlot.MORNING))
     }
 
-    @Test fun `오전 8시 이후에는 오후 7시 분석으로 예약한다`() {
+    @Test fun `오전 8시가 되면 다음날 오전 분석으로 예약한다`() {
         val now = ZonedDateTime.of(2026, 8, 11, 8, 0, 0, 0, seoul)
-        assertEquals(ZonedDateTime.of(2026,8,11,19,0,0,0,seoul), InsightDigestSchedule.next(now,InsightDigestSlot.EVENING))
+        assertEquals(ZonedDateTime.of(2026,8,12,8,0,0,0,seoul), InsightDigestSchedule.next(now,InsightDigestSlot.MORNING))
     }
 
-    @Test fun `오후 7시 이후에는 다음날 오후 분석으로 예약한다`() {
+    @Test fun `오후에도 다음날 오전 분석으로 예약한다`() {
         val now = ZonedDateTime.of(2026, 8, 11, 19, 0, 0, 0, seoul)
-        assertEquals(ZonedDateTime.of(2026,8,12,19,0,0,0,seoul), InsightDigestSchedule.next(now,InsightDigestSlot.EVENING))
+        assertEquals(ZonedDateTime.of(2026,8,12,8,0,0,0,seoul), InsightDigestSchedule.next(now,InsightDigestSlot.MORNING))
     }
 }

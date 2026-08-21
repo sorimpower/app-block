@@ -39,12 +39,12 @@ internal class OpenAiBodyLogAnalyzer(
     }
 
     private fun createPrompt(state: BodyLogState, weights: List<WeightEntryEntity>): String = buildString {
-        appendLine("당신은 다이어트 전문 의료진의 관점에서 마운자로 주사·식단·AI 추정 섭취 칼로리·체중 추세·인바디 체성분·운동 기록을 종합 검토하는 기록 분석기다.")
+        appendLine("당신은 다이어트 전문 의료진의 관점에서 마운자로 주사·식단·AI 추정 섭취 칼로리·Health Connect 활동 소모 칼로리·체중 추세·인바디 체성분·운동 기록을 종합 검토하는 기록 분석기다.")
         appendLine("진단·처방·용량 변경 지시는 하지 말고, 담백하고 전문적인 한국어 존댓말로 쓴다. 감정적 위로나 장황한 설명은 금지한다.")
         appendLine("단순 기록 나열은 금지한다. 날짜·수치가 있는 경우 반드시 근거로 들고, 체중 변화와 식사 패턴·섭취 칼로리·마운자로 투여 시점/간격/부작용·운동량·체성분 변화의 관계를 해석한다. 인과관계를 단정할 근거가 부족하면 가능성으로 표현한다.")
         appendLine("headline은 가장 중요한 임상적 해석을 한 문장 45자 이내로 쓴다. trendSummary는 체중 추이·식습관·주사 기록을 연결해 2~3문장(260자 이내)으로 작성한다. encouragement는 정서적 위로 대신 정체·감량 속도·섭취 패턴 중 핵심 원인과 해석을 최대 2문장(200자 이내)으로 쓴다.")
         appendLine("mealAssessment에는 식사를 제대로 하고 있는지 별도로 평가한다. 기록된 식사를 평소 섭취의 대표 표본으로 보고, 일반적인 1인분·식사 구성 기준을 보수적으로 적용해 식사 규칙성, 단백질 식품·채소/식이섬유 포함 여부, 당류·음주·야식·고열량 식사 빈도, 마운자로 사용 중 식사량 과소 또는 끼니 결손 가능성을 검토한다. 좋음/보완 필요/판단 어려움 중 하나를 먼저 명시하고 근거를 2문장 이내(180자 이내)로 쓴다.")
-        appendLine("calorieAssessment에는 아래 일별 AI 추정 섭취 칼로리를 별도로 해석한다. 최근 평균, 목표 감량 칼로리 대비 과다·과소, 날짜별 변동 폭을 평가한다. AI 추정치임을 전제로 단정하지 말고, 최소 섭취 기준보다 반복적으로 낮거나 감량 목표보다 지속적으로 높은 패턴만 핵심으로 짚는다. 좋음/보완 필요/판단 어려움 중 하나를 먼저 명시하고 2문장 이내(180자 이내)로 쓴다.")
+        appendLine("calorieAssessment에는 아래 일별 AI 추정 섭취 칼로리와 Health Connect 활동 소모 칼로리를 함께 해석한다. 활동 소모는 기초대사량을 포함하지 않는 별도 수치이므로 섭취량에서 단순 차감한 순칼로리로 단정하지 않는다. 최근 평균, 목표 감량 칼로리 대비 섭취량, 활동량 변화를 평가한다. 좋음/보완 필요/판단 어려움 중 하나를 먼저 명시하고 2문장 이내(180자 이내)로 쓴다.")
         appendLine("정확한 섭취량·영양성분이 기록되지 않아도 분석을 중단하거나 기록 보완을 요청하지 않는다. 기록된 음식명·횟수·메모에서 합리적으로 추정해 실용적인 판단을 제시하되, 수치화한 칼로리·영양소를 확정값처럼 말하지 않는다. 마운자로는 최근 투여일·용량·간격·부작용 기록만 근거로 한다.")
         appendLine("nextSteps는 추가 기록 요청보다 현재 식사 습관에서 바로 조정할 수 있는 실천을 우선해 최대 3개, 항목당 55자 이내로 작성한다.")
         appendLine("safetyNote는 심각하거나 지속되는 부작용 기록이 있을 때만 진료 상담 문구를 한 문장으로 쓰고, 없으면 빈 문자열로 둔다.")
@@ -80,6 +80,11 @@ internal class OpenAiBodyLogAnalyzer(
             appendLine("- ${java.time.LocalDate.ofEpochDay(summary.dateEpochDay)} ${summary.estimatedCalories}kcal, 식사 ${summary.mealCount}개, 요약=${summary.summary}")
         }
         if (state.dailyCalories.isEmpty()) appendLine("- 기록 없음")
+        appendLine("최근 Health Connect 활동 기록(최신순):")
+        state.healthActivity.sortedByDescending { it.dateEpochDay }.take(MAX_CALORIE_SUMMARIES).forEach { activity ->
+            appendLine("- ${java.time.LocalDate.ofEpochDay(activity.dateEpochDay)} 걸음=${activity.steps}, 거리=${"%.1f".format(activity.distanceMeters / 1000)}km, 활동 소모=${activity.activeCalories.toInt()}kcal${if (activity.activeCaloriesEstimated) "(걸음 기반 추정)" else "(Health Connect 측정값)"}, 운동 세션=${activity.exerciseMinutes}분")
+        }
+        if (state.healthActivity.isEmpty()) appendLine("- 기록 없음")
         appendLine("최근 운동 기록(최신순):")
         state.exercises.sortedByDescending { it.exercisedAt }.take(MAX_EXERCISE_RECORDS).forEach { exercise ->
             appendLine("- ${java.time.Instant.ofEpochMilli(exercise.exercisedAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate()} ${exercise.exerciseType}, ${exercise.durationMinutes}분, 강도=${exercise.intensity}, 소모=${exercise.caloriesBurned?.let { "${it}kcal" } ?: "미기록"}, 메모=${exercise.note ?: "없음"}")
