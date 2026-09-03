@@ -149,7 +149,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     var showMealInput by remember { mutableStateOf(false) }
     var showQuickMealTemplateInput by remember { mutableStateOf(false) }
     var showQuickMealTemplateManager by remember { mutableStateOf(false) }
-    var quickMealEditMode by remember { mutableStateOf(false) }
+    var editingQuickMealTemplate by remember { mutableStateOf<MealQuickTemplate?>(null) }
     var deletingQuickMealTemplate by remember { mutableStateOf<MealQuickTemplate?>(null) }
     var showGoalInput by remember { mutableStateOf(false) }
     var showMounjaroInput by remember { mutableStateOf(false) }
@@ -230,16 +230,9 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 dailyCalories = state.dailyCalories,
                 healthActivity = state.healthActivity,
                 latestWeightKg = state.latestWeight?.weightKg,
+                firstWeightKg = state.weights.minByOrNull(WeightEntryEntity::measuredAt)?.weightKg,
                 targetWeightKg = state.activeGoal?.targetWeightKg,
                 weightsHidden = state.weightsHidden,
-            )
-        }
-        item {
-            WeightProgressAiCard(
-                analysis = aiAnalysis,
-                isAnalyzing = isAiAnalyzing,
-                errorMessage = aiAnalysisError,
-                onAnalyze = viewModel::analyzeWeightProgress,
             )
         }
         item {
@@ -251,6 +244,14 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                     if (!showAllRecordHistory) mealFilterDate = it
                 },
                 weightsHidden = state.weightsHidden,
+            )
+        }
+        item {
+            WeightProgressAiCard(
+                analysis = aiAnalysis,
+                isAnalyzing = isAiAnalyzing,
+                errorMessage = aiAnalysisError,
+                onAnalyze = viewModel::analyzeWeightProgress,
             )
         }
         item {
@@ -339,8 +340,8 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 if (state.quickMealTemplates.isNotEmpty()) {
                     Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("빠른 식사", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                        OutlinedButton(onClick = { quickMealEditMode = !quickMealEditMode }, modifier = Modifier.height(32.dp)) {
-                            Text(if (quickMealEditMode) "완료" else "편집", style = MaterialTheme.typography.labelMedium)
+                        OutlinedButton(onClick = { showQuickMealTemplateManager = true }, modifier = Modifier.height(32.dp)) {
+                            Text("관리", style = MaterialTheme.typography.labelMedium)
                         }
                         OutlinedButton(onClick = { showQuickMealTemplateInput = true }, modifier = Modifier.height(32.dp)) {
                             Text("+ 추가", style = MaterialTheme.typography.labelMedium)
@@ -352,24 +353,21 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                                 rowTemplates.forEach { template ->
                                     OutlinedButton(
                                         onClick = {
-                                            if (quickMealEditMode) {
-                                                deletingQuickMealTemplate = template
-                                            } else {
-                                                viewModel.saveMeal(
-                                                    eatenAt = timestampForDate(selectedDate, timeForTimestamp(System.currentTimeMillis())),
-                                                    mealType = template.mealType,
-                                                    items = template.items.map { MealItemInput(it) },
-                                                    note = template.note,
-                                                    tags = template.tags,
-                                                    photoUris = emptyList(),
-                                                ) { Toast.makeText(context, "식사 기록을 추가했어요.", Toast.LENGTH_SHORT).show() }
-                                            }
+                                            viewModel.saveMeal(
+                                                eatenAt = timestampForDate(selectedDate, timeForTimestamp(System.currentTimeMillis())),
+                                                mealType = template.mealType,
+                                                items = template.items.map { MealItemInput(it) },
+                                                note = template.note,
+                                                tags = template.tags,
+                                                photoUris = emptyList(),
+                                                manualCalories = template.calories,
+                                            ) { Toast.makeText(context, "식사 기록을 추가했어요.", Toast.LENGTH_SHORT).show() }
                                         },
                                         modifier = Modifier.weight(1f).height(58.dp),
                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                     ) {
                                         Column(Modifier.fillMaxWidth()) {
-                                            Text(if (quickMealEditMode) "삭제" else MealType.from(template.mealType).label, color = if (quickMealEditMode) MaterialTheme.colorScheme.error else AppCobalt, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                            Text(MealType.from(template.mealType).label, color = AppCobalt, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                             Text(template.items.take(2).joinToString(" · ") + if (template.items.size > 2) " 외" else "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
                                         }
                                     }
@@ -494,27 +492,39 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     }
 
     if (showWeightInput) WeightInputDialog(
-        initial = null,
+        initial = state.weights.filter { it.localDate() == selectedDate }.maxByOrNull { it.measuredAt },
         fallbackWeight = state.latestWeight?.weightKg,
         selectedDate = selectedDate,
         onDismiss = { showWeightInput = false },
         onSave = { weight, bodyFat, condition, note, measuredAt ->
-            viewModel.saveWeight(weightKg = weight, measuredAt = measuredAt, bodyFatPercent = bodyFat, condition = condition, note = note)
+            val existing = state.weights.filter { it.localDate() == selectedDate }.maxByOrNull { it.measuredAt }
+            viewModel.saveWeight(id = existing?.id, weightKg = weight, measuredAt = measuredAt, bodyFatPercent = bodyFat, condition = condition, note = note)
             showWeightInput = false
         },
     )
     if (showMealInput) MealInputDialog(viewModel, existing = null, selectedDate = selectedDate, onDismiss = { showMealInput = false }) { showMealInput = false }
     if (showQuickMealTemplateInput) QuickMealTemplateInputDialog(
         onDismiss = { showQuickMealTemplateInput = false },
-        onSave = { type, foods, note, tags ->
-            viewModel.saveQuickMealTemplate(type.name, foods, note, tags) { showQuickMealTemplateInput = false }
+        onSave = { type, foods, note, tags, calories ->
+            viewModel.saveQuickMealTemplate(type.name, foods, note, tags, calories) { showQuickMealTemplateInput = false }
         },
     )
     if (showQuickMealTemplateManager) QuickMealTemplateManagerDialog(
         templates = state.quickMealTemplates,
         onDismiss = { showQuickMealTemplateManager = false },
+        onEdit = { template ->
+            showQuickMealTemplateManager = false
+            editingQuickMealTemplate = template
+        },
         onDelete = viewModel::deleteQuickMealTemplate,
     )
+    editingQuickMealTemplate?.let { template -> QuickMealTemplateInputDialog(
+        existing = template,
+        onDismiss = { editingQuickMealTemplate = null },
+        onSave = { type, foods, note, tags, calories ->
+            viewModel.updateQuickMealTemplate(template, type.name, foods, note, tags, calories) { editingQuickMealTemplate = null }
+        },
+    ) }
     editingMeal?.let { meal -> MealInputDialog(viewModel, existing = meal, selectedDate = meal.meal.localDate(), onDismiss = { editingMeal = null }) { editingMeal = null } }
     if (showGoalInput) GoalInputDialog(
         start = state.activeGoal?.startWeightKg ?: state.latestWeight?.weightKg,
@@ -580,37 +590,40 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
 }
 
 @Composable
-private fun QuickMealTemplateInputDialog(onDismiss: () -> Unit, onSave: (MealType, List<String>, String?, Set<String>) -> Unit) {
-    var type by remember { mutableStateOf(MealType.LUNCH) }
-    var foods by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
-    var tags by remember { mutableStateOf(emptySet<String>()) }
+private fun QuickMealTemplateInputDialog(existing: MealQuickTemplate? = null, onDismiss: () -> Unit, onSave: (MealType, List<String>, String?, Set<String>, Int?) -> Unit) {
+    var type by remember(existing?.id) { mutableStateOf(existing?.let { MealType.from(it.mealType) } ?: MealType.LUNCH) }
+    var foods by remember(existing?.id) { mutableStateOf(existing?.items?.joinToString("\n").orEmpty()) }
+    var note by remember(existing?.id) { mutableStateOf(existing?.note.orEmpty()) }
+    var tags by remember(existing?.id) { mutableStateOf(existing?.tags.orEmpty()) }
+    var calories by remember(existing?.id) { mutableStateOf(existing?.calories?.toString().orEmpty()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("빠른 식사 추가", fontWeight = FontWeight.Black) },
+        title = { Text(if (existing == null) "빠른 식사 추가" else "빠른 식사 수정", fontWeight = FontWeight.Black) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(MealType.entries) { item -> FilterChip(type == item, { type = item }, label = { Text(item.label) }) } }
                 OutlinedTextField(foods, { foods = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("음식 (한 줄에 하나)") }, minLines = 3)
                 OutlinedTextField(note, { note = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("메모 (선택)") })
+                OutlinedTextField(calories, { calories = it.filter(Char::isDigit).take(5) }, Modifier.fillMaxWidth(), label = { Text("칼로리 직접 입력 (선택)") }, supportingText = { Text("빠른 식사로 기록할 때 AI 분석 없이 이 칼로리를 사용해요.") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(listOf("배고픔", "적당함", "과식", "외식", "야식")) { tag -> FilterChip(tag in tags, { tags = if (tag in tags) tags - tag else tags + tag }, label = { Text(tag) }) } }
             }
         },
         confirmButton = { Button(enabled = foods.lineSequence().any { it.isNotBlank() }, onClick = {
-            onSave(type, foods.lineSequence().flatMap { it.split(',').asSequence() }.map(String::trim).filter(String::isNotBlank).toList(), note.ifBlank { null }, tags)
-        }) { Text("추가") } },
+            onSave(type, foods.lineSequence().flatMap { it.split(',').asSequence() }.map(String::trim).filter(String::isNotBlank).toList(), note.ifBlank { null }, tags, calories.toIntOrNull())
+        }) { Text(if (existing == null) "추가" else "저장") } },
         dismissButton = { OutlinedButton(onClick = onDismiss) { Text("취소") } },
     )
 }
 
 @Composable
-private fun QuickMealTemplateManagerDialog(templates: List<MealQuickTemplate>, onDismiss: () -> Unit, onDelete: (MealQuickTemplate) -> Unit) {
+private fun QuickMealTemplateManagerDialog(templates: List<MealQuickTemplate>, onDismiss: () -> Unit, onEdit: (MealQuickTemplate) -> Unit, onDelete: (MealQuickTemplate) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("빠른 식사 관리", fontWeight = FontWeight.Black) },
         text = { LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) { items(templates, key = MealQuickTemplate::id) { template ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("${MealType.from(template.mealType).label} · ${template.items.joinToString(" · ")}", Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                IconButton(onClick = { onEdit(template) }) { Icon(Icons.Rounded.Edit, "빠른 식사 수정", tint = AppCobalt) }
                 IconButton(onClick = { onDelete(template) }) { Icon(Icons.Rounded.DeleteOutline, "빠른 식사 삭제", tint = MaterialTheme.colorScheme.error) }
             }
         } } },
@@ -841,7 +854,7 @@ private fun moveMonthWeek(date: LocalDate, direction: Int): LocalDate {
 }
 
 @Composable
-private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dailyCalories: List<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity>, healthActivity: List<com.sorimpower.app.feature.bodylog.data.DailyHealthActivityEntity>, latestWeightKg: Double?, targetWeightKg: Double?, weightsHidden: Boolean) {
+private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dailyCalories: List<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity>, healthActivity: List<com.sorimpower.app.feature.bodylog.data.DailyHealthActivityEntity>, latestWeightKg: Double?, firstWeightKg: Double?, targetWeightKg: Double?, weightsHidden: Boolean) {
     var selectedPoint by remember(points) { mutableStateOf<ChartPoint?>(null) }
     val primaryColor = MaterialTheme.colorScheme.primary
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
@@ -857,12 +870,12 @@ private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dail
             if (points.isEmpty()) {
                 Box(Modifier.fillMaxWidth().height(190.dp), contentAlignment = Alignment.Center) { Text("이 기간에는 체중 기록이 없어요.") }
             } else {
-                val displayMin = 70.0
-                val displayMax = 90.0
+                // Keep a stable personal scale: the first entered weight is the reference point.
+                val referenceWeight = firstWeightKg ?: points.minByOrNull(ChartPoint::timestamp)?.value ?: 80.0
+                val displayMin = referenceWeight - 20.0
+                val displayMax = referenceWeight + 10.0
                 val displayRange = displayMax - displayMin
-                val yAxisValues = generateSequence(displayMin) { it + 5.0 }
-                    .takeWhile { it <= displayMax + 0.001 }
-                    .toList()
+                val yAxisValues = List(7) { displayMin + it * 5.0 }
                 selectedPoint?.let { point ->
                     Row(
                         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp),
@@ -1599,6 +1612,7 @@ private fun MealInputDialog(viewModel: BodyLogViewModel, existing: MealWithDetai
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     var recordDate by remember(existing?.meal?.id, selectedDate) { mutableStateOf(existing?.meal?.localDate() ?: selectedDate) }
     var recordTime by remember(existing?.meal?.id) { mutableStateOf(timeForTimestamp(existing?.meal?.eatenAt)) }
+    var manualCalories by remember(existing?.meal?.id) { mutableStateOf("") }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(3)) { selected -> photos = (photos + selected).distinct().take((3 - retainedPhotos.size).coerceAtLeast(0)) }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success -> if (success) pendingCameraUri?.let { photos = (photos + it).take((3 - retainedPhotos.size).coerceAtLeast(0)) } }
     AlertDialog(
@@ -1611,6 +1625,7 @@ private fun MealInputDialog(viewModel: BodyLogViewModel, existing: MealWithDetai
                 item { LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(MealType.entries) { item -> FilterChip(selected = type == item, onClick = { type = item }, label = { Text(item.label) }) } } }
                 item { OutlinedTextField(foods, { foods = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("먹은 음식 (한 줄에 하나)") }, minLines = 3) }
                 item { OutlinedTextField(note, { note = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("메모 (선택)") }) }
+                item { OutlinedTextField(manualCalories, { manualCalories = it.filter(Char::isDigit).take(5) }, Modifier.fillMaxWidth(), label = { Text("칼로리 직접 입력 (선택)") }, supportingText = { Text("입력하면 AI 칼로리 분석을 실행하지 않아요.") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true) }
                 item { LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(listOf("배고픔", "적당함", "과식", "외식", "야식")) { tag -> FilterChip(selected = tag in tags, onClick = { tags = if (tag in tags) tags - tag else tags + tag }, label = { Text(tag) }) } } }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1649,7 +1664,7 @@ private fun MealInputDialog(viewModel: BodyLogViewModel, existing: MealWithDetai
             Button(enabled = foods.lineSequence().any { it.isNotBlank() }, onClick = {
                 val items = foods.lineSequence().flatMap { it.split(',').asSequence() }.filter { it.isNotBlank() }.map { MealItemInput(it.trim()) }.toList()
                 val eatenAt = timestampForDate(recordDate, recordTime)
-                viewModel.saveMeal(existing, eatenAt, type.name, items, note, tags, photos, retainedPhotos.map { it.id }.toSet()) {
+                viewModel.saveMeal(existing, eatenAt, type.name, items, note, tags, photos, retainedPhotos.map { it.id }.toSet(), manualCalories.toIntOrNull()) {
                     cameraFiles.forEach(File::delete)
                     onSaved()
                 }

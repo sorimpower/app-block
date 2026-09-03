@@ -208,6 +208,9 @@ interface BodyLogDao {
     @Query("SELECT * FROM exercise_entries ORDER BY exercisedAt DESC")
     fun observeExercises(): Flow<List<ExerciseEntryEntity>>
 
+    @Query("SELECT * FROM exercise_entries WHERE id = :exerciseId LIMIT 1")
+    suspend fun exercise(exerciseId: String): ExerciseEntryEntity?
+
     @Query("SELECT * FROM daily_health_activity ORDER BY dateEpochDay DESC")
     fun observeHealthActivity(): Flow<List<DailyHealthActivityEntity>>
 
@@ -233,6 +236,9 @@ interface BodyLogDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMealCalorieEstimate(value: MealCalorieEstimateEntity)
+
+    @Query("DELETE FROM meal_calorie_estimates WHERE mealId = :mealId")
+    suspend fun deleteMealCalorieEstimate(mealId: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertDailyCalorieSummary(value: DailyCalorieSummaryEntity)

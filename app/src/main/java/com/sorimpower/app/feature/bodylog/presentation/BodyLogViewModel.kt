@@ -19,6 +19,7 @@ import com.sorimpower.app.feature.bodylog.domain.BodyLogState
 import com.sorimpower.app.feature.bodylog.domain.BodyLogAiAnalysis
 import com.sorimpower.app.feature.bodylog.reminder.MounjaroReminder
 import com.sorimpower.app.feature.bodylog.reminder.MealCalorieAnalysisScheduler
+import com.sorimpower.app.feature.bodylog.reminder.ExerciseCalorieAnalysisScheduler
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -143,11 +144,12 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
         note: String?,
         onSaved: () -> Unit,
     ) = viewModelScope.launch {
-        repository.saveExercise(existing, exercisedAt, exerciseType, durationMinutes, intensity, caloriesBurned, note)
+        val saved = repository.saveExercise(existing, exercisedAt, exerciseType, durationMinutes, intensity, caloriesBurned, note)
+        if (caloriesBurned == null) ExerciseCalorieAnalysisScheduler.enqueue(getApplication(), saved.id)
         onSaved()
     }
 
-    fun deleteExercise(exercise: ExerciseEntryEntity) = viewModelScope.launch { repository.deleteExercise(exercise) }
+    fun deleteExercise(exercise: ExerciseEntryEntity) = viewModelScope.launch { ExerciseCalorieAnalysisScheduler.cancel(getApplication(), exercise.id); repository.deleteExercise(exercise) }
 
     fun syncHealthConnect() = viewModelScope.launch {
         _healthSyncMessage.value = null
@@ -223,19 +225,25 @@ class BodyLogViewModel(application: Application) : AndroidViewModel(application)
         tags: Set<String>,
         photoUris: List<Uri>,
         retainedPhotoIds: Set<String> = emptySet(),
+        manualCalories: Int? = null,
         onSaved: () -> Unit,
     ) = viewModelScope.launch {
-        val result = repository.saveMeal(existing, mealType, eatenAt, items, note, tags, photoUris, retainedPhotoIds)
+        val result = repository.saveMeal(existing, mealType, eatenAt, items, note, tags, photoUris, retainedPhotoIds, manualCalories)
         onSaved()
-        result.calorieAnalysisMealIds.forEach { MealCalorieAnalysisScheduler.enqueue(getApplication(), it) }
+        if (manualCalories != null) MealCalorieAnalysisScheduler.cancel(getApplication(), result.mealId)
+        else result.calorieAnalysisMealIds.forEach { MealCalorieAnalysisScheduler.enqueue(getApplication(), it) }
     }
 
     fun deleteMeal(meal: MealWithDetails) = viewModelScope.launch {
         MealCalorieAnalysisScheduler.cancel(getApplication(), meal.meal.id)
         repository.deleteMeal(meal)
     }
-    fun saveQuickMealTemplate(mealType: String, items: List<String>, note: String?, tags: Set<String>, onSaved: () -> Unit) = viewModelScope.launch {
-        repository.saveQuickMealTemplate(mealType, items, note, tags)
+    fun saveQuickMealTemplate(mealType: String, items: List<String>, note: String?, tags: Set<String>, calories: Int?, onSaved: () -> Unit) = viewModelScope.launch {
+        repository.saveQuickMealTemplate(mealType, items, note, tags, calories)
+        onSaved()
+    }
+    fun updateQuickMealTemplate(template: MealQuickTemplate, mealType: String, items: List<String>, note: String?, tags: Set<String>, calories: Int?, onSaved: () -> Unit) = viewModelScope.launch {
+        repository.updateQuickMealTemplate(template.id, mealType, items, note, tags, calories)
         onSaved()
     }
     fun deleteQuickMealTemplate(template: MealQuickTemplate) = viewModelScope.launch { repository.deleteQuickMealTemplate(template.id) }

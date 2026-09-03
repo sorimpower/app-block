@@ -18,8 +18,7 @@ internal class AiModelRouter(context: Context) {
         AiTaskType.HEALTH_SCREENING_OPTION_RECOMMENDATION,
         AiTaskType.AUCTION_RIGHTS_ANALYSIS,
         AiTaskType.PHONE_INSIGHT_BATCH,
-        AiTaskType.PERSPECTIVE_TOPIC_SUGGESTION,
-        AiTaskType.PERSPECTIVE_METADATA_ANALYSIS,
+        AiTaskType.YOUTUBE_INTEREST_HISTORY_ANALYSIS,
         -> openAi.generate(model, request)
     }
 }

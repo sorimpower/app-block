@@ -1,9 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.google.services)
+}
+
+val releaseKeystoreProperties = Properties().apply {
+    val propertiesFile = rootProject.file("keystore.properties")
+    if (propertiesFile.isFile) {
+        propertiesFile.inputStream().use(::load)
+    }
 }
 
 android {
@@ -14,8 +23,8 @@ android {
         applicationId = "com.sorimpower.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 138
-        versionName = "0.15.3"
+        versionCode = 139
+        versionName = "0.15.4"
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -23,6 +32,22 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+    signingConfigs {
+        create("release") {
+            val storeFilePath = releaseKeystoreProperties.getProperty("storeFile")
+            if (storeFilePath != null) {
+                storeFile = rootProject.file(storeFilePath)
+                storePassword = releaseKeystoreProperties.getProperty("storePassword")
+                keyAlias = releaseKeystoreProperties.getProperty("keyAlias")
+                keyPassword = releaseKeystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
 }
 
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }

@@ -1,513 +1,160 @@
 package com.sorimpower.app.feature.perspective.data
 
 import android.content.Context
-import com.sorimpower.app.feature.perspective.reminder.TopicSuggestionNotifier
+import com.sorimpower.app.core.ai.AiModelRouter
+import com.sorimpower.app.core.ai.AiModelId
+import com.sorimpower.app.core.ai.AiRequest
+import com.sorimpower.app.core.ai.AiTaskType
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
 import java.security.MessageDigest
-import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.temporal.TemporalAdjusters
+import java.time.temporal.WeekFields
+import java.util.Locale
 import java.util.UUID
 
-data class PerspectiveState(
-    val topics: List<PerspectiveTopicEntity> = emptyList(),
-    val topicSuggestions: List<TopicSuggestionEntity> = emptyList(),
-    val videos: List<WatchedVideoEntity> = emptyList(),
-    val videoTopics: List<VideoTopicEntity> = emptyList(),
-    val analyses: List<VideoAnalysisEntity> = emptyList(),
-    val perspectives: List<PerspectiveEntity> = emptyList(),
-    val recommendedVideos: List<PerspectiveRecommendedVideoEntity> = emptyList(),
-    val nodes: List<ThoughtNodeEntity> = emptyList(),
-    val edges: List<ThoughtEdgeEntity> = emptyList(),
-    val moments: List<ExpansionMomentEntity> = emptyList(),
-    val reports: List<WeeklyPerspectiveReportEntity> = emptyList(),
-    val loaded: Boolean = false,
-) {
-    fun topicName(id: String): String = topics.firstOrNull { it.id == id }?.name ?: "기타"
-    fun videoTopicIds(videoId: String): Set<String> = videoTopics.filter { it.videoId == videoId }.mapTo(mutableSetOf(), VideoTopicEntity::topicId)
+enum class InterestPeriod(val label: String, val type: String) {
+    DAY("매일", "day"), WEEK("매주", "week"), MONTH("매월", "month"), YEAR("매년", "year");
 }
 
-data class CrossTopicVideoRecommendation(
-    val topic: String,
-    val video: YoutubeRecommendation,
-)
-
-private data class PerspectiveCoreState(
-    val topics: List<PerspectiveTopicEntity>,
-    val videos: List<WatchedVideoEntity>,
-    val videoTopics: List<VideoTopicEntity>,
-    val analyses: List<VideoAnalysisEntity>,
-    val perspectives: List<PerspectiveEntity>,
-    val recommendedVideos: List<PerspectiveRecommendedVideoEntity>,
+data class InterestCategory(val name: String, val percentage: Int)
+data class PersonalInterestInsight(val label: String, val text: String)
+data class PerspectiveState(
+    val videos: List<WatchedVideoEntity> = emptyList(),
+    val analyses: List<InterestPeriodAnalysisEntity> = emptyList(),
+    val loaded: Boolean = false,
 )
 
 class PerspectiveRepository(context: Context) {
     private val appContext = context.applicationContext
-    private val interestProfilePreferences = appContext.getSharedPreferences("perspective_interest_profile", Context.MODE_PRIVATE)
     private val dao = PerspectiveDatabase.get(appContext).dao()
-    private val terraAnalyzer = TerraPerspectiveAnalyzer(appContext)
-    private val interestCommentAnalyzer = TerraInterestCommentAnalyzer(appContext)
-    private val geminiAnalyzer = GeminiPerspectiveAnalyzer(appContext)
-    private val youtubeVideoResolver = YoutubeVideoResolver()
-    private val youtubePerspectiveSearch = YoutubePerspectiveSearch()
-    private val topicSuggester = OpenAiTopicSuggester(appContext)
+    private val router = AiModelRouter(appContext)
+    private val youtubeHistoryResolver = YoutubeHistoryResolver()
 
-    val state: Flow<PerspectiveState> = combine(
-        dao.observeTopics(), dao.observeVideos(), dao.observeVideoTopics(), dao.observeAnalyses(), dao.observePerspectives(),
-    ) { topics, videos, videoTopics, analyses, perspectives ->
-        PerspectiveCoreState(topics, videos, videoTopics, analyses, perspectives, emptyList())
-    }.combine(dao.observeRecommendedVideos()) { core, recommendedVideos ->
-        core.copy(recommendedVideos = recommendedVideos)
-    }.combine(dao.observeNodes()) { core, nodes ->
-        PerspectiveState(topics = core.topics, videos = core.videos, videoTopics = core.videoTopics, analyses = core.analyses, perspectives = core.perspectives, recommendedVideos = core.recommendedVideos, nodes = nodes)
-    }
-        .combine(dao.observeEdges()) { state, edges -> state.copy(edges = edges) }
-        .combine(dao.observeMoments()) { state, moments -> state.copy(moments = moments) }
-        .combine(dao.observeTopicSuggestions()) { state, suggestions -> state.copy(topicSuggestions = suggestions) }
-        .combine(dao.observeReports()) { state, reports -> state.copy(reports = reports, loaded = true) }
-
-    suspend fun initialize() = withContext(Dispatchers.IO) {
-        generateWeeklyReport()
+    val state: Flow<PerspectiveState> = combine(dao.observeVideos(), dao.observeAnalyses()) { videos, analyses ->
+        PerspectiveState(videos = videos, analyses = analyses, loaded = true)
     }
 
-    fun interestProfile(): InterestProfile = InterestProfile(
-        ageGroup = interestProfilePreferences.getString("age_group", "").orEmpty(),
-        gender = interestProfilePreferences.getString("gender", "").orEmpty(),
-        lifeInterests = interestProfilePreferences.getStringSet("life_interests", emptySet()).orEmpty(),
-        viewingPurpose = interestProfilePreferences.getString("viewing_purpose", "").orEmpty(),
-        analysisTone = interestProfilePreferences.getString("analysis_tone", "").orEmpty(),
-    )
+    /** Clears periodic work created by earlier app versions. Analyses now run only from the button. */
+    suspend fun initialize() = withContext(Dispatchers.IO) { InterestAnalysisScheduler.cancel(appContext) }
 
-    fun saveInterestProfile(profile: InterestProfile) {
-        interestProfilePreferences.edit()
-            .putString("age_group", profile.ageGroup)
-            .putString("gender", profile.gender)
-            .putStringSet("life_interests", profile.lifeInterests)
-            .putString("viewing_purpose", profile.viewingPurpose)
-            .putString("analysis_tone", profile.analysisTone)
-            .apply()
-    }
-
-    suspend fun analyzeInterest(days: Long, profile: InterestProfile = interestProfile()): InterestAiComment = withContext(Dispatchers.IO) {
-        val from = System.currentTimeMillis() - days * 86_400_000L
-        val videos = dao.videoSnapshot().filter { it.source != "share" && it.watchedAt >= from && it.watchedSec >= MINIMUM_WATCH_SECONDS }
-        require(videos.isNotEmpty()) { "분석할 시청 기록이 아직 없어요." }
-        val topics = dao.topics()
-        val links = dao.videoTopicSnapshot().filter { link -> videos.any { it.id == link.videoId } }
-        val counts = links.groupingBy(VideoTopicEntity::topicId).eachCount()
-        val total = counts.values.sum().coerceAtLeast(1)
-        val exposureSummary = counts.entries.sortedByDescending(Map.Entry<String, Int>::value).take(7).joinToString("\n") { (topicId, count) ->
-            val name = topics.firstOrNull { it.id == topicId }?.name ?: "기타"
-            "- $name: ${count * 100 / total}% (${count}개)"
-        }
-        val videoSummary = videos.sortedByDescending(WatchedVideoEntity::watchedAt).take(12).joinToString("\n") { video ->
-            "- ${video.title.take(100)} / ${video.channelName.take(40)}"
-        }
-        val periodLabel = when (days) { 7L -> "이번 주"; 31L -> "이번 달"; else -> "올해" }
-        interestCommentAnalyzer.analyze(periodLabel, exposureSummary, videoSummary, profile)
-    }
-
-    suspend fun crossTopicVideoRecommendations(currentTopics: List<String>): List<CrossTopicVideoRecommendation> = withContext(Dispatchers.IO) {
-        val candidates = listOf(
-            "AI와 직업" to "AI 일자리 변화 직업 전망",
-            "수면과 집중력" to "수면 집중력 개선 과학",
-            "인구 변화" to "한국 인구 감소 변화 분석",
-            "근력 운동" to "근력 운동 초보 루틴 과학",
-        ).filter { (topic, _) -> currentTopics.none { it.contains(topic) || topic.contains(it) } }.take(3)
-        val found = youtubePerspectiveSearch.find(candidates.map { it.second })
-        candidates.mapNotNull { (topic, query) ->
-            found[query]?.firstOrNull()?.let { video -> CrossTopicVideoRecommendation(topic, video) }
-        }
-    }
-
-    suspend fun resolveWatchedVideoPlayback(video: WatchedVideoEntity): WatchedVideoPlayback? = withContext(Dispatchers.IO) {
-        val knownVideoId = video.youtubeVideoId.takeIf(::isVideoId) ?: extractYoutubeVideoId(video.url)
-        if (knownVideoId != null) {
-            val canonicalUrl = "https://www.youtube.com/watch?v=$knownVideoId"
-            if (video.youtubeVideoId != knownVideoId || video.url != canonicalUrl) {
-                dao.updateVideoAddress(video.id, knownVideoId, canonicalUrl)
-            }
-            return@withContext WatchedVideoPlayback(
-                videoId = knownVideoId,
-                url = canonicalUrl,
-                thumbnailUrl = "https://i.ytimg.com/vi/$knownVideoId/mqdefault.jpg",
-            )
-        }
-
-        val resolved = youtubeVideoResolver.resolve(null, video.title, video.channelName)
-        if (resolved != null) {
-            dao.updateVideoAddress(video.id, resolved.videoId, resolved.url)
-            return@withContext WatchedVideoPlayback(
-                videoId = resolved.videoId,
-                url = resolved.url,
-                thumbnailUrl = resolved.thumbnailUrl.ifBlank { "https://i.ytimg.com/vi/${resolved.videoId}/mqdefault.jpg" },
-            )
-        }
-
-        val query = listOf(video.title, video.channelName).filter(String::isNotBlank).joinToString(" ")
-        val found = youtubePerspectiveSearch.find(listOf(query))[query]?.firstOrNull() ?: return@withContext null
-        dao.updateVideoAddress(video.id, found.videoId, found.url)
-        WatchedVideoPlayback(found.videoId, found.url, found.thumbnailUrl.ifBlank { "https://i.ytimg.com/vi/${found.videoId}/mqdefault.jpg" })
-    }
-
-    suspend fun setTopicEnabled(id: String, enabled: Boolean) = dao.setTopicEnabled(id, enabled)
-
-    suspend fun deleteWatchRecord(videoId: String) = withContext(Dispatchers.IO) {
-        dao.deleteVideoAndRelated(videoId)
-        generateWeeklyReport()
-    }
-
-    suspend fun updateTopic(id: String, name: String, description: String) = withContext(Dispatchers.IO) {
-        val normalizedName = name.trim().take(30)
-        require(normalizedName.isNotBlank()) { "주제 이름을 입력해 주세요." }
-        val current = dao.topic(id) ?: error("수정할 주제를 찾지 못했어요.")
-        val duplicate = dao.topicByName(normalizedName)
-        require(duplicate == null || duplicate.id == id) { "같은 이름의 주제가 이미 있어요." }
-        dao.upsertTopics(
-            listOf(
-                current.copy(
-                    name = normalizedName,
-                    description = description.trim().take(100),
-                    updatedAt = System.currentTimeMillis(),
-                ),
-            ),
-        )
-        generateWeeklyReport()
-    }
-
-    suspend fun recordPlayback(
-        title: String,
-        channel: String,
-        mediaId: String?,
-        durationSec: Long,
-        watchedSec: Long,
-        playbackEnded: Boolean = false,
-    ): WatchedVideoEntity? = withContext(Dispatchers.IO) {
+    /** Playback detection only collects local history. It never calls AI per video. */
+    suspend fun recordPlayback(title: String, channel: String, mediaId: String?, durationSec: Long, watchedSec: Long, playbackEnded: Boolean = false): WatchedVideoEntity? = withContext(Dispatchers.IO) {
         if (title.isBlank()) return@withContext null
         val youtubeId = mediaId?.takeIf(::isVideoId) ?: "auto_${sha256(title.trim().lowercase()).take(24)}"
-        val url = if (isVideoId(youtubeId)) "https://www.youtube.com/watch?v=$youtubeId" else ""
-        saveVideo(youtubeId, url, title.trim(), channel.trim(), "auto", durationSec, watchedSec, playbackEnded)
-    }
-
-    /** YouTube 공유 메뉴에서 들어온 URL은 사용자가 분석을 눌렀을 때만 저장하고 관점을 만든다. */
-    suspend fun analyzeSharedUrl(url: String): VideoAnalysisEntity = withContext(Dispatchers.IO) {
-        val youtubeId = extractYoutubeVideoId(url) ?: error("올바른 YouTube 영상 주소를 찾지 못했어요.")
-        val context = youtubeVideoResolver.resolve(youtubeId, "", "")
-            ?: error("YouTube 공개 정보를 불러오지 못했어요.")
-        val video = saveVideo(
-            youtubeId = context.videoId,
-            url = context.url,
-            title = context.title.ifBlank { "공유한 YouTube 영상" },
-            channel = context.channelName,
-            source = "share",
-            durationSec = 0,
-            watchedSec = 0,
-        )
-        if (dao.topicIdsForVideo(video.id).isEmpty()) {
-            val currentSuggestion = dao.topicSuggestion(video.id)
-            if (currentSuggestion == null || currentSuggestion.status !in setOf("pending", "approved")) {
-                suggestTopic(video)
-            }
-            dao.topicSuggestion(video.id)?.takeIf { it.status == "pending" }?.let { acceptTopicSuggestion(video.id) }
-        }
-        check(dao.topicIdsForVideo(video.id).isNotEmpty()) { "영상의 주제를 분류하지 못했어요. 잠시 후 다시 시도해 주세요." }
-        deepAnalyze(video.id)
-    }
-
-    private fun extractYoutubeVideoId(value: String): String? = runCatching {
-        val uri = android.net.Uri.parse(value.trim())
-        when {
-            uri.host?.contains("youtu.be", ignoreCase = true) == true -> uri.pathSegments.firstOrNull()
-            uri.pathSegments.firstOrNull() == "shorts" -> uri.pathSegments.getOrNull(1)
-            else -> uri.getQueryParameter("v")
-        }?.takeIf(::isVideoId)
-    }.getOrNull()
-
-    private suspend fun saveVideo(
-        youtubeId: String,
-        url: String,
-        title: String,
-        channel: String,
-        source: String,
-        durationSec: Long,
-        watchedSec: Long,
-        playbackEnded: Boolean = false,
-    ): WatchedVideoEntity {
         val existing = dao.videoByYoutubeId(youtubeId)
-            // URL을 나중에 찾은 기존 기록도 다시 auto ID로 들어오는 MediaSession 갱신과 합친다.
             ?: youtubeId.takeUnless(::isVideoId)?.let { dao.latestVideoByTitleAndChannel(title.trim(), channel.trim()) }
-        val now = System.currentTimeMillis()
-        // MediaSession이 ID를 주지 않는 기기에서도 이전에 해석해 둔 실제 YouTube ID를
-        // 유지해야 추천 영상 시청 여부를 안정적으로 연결할 수 있다.
-        val resolvedYoutubeId = youtubeId.takeIf(::isVideoId) ?: existing?.youtubeVideoId ?: youtubeId
+        val resolvedId = youtubeId.takeIf(::isVideoId) ?: existing?.youtubeVideoId ?: youtubeId
         val item = WatchedVideoEntity(
-            id = existing?.id ?: UUID.randomUUID().toString(),
-            youtubeVideoId = resolvedYoutubeId,
-            url = url.ifBlank { existing?.url.orEmpty() },
-            title = title.ifBlank { existing?.title ?: "YouTube 영상" },
-            channelName = channel.ifBlank { existing?.channelName.orEmpty() },
-            durationSec = maxOf(durationSec, existing?.durationSec ?: 0),
-            watchedSec = maxOf(watchedSec, existing?.watchedSec ?: 0),
-            watchedAt = now,
-            // 공유 분석 뒤 실제 재생이 감지되면 일반 시청으로 승격하고,
-            // 이미 감지한 시청 기록을 나중의 공유 분석이 덮어쓰지는 않는다.
-            source = when {
-                source == "auto" -> "auto"
-                existing != null -> existing.source
-                else -> source
-            },
-            analysisStatus = existing?.analysisStatus ?: "unclassified",
-            playbackEnded = playbackEnded,
-            contentHash = sha256("$resolvedYoutubeId|$title|$channel"),
+            id = existing?.id ?: UUID.randomUUID().toString(), youtubeVideoId = resolvedId,
+            url = if (isVideoId(resolvedId)) "https://www.youtube.com/watch?v=$resolvedId" else existing?.url.orEmpty(),
+            title = title.trim().ifBlank { existing?.title ?: "YouTube 영상" }, channelName = channel.trim().ifBlank { existing?.channelName.orEmpty() },
+            durationSec = maxOf(durationSec, existing?.durationSec ?: 0), watchedSec = maxOf(watchedSec, existing?.watchedSec ?: 0),
+            watchedAt = System.currentTimeMillis(), source = "auto", analysisStatus = "collected", playbackEnded = playbackEnded,
+            contentHash = sha256("$resolvedId|$title|$channel"),
         )
         dao.upsertVideo(item)
-        val meaningful = item.source != "share" && item.watchedSec >= MINIMUM_WATCH_SECONDS
-        // 추천 영상을 단순히 연 것이 아니라 실제로 5분 이상 시청한 경우에만
-        // '사고 확장'으로 확정한다. MediaSession에 ID가 없는 경우에는 추천 카드의
-        // 정확한 제목·채널도 함께 대조한다.
-        if (meaningful) {
-            for (perspective in dao.openedPerspectivesForRecommendation(item.youtubeVideoId, item.title, item.channelName)) {
-                markPerspectiveVisited(perspective.id)
-            }
-        }
-        val previousSuggestion = dao.topicSuggestion(item.id)
-        val retryFailed = previousSuggestion?.status == "failed" && (
-            previousSuggestion.model != TOPIC_MODEL || System.currentTimeMillis() - previousSuggestion.updatedAt >= TOPIC_RETRY_INTERVAL_MS
-        )
-        if (meaningful && dao.topicIdsForVideo(item.id).isEmpty() && (previousSuggestion == null || retryFailed)) {
-            suggestTopic(item)
-        }
-        if (playbackEnded && isExploreEligible(item)) notifyExistingTopicExplore(item)
-        generateWeeklyReport()
-        return item
+        item
     }
 
-    private suspend fun suggestTopic(video: WatchedVideoEntity) {
-        val processing = TopicSuggestionEntity(videoId = video.id, proposedName = "", model = TOPIC_MODEL, status = "processing")
-        dao.upsertTopicSuggestion(processing)
-        runCatching { topicSuggester.suggest(video, dao.topics().filter(PerspectiveTopicEntity::enabled)) }
-            .onSuccess { result ->
-                val existingTopic = result.existingTopicId?.let { dao.topic(it) }
-                    ?: result.proposedName.takeIf(String::isNotBlank)?.let { dao.topicByName(it) }
-                if (existingTopic != null) {
-                    linkVideoToTopic(video, existingTopic, result.confidence)
-                    dao.upsertTopicSuggestion(processing.copy(
-                        proposedName = existingTopic.name,
-                        description = existingTopic.description,
-                        confidence = result.confidence,
-                        status = "approved",
-                        updatedAt = System.currentTimeMillis(),
-                    ))
-                    dao.video(video.id)?.takeIf(::isExploreEligible)
-                        ?.takeIf(WatchedVideoEntity::playbackEnded)
-                        ?.let { notifyExistingTopicExplore(it) }
-                } else {
-                    val suggestion = processing.copy(
-                        proposedName = result.proposedName,
-                        description = result.description,
-                        confidence = result.confidence,
-                        status = "pending",
-                        updatedAt = System.currentTimeMillis(),
-                    )
-                    dao.upsertTopicSuggestion(suggestion)
-                    TopicSuggestionNotifier.show(appContext, suggestion, video)
-                }
-            }
-            .onFailure {
-                dao.upsertTopicSuggestion(processing.copy(status = "failed", updatedAt = System.currentTimeMillis()))
-            }
-    }
+    suspend fun deleteWatchRecord(videoId: String) = withContext(Dispatchers.IO) { dao.deleteVideo(videoId) }
 
-    /** 주제 분류는 재생 중에 끝나도 되지만, 다른 관점 알림은 영상 종료 시점에만 보낸다. */
-    private suspend fun notifyExistingTopicExplore(video: WatchedVideoEntity) {
-        val suggestion = dao.topicSuggestion(video.id)?.takeIf { it.status == "approved" } ?: return
-        val topicId = dao.topicIdsForVideo(video.id).firstOrNull() ?: return
-        val topic = dao.topic(topicId) ?: return
-        if (TopicSuggestionNotifier.showExplore(appContext, topic, video)) {
-            dao.setTopicSuggestionStatus(video.id, "explore_notified")
+    suspend fun resolveWatchedVideoPlayback(video: WatchedVideoEntity): WatchedVideoPlayback? = withContext(Dispatchers.IO) {
+        video.youtubeVideoId.takeIf(::isVideoId)?.let { id ->
+            val url = "https://www.youtube.com/watch?v=$id"
+            if (video.url != url) dao.updateVideoAddress(video.id, id, url)
+            return@withContext WatchedVideoPlayback(id, url, "https://i.ytimg.com/vi/$id/mqdefault.jpg")
+        }
+        youtubeHistoryResolver.resolve(video.title, video.channelName)?.also { resolved ->
+            resolved.videoId?.let { dao.updateVideoAddress(video.id, it, resolved.url) }
         }
     }
 
-    private fun isExploreEligible(video: WatchedVideoEntity): Boolean =
-        video.source != "share" && video.watchedSec >= MINIMUM_WATCH_SECONDS
-
-    suspend fun acceptTopicSuggestion(videoId: String) = withContext(Dispatchers.IO) {
-        val suggestion = dao.topicSuggestion(videoId)?.takeIf { it.status == "pending" } ?: return@withContext
-        val video = dao.video(videoId) ?: return@withContext
-        val topic = dao.topicByName(suggestion.proposedName) ?: PerspectiveTopicEntity(
-            id = "user_${sha256(suggestion.proposedName.lowercase()).take(16)}",
-            name = suggestion.proposedName,
-            description = suggestion.description,
-            enabled = true,
-            userApproved = true,
-        ).also { dao.upsertTopics(listOf(it)) }
-        linkVideoToTopic(video, topic, suggestion.confidence)
-        dao.setTopicSuggestionStatus(videoId, "approved")
-        TopicSuggestionNotifier.cancel(appContext, videoId)
-        generateWeeklyReport()
+    suspend fun runDueAnalyses() = withContext(Dispatchers.IO) {
+        InterestPeriod.entries.forEach { period ->
+            val window = window(period)
+            if (dao.analysis(period.type, window.key) == null) analyze(period, force = false)
+        }
     }
 
-    suspend fun dismissTopicSuggestion(videoId: String) = withContext(Dispatchers.IO) {
-        dao.setTopicSuggestionStatus(videoId, "dismissed")
-        TopicSuggestionNotifier.cancel(appContext, videoId)
-    }
-
-    private suspend fun linkVideoToTopic(video: WatchedVideoEntity, topic: PerspectiveTopicEntity, confidence: Double) {
-        dao.upsertVideoTopics(listOf(VideoTopicEntity(video.id, topic.id, confidence)))
-        dao.upsertNodes(listOf(
-            ThoughtNodeEntity("video:${video.id}:${topic.id}", topic.id, "video", videoId = video.id, label = video.title, status = "visited"),
-        ))
-        dao.upsertVideo(video.copy(analysisStatus = if (video.analysisStatus == "deepAnalyzed") video.analysisStatus else "classified"))
-    }
-
-    /** 기본은 Terra의 풍부한 공개 정보 분석, premiumVideo는 Gemini의 실제 영상·음성 분석이다. */
-    suspend fun deepAnalyze(videoId: String, premiumVideo: Boolean = false): VideoAnalysisEntity = withContext(Dispatchers.IO) {
-        val video = dao.video(videoId) ?: error("영상을 찾지 못했어요.")
-        val topicNames = dao.topics().filter(PerspectiveTopicEntity::enabled).joinToString(", ", transform = PerspectiveTopicEntity::name)
-        if (topicNames.isBlank()) error("먼저 알림이나 주제 관리에서 추천 주제를 등록해 주세요.")
-        val context = youtubeVideoResolver.resolve(
-            video.youtubeVideoId.takeIf(::isVideoId),
-            video.title,
-            video.channelName,
-        ) ?: error("YouTube 공개 정보에서 정확히 일치하는 영상을 찾지 못했어요. 다른 영상을 분석하지 않기 위해 중단했습니다.")
-        val analysisVideo = if (video.url != context.url || video.youtubeVideoId != context.videoId) {
-            dao.updateVideoAddress(video.id, context.videoId, context.url)
-            video.copy(youtubeVideoId = context.videoId, url = context.url)
-        } else video
-        val sourceHash = sha256("${analysisVideo.contentHash}|${context.description}|${context.tags}|${context.chapters}|${context.transcript}")
-        val cached = dao.analysis(videoId)
-        val cachedPremium = cached?.model == GEMINI_VIDEO_MODEL
-        if (cached != null && cached.sourceHash == sourceHash && cached.promptVersion == PROMPT_VERSION && (!premiumVideo || cachedPremium)) return@withContext cached
-        val result = if (premiumVideo) geminiAnalyzer.analyzeVideo(analysisVideo, topicNames) else terraAnalyzer.analyze(analysisVideo, context, topicNames)
-        val analysis = VideoAnalysisEntity(
-            videoId = video.id,
-            topic = result.topic,
-            mainClaim = result.mainClaim,
-            subClaimsJson = jsonArray(result.subClaims),
-            evidenceJson = jsonArray(result.evidence),
-            assumptionsJson = jsonArray(result.assumptions),
-            stakeholdersJson = jsonArray(result.stakeholders),
-            missingPerspectivesJson = jsonArray(result.perspectives.map(DeepPerspective::label)),
-            confidence = result.confidence,
-            model = result.model,
-            promptVersion = PROMPT_VERSION,
-            sourceHash = sourceHash,
-            analysisBasis = if (premiumVideo) "실제 영상·음성 + YouTube 공개 정보" else buildList {
-                add("제목·채널·설명·태그·챕터·공개 메타데이터")
-                if (context.hasTranscript) add("공개 자막")
-            }.joinToString(" + "),
-            transcriptIncluded = context.hasTranscript && !premiumVideo,
-        )
+    suspend fun analyze(period: InterestPeriod, force: Boolean = true): InterestPeriodAnalysisEntity = withContext(Dispatchers.IO) {
+        val window = window(period)
+        dao.analysis(period.type, window.key)?.takeUnless { force }?.let { return@withContext it }
+        val videos = dao.videos().filter { it.source == "auto" && it.watchedAt >= window.from && it.watchedAt < window.until }
+        require(videos.isNotEmpty()) { "${period.label} 분석을 위한 시청 기록이 아직 없어요." }
+        val previous = dao.analyses(period.type).firstOrNull { it.periodKey != window.key }
+        val result = analyzeWithAi(period, window.label, videos, previous)
+        val analysis = InterestPeriodAnalysisEntity(period.type, window.key, window.label, videos.size, result.categories.toJson(), result.summary, result.trendSummary, result.personalInsights.toInsightsJson())
         dao.upsertAnalysis(analysis)
-        dao.upsertVideo(analysisVideo.copy(analysisStatus = "deepAnalyzed"))
-        val enabledTopics = dao.topics().filter(PerspectiveTopicEntity::enabled)
-        val linkedTopicId = dao.topicIdsForVideo(video.id).firstOrNull()
-        val topic = linkedTopicId?.let { id -> enabledTopics.firstOrNull { it.id == id } }
-            ?: enabledTopics.firstOrNull { it.name.equals(result.topic, ignoreCase = true) }
-            ?: error("이 영상의 주제를 먼저 등록해 주세요.")
-        val videoNodeId = "video:${video.id}:${topic.id}"
-        dao.upsertNodes(listOf(ThoughtNodeEntity(videoNodeId, topic.id, "video", videoId = video.id, label = video.title, status = "visited")))
-        val perspectives = result.perspectives.take(4).map { suggestion ->
-            PerspectiveEntity(
-                id = UUID.randomUUID().toString(), topicId = topic.id, videoId = video.id,
-                label = suggestion.label, description = suggestion.description,
-                representativeQuestion = suggestion.question, searchQuery = suggestion.searchQuery,
-            )
-        }
-        dao.upsertPerspectives(perspectives)
-        savePerspectiveRecommendations(perspectives)
-        dao.upsertNodes(perspectives.map { p -> ThoughtNodeEntity("perspective:${p.id}", topic.id, "perspective", perspectiveId = p.id, label = p.label, status = "suggested") })
-        dao.upsertEdges(perspectives.map { p -> ThoughtEdgeEntity(UUID.randomUUID().toString(), topic.id, videoNodeId, "perspective:${p.id}", "suggested") })
-        generateWeeklyReport()
         analysis
     }
 
-    /** 관점별 검색어는 화면에 노출하지 않고, 실제 검증 가능한 YouTube 영상 카드로 캐시한다. */
-    private suspend fun savePerspectiveRecommendations(perspectives: List<PerspectiveEntity>) {
-        val byQuery = runCatching { youtubePerspectiveSearch.find(perspectives.map(PerspectiveEntity::searchQuery)) }.getOrElse { emptyMap() }
-        val items = perspectives.flatMap { perspective ->
-            byQuery[perspective.searchQuery].orEmpty().take(2).mapIndexed { rank, video ->
-                PerspectiveRecommendedVideoEntity(
-                    id = "${perspective.id}:${video.videoId}",
-                    perspectiveId = perspective.id,
-                    title = video.title,
-                    channelName = video.channelName,
-                    thumbnailUrl = video.thumbnailUrl,
-                    url = video.url,
-                    publishedAt = video.publishedAt,
-                    rank = rank,
-                )
-            }
+    private suspend fun analyzeWithAi(period: InterestPeriod, label: String, videos: List<WatchedVideoEntity>, previous: InterestPeriodAnalysisEntity?): AiInterestResult {
+        val watched = videos.sortedByDescending(WatchedVideoEntity::watchedAt).take(80).joinToString("\n") { "- ${it.title.take(120)} | ${it.channelName.take(50)}" }
+        val previousContext = previous?.let { "직전 ${period.label} 분석: ${it.summary}\n직전 분야 비중: ${it.categoriesJson}" } ?: "직전 분석 없음"
+        val response = router.generate(AiRequest(
+            taskType = AiTaskType.YOUTUBE_INTEREST_HISTORY_ANALYSIS,
+            userPrompt = """
+                YouTube 시청 기록을 개인의 관심 변화 히스토리로 요약한다. 영상 하나의 주장, 생각지도, 추천은 만들지 않는다.
+                기간: $label (${videos.size}개)
+                시청 기록:
+                $watched
+
+                $previousContext
+
+                제목과 채널명에 근거해 분야를 2~5개로 묶고, 비중 합계는 100으로 한다. 변화는 직전 같은 주기와 비교 가능한 경우에만 말한다.
+                personalInsights에는 이 기록에서 조심스럽게 읽히는 사용자 관찰을 정확히 3개 넣는다: 관심 방향, 콘텐츠 취향, 탐색 방식.
+                성격·정체성·능력·정치 성향을 단정하거나 진단하지 말고, "~로 보입니다", "~를 자주 확인하는 편으로 읽힙니다"처럼 관찰 가설로 쓴다. 기록만으로 알 수 없는 사실은 추론하지 않는다.
+                반드시 아래 JSON만 반환한다.
+                {"categories":[{"name":"분야명","percentage":40}],"summary":"이 기간에 어떤 분야를 많이 봤는지 한두 문장","trendSummary":"관심 흐름이 어떻게 변했는지 한 문장, 비교 불가면 누적 관찰 문장","personalInsights":[{"label":"관심 방향","text":"관찰 기반 문장"},{"label":"콘텐츠 취향","text":"관찰 기반 문장"},{"label":"탐색 방식","text":"관찰 기반 문장"}]}
+            """.trimIndent(),
+        ), model = AiModelId.OPENAI_SMART)
+        val root = JSONObject(response.text.trim().removePrefix("```json").removePrefix("```").removeSuffix("```"))
+        val categories = root.optJSONArray("categories").orEmpty().let { array ->
+            (0 until array.length()).mapNotNull { index -> array.optJSONObject(index)?.let { item ->
+                item.optString("name").trim().takeIf(String::isNotBlank)?.let { InterestCategory(it.take(24), item.optInt("percentage").coerceIn(0, 100)) }
+            } }
+        }.take(5)
+        require(categories.isNotEmpty()) { "분야를 정리하지 못했어요." }
+        val insights = root.optJSONArray("personalInsights").orEmpty().let { array ->
+            (0 until array.length()).mapNotNull { index -> array.optJSONObject(index)?.let { item ->
+                val label = item.optString("label").trim(); val text = item.optString("text").trim()
+                if (label.isBlank() || text.isBlank()) null else PersonalInterestInsight(label.take(20), text.take(180))
+            } }
+        }.take(3)
+        return AiInterestResult(categories, root.optString("summary").trim(), root.optString("trendSummary").trim(), insights)
+    }
+
+    private data class Window(val key: String, val label: String, val from: Long, val until: Long)
+    private fun window(period: InterestPeriod): Window {
+        val zone = ZoneId.systemDefault(); val today = LocalDate.now(zone)
+        val start = when (period) {
+            InterestPeriod.DAY -> today
+            InterestPeriod.WEEK -> today.with(WeekFields.of(Locale.getDefault()).dayOfWeek(), 1)
+            InterestPeriod.MONTH -> today.withDayOfMonth(1)
+            InterestPeriod.YEAR -> today.withDayOfYear(1)
         }
-        if (items.isNotEmpty()) dao.upsertRecommendedVideos(items)
+        val key = when (period) { InterestPeriod.DAY -> start.toString(); InterestPeriod.WEEK -> "${start.year}-W${start.get(WeekFields.ISO.weekOfWeekBasedYear()).toString().padStart(2, '0')}"; InterestPeriod.MONTH -> "${start.year}-${start.monthValue.toString().padStart(2, '0')}"; InterestPeriod.YEAR -> start.year.toString() }
+        val label = when (period) { InterestPeriod.DAY -> "${start.monthValue}월 ${start.dayOfMonth}일"; InterestPeriod.WEEK -> "${start.monthValue}월 ${start.dayOfMonth}일 주간"; InterestPeriod.MONTH -> "${start.year}년 ${start.monthValue}월"; InterestPeriod.YEAR -> "${start.year}년" }
+        return Window(key, label, start.atStartOfDay(zone).toInstant().toEpochMilli(), today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli())
     }
 
-    suspend fun markPerspectiveVisited(id: String) = withContext(Dispatchers.IO) {
-        val item = dao.perspective(id) ?: return@withContext
-        val previous = dao.latestVisitedPerspective(item.topicId)
-        dao.markPerspectiveVisited(id)
-        dao.upsertNodes(listOf(ThoughtNodeEntity("perspective:${item.id}", item.topicId, "perspective", perspectiveId = item.id, label = item.label, status = "visited", createdAt = item.createdAt)))
-        if (previous != null && previous.id != item.id && previous.label != item.label) {
-            dao.upsertEdgeFromPerspective(previous, item)
-            dao.upsertMoment(ExpansionMomentEntity(
-                id = UUID.randomUUID().toString(), topicId = item.topicId,
-                fromLabel = previous.label, toLabel = item.label,
-                title = "${previous.label}에서 ${item.label}(으)로",
-                description = "기존 탐색 경로에서 새로운 질문으로 이동했습니다.",
-                reason = item.representativeQuestion,
-                aiConfidence = 0.7,
-            ))
-        }
-        generateWeeklyReport()
-    }
-
-    /** 추천 카드의 YouTube 링크를 연 사실만 기록한다. 확장은 5분 이상 시청 후 확정된다. */
-    suspend fun markPerspectiveOpened(id: String) = withContext(Dispatchers.IO) {
-        dao.markPerspectiveOpened(id)
-    }
-
-    private suspend fun PerspectiveDao.upsertEdgeFromPerspective(from: PerspectiveEntity, to: PerspectiveEntity) {
-        upsertEdges(listOf(ThoughtEdgeEntity(UUID.randomUUID().toString(), to.topicId, "perspective:${from.id}", "perspective:${to.id}", "selected")))
-    }
-
-    suspend fun generateWeeklyReport() = withContext(Dispatchers.IO) {
-        val weekStart = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-        val from = weekStart.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val videos = dao.videoSnapshot().filter {
-            it.source != "share" && it.watchedAt >= from && it.watchedSec >= MINIMUM_WATCH_SECONDS
-        }
-        val topics = dao.topics()
-        val links = dao.videoTopicSnapshot()
-        val topicCounts = links.filter { link -> videos.any { it.id == link.videoId } }.groupingBy(VideoTopicEntity::topicId).eachCount()
-        val dominant = topicCounts.entries.sortedByDescending(Map.Entry<String, Int>::value).take(3).mapNotNull { entry -> topics.firstOrNull { it.id == entry.key }?.name }
-        val perspectives = dao.perspectiveSnapshot()
-        val visited = perspectives.filter { it.status == "visited" }.map(PerspectiveEntity::label).distinct().take(5)
-        val under = perspectives.filter { it.status != "visited" }.map(PerspectiveEntity::label).distinct().take(5)
-        val summary = if (videos.isEmpty()) "이번 주에는 아직 요약할 YouTube 시청 기록이 없습니다." else if (under.isEmpty()) {
-            "이번 주에는 ${dominant.joinToString(" · ").ifBlank { "여러 주제" }} 영상을 주로 봤습니다. 다른 관점 보기를 사용하면 시청 범위를 더 넓힐 수 있습니다."
-        } else "이번 주에는 ${dominant.joinToString(" · ")} 영상을 주로 봤고, ${under.take(3).joinToString(" · ")} 관점은 아직 보지 않았습니다."
-        dao.upsertReport(WeeklyPerspectiveReportEntity(weekStart.toEpochDay(), jsonArray(dominant), jsonArray(visited), jsonArray(under), summary))
-    }
-
-    private companion object {
-        const val PROMPT_VERSION = "perspective-analysis-v3"
-        const val GEMINI_VIDEO_MODEL = "gemini-3.5-flash-video"
-        const val TOPIC_MODEL = "gpt-5.6-terra-topic-v2"
-        const val TOPIC_RETRY_INTERVAL_MS = 24 * 60 * 60 * 1_000L
-        const val MINIMUM_WATCH_SECONDS = 300L
-    }
+    private data class AiInterestResult(val categories: List<InterestCategory>, val summary: String, val trendSummary: String, val personalInsights: List<PersonalInterestInsight>)
 }
 
-private fun isVideoId(value: String): Boolean = value.matches(Regex("[A-Za-z0-9_-]{11}"))
-private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
-private fun jsonArray(values: List<String>): String = JSONArray(values).toString()
-
-private suspend fun PerspectiveDao.videoSnapshot(): List<WatchedVideoEntity> = observeVideos().first()
-private suspend fun PerspectiveDao.videoTopicSnapshot(): List<VideoTopicEntity> = observeVideoTopics().first()
-private suspend fun PerspectiveDao.perspectiveSnapshot(): List<PerspectiveEntity> = observePerspectives().first()
+fun String.toInterestCategories(): List<InterestCategory> = runCatching {
+    val array = JSONArray(this); (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { InterestCategory(it.optString("name"), it.optInt("percentage")) } }
+}.getOrDefault(emptyList())
+private fun List<InterestCategory>.toJson() = JSONArray(map { JSONObject().put("name", it.name).put("percentage", it.percentage) }).toString()
+fun String.toPersonalInterestInsights(): List<PersonalInterestInsight> = runCatching {
+    val array = JSONArray(this); (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { PersonalInterestInsight(it.optString("label"), it.optString("text")) } }
+}.getOrDefault(emptyList())
+private fun List<PersonalInterestInsight>.toInsightsJson() = JSONArray(map { JSONObject().put("label", it.label).put("text", it.text) }).toString()
+private fun JSONArray?.orEmpty() = this ?: JSONArray()
+private fun isVideoId(value: String) = value.matches(Regex("[A-Za-z0-9_-]{11}"))
+private fun sha256(value: String) = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }

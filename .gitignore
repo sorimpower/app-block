@@ -15,6 +15,8 @@ outputs/
 work/
 *.apk
 *.aab
+*.jks
+keystore.properties
 firebase-debug.log
 
 # macOS

@@ -187,10 +187,10 @@ private fun headerFeatureInfo(screen: Screen): HeaderFeatureInfo? = when (screen
     )
     Screen.PERSPECTIVE -> HeaderFeatureInfo(
         title = "유튜브 분석 안내",
-        description = "시청한 유튜브 영상을 주제와 관점으로 정리해, 다른 시각의 영상을 발견하도록 돕습니다.",
-        features = listOf("5분 이상 시청한 YouTube 영상을 관심 지도에 반영", "뇌 지도에서 주제별 관점과 다음 질문 탐색"),
-        ai = listOf("시청한 내용을 주제별로 정리", "다음에 확인할 수 있는 구체적인 질문과 관련 영상 추천"),
-        schedule = listOf("고정 시각 스케줄 없음", "영상 재생 종료 직후 주제 또는 다른 관점 알림을 판단하며 하루 최대 2회 발송"),
+        description = "시청한 유튜브 기록에서 분야 비중과 관심 흐름의 변화를 확인합니다.",
+        features = listOf("시청 기록을 백그라운드로 수집", "일·주·월·년 단위 관심 변화 히스토리"),
+        ai = listOf("기간별 영상들을 묶어 자주 본 분야와 변화만 요약"),
+        schedule = listOf("하루 한 번 백그라운드에서 일·주·월·년 분석을 확인", "원할 때 각 기간의 분석을 수동으로 갱신 가능"),
     )
     Screen.ASSETS -> HeaderFeatureInfo(
         title = "내 자산 안내",
@@ -217,9 +217,6 @@ internal fun SorimPowerApp(
     openAuctionAnalysesRequest: Int = 0,
     openPhoneInsightRequest: Int = 0,
     openPerspectiveRequest: Int = 0,
-    openPerspectiveTopicsRequest: Int = 0,
-    sharedYoutubeUrl: String? = null,
-    onSharedYoutubeUrlConsumed: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val phoneLatestRun by phoneInsightViewModel.latestRun.collectAsStateWithLifecycle()
@@ -229,7 +226,7 @@ internal fun SorimPowerApp(
     var screen by remember {
         mutableStateOf(
             when {
-                openPerspectiveTopicsRequest > 0 || openPerspectiveRequest > 0 -> Screen.PERSPECTIVE
+                openPerspectiveRequest > 0 -> Screen.PERSPECTIVE
                 openAuctionAnalysesRequest > 0 -> Screen.AUCTION
                 openPhoneInsightRequest > 0 -> Screen.PHONE_INSIGHT
                 else -> Screen.HOME
@@ -246,8 +243,7 @@ internal fun SorimPowerApp(
     // 다시 덮어써지던 경쟁 상태를 막는다.
     val hasNotificationDeepLink = openAuctionAnalysesRequest > 0 ||
         openPhoneInsightRequest > 0 ||
-        openPerspectiveRequest > 0 ||
-        openPerspectiveTopicsRequest > 0
+        openPerspectiveRequest > 0
 
     LaunchedEffect(state.loaded, state.startDestination, hasNotificationDeepLink) {
         if (state.loaded && !hasNotificationDeepLink) {
@@ -272,7 +268,6 @@ internal fun SorimPowerApp(
     }
     LaunchedEffect(openPhoneInsightRequest) { if (openPhoneInsightRequest > 0) screen = Screen.PHONE_INSIGHT }
     LaunchedEffect(openPerspectiveRequest) { if (openPerspectiveRequest > 0) screen = Screen.PERSPECTIVE }
-    LaunchedEffect(openPerspectiveTopicsRequest) { if (openPerspectiveTopicsRequest > 0) screen = Screen.PERSPECTIVE }
 
     BackHandler(enabled = infoScreen != null) { infoScreen = null }
     BackHandler(enabled = infoScreen == null && protectedAction == null && screen != Screen.HOME) {
@@ -440,10 +435,6 @@ internal fun SorimPowerApp(
             Screen.PERSPECTIVE -> PerspectiveScreen(
                 padding = padding,
                 viewModel = perspectiveViewModel,
-                openExploreRequest = openPerspectiveRequest,
-                openTopicsRequest = openPerspectiveTopicsRequest,
-                sharedYoutubeUrl = sharedYoutubeUrl,
-                onSharedYoutubeUrlConsumed = onSharedYoutubeUrlConsumed,
                 onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } },
                 onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } },
             )

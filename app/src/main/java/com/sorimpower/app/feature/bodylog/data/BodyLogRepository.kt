@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.io.File
@@ -58,6 +59,7 @@ data class MealQuickTemplate(
     val items: List<String>,
     val note: String?,
     val tags: Set<String>,
+    val calories: Int?,
 )
 
 class BodyLogRepository(private val context: Context) {
@@ -96,7 +98,7 @@ class BodyLogRepository(private val context: Context) {
         dao.mealIdsWithoutCalorieEstimate()
     }
 
-    suspend fun saveQuickMealTemplate(mealType: String, items: List<String>, note: String?, tags: Set<String>) {
+    suspend fun saveQuickMealTemplate(mealType: String, items: List<String>, note: String?, tags: Set<String>, calories: Int?) {
         val cleanItems = items.map(String::trim).filter(String::isNotBlank).take(12)
         if (cleanItems.isEmpty()) return
         context.bodyLogDataStore.edit { preferences ->
@@ -106,8 +108,27 @@ class BodyLogRepository(private val context: Context) {
                 items = cleanItems,
                 note = note?.trim()?.take(200)?.ifBlank { null },
                 tags = tags,
+                calories = calories?.takeIf { it in 1..10_000 },
             )
             preferences[quickMealTemplatesKey] = updated.takeLast(MAX_QUICK_MEAL_TEMPLATES).quickMealTemplatesJson()
+        }
+    }
+
+    suspend fun updateQuickMealTemplate(id: String, mealType: String, items: List<String>, note: String?, tags: Set<String>, calories: Int?) {
+        val cleanItems = items.map(String::trim).filter(String::isNotBlank).take(12)
+        if (cleanItems.isEmpty()) return
+        context.bodyLogDataStore.edit { preferences ->
+            preferences[quickMealTemplatesKey] = parseQuickMealTemplates(preferences[quickMealTemplatesKey])
+                .map { template ->
+                    if (template.id == id) template.copy(
+                        mealType = mealType,
+                        items = cleanItems,
+                        note = note?.trim()?.take(200)?.ifBlank { null },
+                        tags = tags,
+                        calories = calories?.takeIf { it in 1..10_000 },
+                    ) else template
+                }
+                .quickMealTemplatesJson()
         }
     }
 
@@ -201,7 +222,7 @@ class BodyLogRepository(private val context: Context) {
         note: String?,
     ) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        dao.upsertExercise(ExerciseEntryEntity(
+        val saved = ExerciseEntryEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),
             exercisedAt = exercisedAt,
             exerciseType = exerciseType.trim().take(60),
@@ -211,7 +232,20 @@ class BodyLogRepository(private val context: Context) {
             note = note?.trim()?.take(300)?.ifBlank { null },
             createdAt = existing?.createdAt ?: now,
             updatedAt = now,
-        ))
+        )
+        dao.upsertExercise(saved)
+        saved
+    }
+
+    suspend fun analyzeExerciseCalories(exerciseId: String): ExerciseEntryEntity? = withContext(Dispatchers.IO) {
+        val exercise = dao.exercise(exerciseId) ?: return@withContext null
+        if (exercise.caloriesBurned != null) return@withContext exercise
+        val result = OpenAiExerciseCalorieAnalyzer(context).analyze(exercise, dao.observeWeights().first().lastOrNull()?.weightKg)
+        val latest = dao.exercise(exerciseId) ?: return@withContext null
+        if (latest.caloriesBurned != null) return@withContext latest
+        val updated = latest.copy(caloriesBurned = result.estimatedCalories, updatedAt = System.currentTimeMillis())
+        dao.upsertExercise(updated)
+        updated
     }
 
     suspend fun deleteExercise(value: ExerciseEntryEntity) = withContext(Dispatchers.IO) { dao.deleteExercise(value) }
@@ -262,6 +296,7 @@ class BodyLogRepository(private val context: Context) {
         tags: Set<String>,
         photoUris: List<Uri>,
         retainedPhotoIds: Set<String> = emptySet(),
+        manualCalories: Int? = null,
     ): SavedMealResult = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val mealId = existing?.meal?.id ?: UUID.randomUUID().toString()
@@ -291,6 +326,11 @@ class BodyLogRepository(private val context: Context) {
             cleanupOrphanedMealPhotos()
         }
         val affectedDates = setOfNotNull(previousDate, meal.localDate())
+        manualCalories?.coerceIn(1, 10_000)?.let { calories ->
+            dao.upsertMealCalorieEstimate(
+                MealCalorieEstimateEntity(mealId, calories, "직접 입력", "manual:$calories", System.currentTimeMillis()),
+            )
+        }
         affectedDates.forEach { rebuildDailyCalorieSummary(it) }
         val missing = affectedDates.flatMap { date ->
             val meals = mealsForDate(date)
@@ -313,7 +353,7 @@ class BodyLogRepository(private val context: Context) {
     suspend fun analyzeMealCalories(mealId: String): MealCalorieEstimateEntity? = withContext(Dispatchers.IO) {
         val meal = dao.meal(mealId) ?: return@withContext null
         val sourceHash = meal.calorieSourceHash()
-        dao.mealCalorieEstimate(mealId)?.takeIf { it.sourceHash == sourceHash }?.let { return@withContext it }
+        dao.mealCalorieEstimate(mealId)?.takeIf { it.sourceHash == sourceHash || it.sourceHash.startsWith("manual:") }?.let { return@withContext it }
         val result = OpenAiMealCalorieAnalyzer(context).analyze(meal)
         val latest = dao.meal(mealId) ?: return@withContext null
         if (latest.calorieSourceHash() != sourceHash) return@withContext null
@@ -460,6 +500,7 @@ private fun parseQuickMealTemplates(source: String?): List<MealQuickTemplate> = 
                 items = items,
                 note = value.optString("note").ifBlank { null },
                 tags = value.optJSONArray("tags")?.let { tags -> buildSet { for (tagIndex in 0 until tags.length()) tags.optString(tagIndex).trim().takeIf(String::isNotBlank)?.let(::add) } }.orEmpty(),
+                calories = value.optInt("calories", 0).takeIf { it > 0 },
             ))
         }
     }
@@ -467,7 +508,7 @@ private fun parseQuickMealTemplates(source: String?): List<MealQuickTemplate> = 
 
 private fun List<MealQuickTemplate>.quickMealTemplatesJson(): String = JSONArray().apply {
     forEach { template -> put(JSONObject().apply {
-        put("id", template.id); put("mealType", template.mealType); put("items", JSONArray(template.items)); put("note", template.note); put("tags", JSONArray(template.tags.toList()))
+        put("id", template.id); put("mealType", template.mealType); put("items", JSONArray(template.items)); put("note", template.note); put("tags", JSONArray(template.tags.toList())); put("calories", template.calories)
     }) }
 }.toString()
 

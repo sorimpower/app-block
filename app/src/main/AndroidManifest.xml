@@ -42,11 +42,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
         </activity>
         <activity
             android:name=".feature.bodylog.presentation.HealthConnectPermissionRationaleActivity"
@@ -93,7 +88,6 @@
             </intent-filter>
         </receiver>
         <receiver android:name=".feature.phoneinsight.reminder.InsightDueReceiver" android:exported="false" />
-        <receiver android:name=".feature.perspective.reminder.TopicSuggestionActionReceiver" android:exported="false" />
         <receiver android:name=".feature.phoneinsight.reminder.MorningDigestReceiver" android:exported="false" />
         <receiver android:name=".feature.phoneinsight.reminder.PhoneInsightBootReceiver" android:enabled="true" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
