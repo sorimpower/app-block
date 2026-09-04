@@ -39,10 +39,13 @@ data class InterestPeriodAnalysisEntity(
     val periodKey: String,
     val periodLabel: String,
     val videoCount: Int,
+    @ColumnInfo(defaultValue = "0") val periodFrom: Long = 0,
+    @ColumnInfo(defaultValue = "0") val periodUntil: Long = 0,
     val categoriesJson: String,
     val summary: String,
     val trendSummary: String,
     @ColumnInfo(defaultValue = "'[]'") val personalInsightsJson: String = "[]",
+    @ColumnInfo(defaultValue = "'[]'") val recommendedVideosJson: String = "[]",
     val generatedAt: Long = System.currentTimeMillis(),
 )
 
@@ -62,7 +65,7 @@ interface PerspectiveDao {
     @Upsert suspend fun upsertAnalysis(item: InterestPeriodAnalysisEntity)
 }
 
-@Database(entities = [WatchedVideoEntity::class, InterestPeriodAnalysisEntity::class], version = 8, exportSchema = false)
+@Database(entities = [WatchedVideoEntity::class, InterestPeriodAnalysisEntity::class], version = 10, exportSchema = false)
 abstract class PerspectiveDatabase : RoomDatabase() {
     abstract fun dao(): PerspectiveDao
 
@@ -94,9 +97,16 @@ abstract class PerspectiveDatabase : RoomDatabase() {
         private val MIGRATION_7_8 = object : Migration(7, 8) { override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE interest_period_analyses ADD COLUMN personalInsightsJson TEXT NOT NULL DEFAULT '[]'")
         } }
+        private val MIGRATION_8_9 = object : Migration(8, 9) { override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE interest_period_analyses ADD COLUMN recommendedVideosJson TEXT NOT NULL DEFAULT '[]'")
+        } }
+        private val MIGRATION_9_10 = object : Migration(9, 10) { override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE interest_period_analyses ADD COLUMN periodFrom INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE interest_period_analyses ADD COLUMN periodUntil INTEGER NOT NULL DEFAULT 0")
+        } }
         fun get(context: Context): PerspectiveDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, PerspectiveDatabase::class.java, "perspective.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                 .build().also { instance = it }
         }
     }

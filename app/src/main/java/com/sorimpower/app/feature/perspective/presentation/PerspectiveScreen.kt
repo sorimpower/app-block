@@ -20,6 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -31,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,10 +53,13 @@ import com.sorimpower.app.feature.perspective.data.InterestPeriodAnalysisEntity
 import com.sorimpower.app.feature.perspective.data.WatchedVideoEntity
 import com.sorimpower.app.feature.perspective.data.toInterestCategories
 import com.sorimpower.app.feature.perspective.data.toPersonalInterestInsights
+import com.sorimpower.app.feature.perspective.data.toInterestVideoRecommendations
 import coil.compose.AsyncImage
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.WeekFields
 
 @Composable
 fun PerspectiveScreen(
@@ -68,6 +74,17 @@ fun PerspectiveScreen(
     val watchedVideoPlayback by viewModel.watchedVideoPlayback.collectAsState()
     var period by remember { mutableStateOf(InterestPeriod.WEEK) }
     val reports = state.analyses.filter { it.periodType == period.type }.sortedByDescending { it.periodKey }
+    var selectedReportKey by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(period) { selectedReportKey = null }
+    LaunchedEffect(reports) {
+        if (selectedReportKey !in reports.map { it.periodKey }) selectedReportKey = reports.firstOrNull()?.periodKey
+    }
+    val selectedReportIndex = reports.indexOfFirst { it.periodKey == selectedReportKey }.coerceAtLeast(0)
+    val selectedReport = reports.getOrNull(selectedReportIndex)
+    val selectedVideos = selectedReport?.let { report ->
+        val range = report.timeRange()
+        state.videos.filter { it.watchedAt in range }
+    }.orEmpty()
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -91,13 +108,65 @@ fun PerspectiveScreen(
         if (reports.isEmpty()) item {
             EmptyHistory(period, state.videos.size)
         }
-        items(reports, key = { "${it.periodType}:${it.periodKey}" }) { report -> InterestReportCard(report) }
-        if (state.videos.isNotEmpty()) {
-            item { Text("수집된 시청 기록", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 10.dp)) }
-            items(state.videos.take(30), key = WatchedVideoEntity::id) { video ->
+        selectedReport?.let { report ->
+            item {
+                PeriodNavigator(
+                    report = report,
+                    canGoPrevious = selectedReportIndex < reports.lastIndex,
+                    canGoNext = selectedReportIndex > 0,
+                    onPrevious = { selectedReportKey = reports[selectedReportIndex + 1].periodKey },
+                    onNext = { selectedReportKey = reports[selectedReportIndex - 1].periodKey },
+                )
+            }
+            item(key = "${report.periodType}:${report.periodKey}") { InterestReportCard(report) }
+        }
+        if (selectedReport != null && selectedVideos.isNotEmpty()) {
+            item { Text("이 기간의 시청 기록", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 10.dp)) }
+            items(selectedVideos, key = WatchedVideoEntity::id) { video ->
                 VideoHistoryRow(video, watchedVideoPlayback[video.id], onResolve = { viewModel.resolveWatchedVideo(video) }) { viewModel.deleteWatchRecord(video.id) }
             }
         }
+    }
+}
+
+private fun InterestPeriodAnalysisEntity.timeRange(): LongRange {
+    if (periodFrom > 0 && periodUntil > periodFrom) return periodFrom until periodUntil
+    val zone = ZoneId.systemDefault()
+    val start = runCatching {
+        when (periodType) {
+            "day" -> LocalDate.parse(periodKey)
+            "week" -> {
+                val (year, week) = Regex("(\\d{4})-W(\\d{2})").matchEntire(periodKey)!!.destructured
+                LocalDate.of(year.toInt(), 1, 4)
+                    .with(WeekFields.ISO.weekOfWeekBasedYear(), week.toLong())
+                    .with(WeekFields.ISO.dayOfWeek(), 1)
+            }
+            "month" -> java.time.YearMonth.parse(periodKey).atDay(1)
+            "year" -> LocalDate.of(periodKey.toInt(), 1, 1)
+            else -> error("Unknown period")
+        }
+    }.getOrElse { return LongRange.EMPTY }
+    val end = when (periodType) {
+        "day" -> start.plusDays(1)
+        "week" -> start.plusWeeks(1)
+        "month" -> start.plusMonths(1)
+        "year" -> start.plusYears(1)
+        else -> start
+    }
+    return start.atStartOfDay(zone).toInstant().toEpochMilli() until end.atStartOfDay(zone).toInstant().toEpochMilli()
+}
+
+@Composable private fun PeriodNavigator(
+    report: InterestPeriodAnalysisEntity,
+    canGoPrevious: Boolean,
+    canGoNext: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+) = Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .42f))) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onPrevious, enabled = canGoPrevious) { Icon(Icons.Rounded.ChevronLeft, "이전 ${report.periodType} 분석") }
+        Text(report.periodLabel, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontWeight = FontWeight.Bold)
+        IconButton(onClick = onNext, enabled = canGoNext) { Icon(Icons.Rounded.ChevronRight, "다음 ${report.periodType} 분석") }
     }
 }
 
@@ -111,6 +180,7 @@ fun PerspectiveScreen(
 @Composable private fun InterestReportCard(report: InterestPeriodAnalysisEntity) = Card(shape = RoundedCornerShape(20.dp), elevation = CardDefaults.cardElevation(1.dp)) {
     val categories = remember(report.categoriesJson) { report.categoriesJson.toInterestCategories() }
     val personalInsights = remember(report.personalInsightsJson) { report.personalInsightsJson.toPersonalInterestInsights() }
+    val recommendations = remember(report.recommendedVideosJson) { report.recommendedVideosJson.toInterestVideoRecommendations() }
     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Text(report.periodLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black); Text("시청 영상 ${report.videoCount}개", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -136,6 +206,34 @@ fun PerspectiveScreen(
                         Text(insight.text, style = MaterialTheme.typography.bodySmall)
                     }
                 }
+            }
+        }
+        if (recommendations.isNotEmpty()) {
+            Text("이 취향이라면 좋아할 영상", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Black)
+            Text("이번 시청 취향을 바탕으로 찾은 공개 YouTube 영상이에요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            recommendations.forEach { recommendation -> RecommendedVideoRow(recommendation) }
+        }
+    }
+}
+
+@Composable private fun RecommendedVideoRow(recommendation: com.sorimpower.app.feature.perspective.data.InterestVideoRecommendation) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(recommendation.url))) },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .45f)),
+    ) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (recommendation.thumbnailUrl.isNotBlank()) AsyncImage(
+                model = recommendation.thumbnailUrl,
+                contentDescription = "${recommendation.title} 썸네일",
+                modifier = Modifier.width(96.dp).height(54.dp).clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop,
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(recommendation.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                if (recommendation.channelName.isNotBlank()) Text(recommendation.channelName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (recommendation.reason.isNotBlank()) Text(recommendation.reason, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
