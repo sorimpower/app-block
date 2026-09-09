@@ -85,6 +85,11 @@ fun PerspectiveScreen(
         val range = report.timeRange()
         state.videos.filter { it.watchedAt in range }
     }.orEmpty()
+    var historyPage by remember { mutableStateOf(0) }
+    LaunchedEffect(selectedReport?.periodType, selectedReport?.periodKey) { historyPage = 0 }
+    val historyPageCount = ((selectedVideos.size + HISTORY_PAGE_SIZE - 1) / HISTORY_PAGE_SIZE).coerceAtLeast(1)
+    val safeHistoryPage = historyPage.coerceIn(0, historyPageCount - 1)
+    val pagedVideos = selectedVideos.drop(safeHistoryPage * HISTORY_PAGE_SIZE).take(HISTORY_PAGE_SIZE)
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -122,10 +127,30 @@ fun PerspectiveScreen(
         }
         if (selectedReport != null && selectedVideos.isNotEmpty()) {
             item { Text("이 기간의 시청 기록", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 10.dp)) }
-            items(selectedVideos, key = WatchedVideoEntity::id) { video ->
+            items(pagedVideos, key = WatchedVideoEntity::id) { video ->
                 VideoHistoryRow(video, watchedVideoPlayback[video.id], onResolve = { viewModel.resolveWatchedVideo(video) }) { viewModel.deleteWatchRecord(video.id) }
             }
+            if (historyPageCount > 1) item {
+                HistoryPaginator(
+                    page = safeHistoryPage,
+                    pageCount = historyPageCount,
+                    onPrevious = { historyPage = safeHistoryPage - 1 },
+                    onNext = { historyPage = safeHistoryPage + 1 },
+                )
+            }
         }
+    }
+}
+
+private const val HISTORY_PAGE_SIZE = 20
+
+@Composable private fun HistoryPaginator(page: Int, pageCount: Int, onPrevious: () -> Unit, onNext: () -> Unit) = Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .42f)),
+) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onPrevious, enabled = page > 0) { Icon(Icons.Rounded.ChevronLeft, "이전 시청 기록 페이지") }
+        Text("시청 기록 ${page + 1} / $pageCount", modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        IconButton(onClick = onNext, enabled = page < pageCount - 1) { Icon(Icons.Rounded.ChevronRight, "다음 시청 기록 페이지") }
     }
 }
 

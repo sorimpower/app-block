@@ -46,18 +46,20 @@ class PerspectiveRepository(context: Context) {
     /** Schedules the next end-of-day snapshot. The worker reschedules itself after every run. */
     suspend fun initialize() = withContext(Dispatchers.IO) { InterestAnalysisScheduler.scheduleNext(appContext) }
 
-    /** Playback detection only collects local history. It never calls AI per video. */
+    /** Playback detection only collects local history after the minimum meaningful dwell time. */
     suspend fun recordPlayback(title: String, channel: String, mediaId: String?, durationSec: Long, watchedSec: Long, playbackEnded: Boolean = false): WatchedVideoEntity? = withContext(Dispatchers.IO) {
         if (title.isBlank()) return@withContext null
         val youtubeId = mediaId?.takeIf(::isVideoId) ?: "auto_${sha256(title.trim().lowercase()).take(24)}"
         val existing = dao.videoByYoutubeId(youtubeId)
             ?: youtubeId.takeUnless(::isVideoId)?.let { dao.latestVideoByTitleAndChannel(title.trim(), channel.trim()) }
         val resolvedId = youtubeId.takeIf(::isVideoId) ?: existing?.youtubeVideoId ?: youtubeId
+        val effectiveWatchedSec = maxOf(watchedSec, existing?.watchedSec ?: 0)
+        if (effectiveWatchedSec < MIN_RECORDING_WATCH_SECONDS) return@withContext null
         val item = WatchedVideoEntity(
             id = existing?.id ?: UUID.randomUUID().toString(), youtubeVideoId = resolvedId,
             url = if (isVideoId(resolvedId)) "https://www.youtube.com/watch?v=$resolvedId" else existing?.url.orEmpty(),
             title = title.trim().ifBlank { existing?.title ?: "YouTube 영상" }, channelName = channel.trim().ifBlank { existing?.channelName.orEmpty() },
-            durationSec = maxOf(durationSec, existing?.durationSec ?: 0), watchedSec = maxOf(watchedSec, existing?.watchedSec ?: 0),
+            durationSec = maxOf(durationSec, existing?.durationSec ?: 0), watchedSec = effectiveWatchedSec,
             watchedAt = System.currentTimeMillis(), source = "auto", analysisStatus = "collected", playbackEnded = playbackEnded,
             contentHash = sha256("$resolvedId|$title|$channel"),
         )
@@ -96,7 +98,9 @@ class PerspectiveRepository(context: Context) {
     suspend fun analyze(period: InterestPeriod, targetDate: LocalDate = LocalDate.now(ZoneId.systemDefault()), force: Boolean = true): InterestPeriodAnalysisEntity = withContext(Dispatchers.IO) {
         val window = window(period, targetDate)
         dao.analysis(period.type, window.key)?.takeUnless { force }?.let { return@withContext it }
-        val videos = dao.videos().filter { it.source == "auto" && it.watchedAt >= window.from && it.watchedAt < window.until }
+        val videos = dao.videos().filter {
+            it.source == "auto" && it.watchedSec >= MIN_ANALYSIS_WATCH_SECONDS && it.watchedAt >= window.from && it.watchedAt < window.until
+        }
         require(videos.isNotEmpty()) { "${period.label} 분석을 위한 시청 기록이 아직 없어요." }
         val previous = dao.analyses(period.type).firstOrNull { it.periodKey != window.key }
         val result = analyzeWithAi(period, window.label, videos, previous)
@@ -215,5 +219,7 @@ fun String.toInterestVideoRecommendations(): List<InterestVideoRecommendation> =
 }.getOrDefault(emptyList())
 private fun List<InterestVideoRecommendation>.toRecommendationsJson() = JSONArray(map { JSONObject().put("title", it.title).put("channelName", it.channelName).put("thumbnailUrl", it.thumbnailUrl).put("url", it.url).put("reason", it.reason) }).toString()
 private fun JSONArray?.orEmpty() = this ?: JSONArray()
+private const val MIN_RECORDING_WATCH_SECONDS = 10L
+private const val MIN_ANALYSIS_WATCH_SECONDS = 300L
 private fun isVideoId(value: String) = value.matches(Regex("[A-Za-z0-9_-]{11}"))
 private fun sha256(value: String) = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
