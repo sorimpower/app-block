@@ -72,7 +72,7 @@ fun PerspectiveScreen(
     val analyzing by viewModel.analyzing.collectAsState()
     val message by viewModel.message.collectAsState()
     val watchedVideoPlayback by viewModel.watchedVideoPlayback.collectAsState()
-    var period by remember { mutableStateOf(InterestPeriod.WEEK) }
+    var period by remember { mutableStateOf(InterestPeriod.DAY) }
     val reports = state.analyses.filter { it.periodType == period.type }.sortedByDescending { it.periodKey }
     var selectedReportKey by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(period) { selectedReportKey = null }
