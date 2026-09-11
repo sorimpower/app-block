@@ -355,7 +355,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                                     OutlinedButton(
                                         onClick = {
                                             viewModel.saveMeal(
-                                                eatenAt = timestampForDate(selectedDate, timeForTimestamp(System.currentTimeMillis())),
+                                                eatenAt = System.currentTimeMillis(),
                                                 mealType = template.mealType,
                                                 items = template.items.map { MealItemInput(it) },
                                                 note = template.note,
