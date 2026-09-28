@@ -34,6 +34,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -162,7 +164,8 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
     var editingMounjaroReminder by remember { mutableStateOf<MounjaroInjectionEntity?>(null) }
     var deletingMeal by remember { mutableStateOf<MealWithDetails?>(null) }
     var deletingMounjaroInjection by remember { mutableStateOf<MounjaroInjectionEntity?>(null) }
-    var expandedPhotoPath by remember { mutableStateOf<String?>(null) }
+    var deletingWeight by remember { mutableStateOf<WeightEntryEntity?>(null) }
+    var expandedPhotoPaths by remember { mutableStateOf<List<String>?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -179,6 +182,12 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             .filter { mealFilterDate == null || it.meal.localDate() == mealFilterDate }
             .groupBy { it.meal.localDate() }
             .mapValues { (_, meals) -> meals.sortedByDescending { it.meal.eatenAt } }
+    }
+    val weightsByDate = remember(state.weights, mealFilterDate) {
+        state.weights.asSequence()
+            .filter { weight -> mealFilterDate == null || weight.localDate() == mealFilterDate }
+            .groupBy { it.localDate() }
+            .mapValues { (_, weights) -> weights.sortedByDescending { it.measuredAt } }
     }
     val injectionsByDate = remember(state.mounjaroInjections, mealFilterDate) {
         state.mounjaroInjections.asSequence()
@@ -198,8 +207,8 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             .groupBy { it.localDate() }
             .mapValues { (_, results) -> results.sortedByDescending { it.measuredAt } }
     }
-    val recordDates = remember(mealsByDate, injectionsByDate, exercisesByDate, inBodyByDate) {
-        (mealsByDate.keys + injectionsByDate.keys + exercisesByDate.keys + inBodyByDate.keys).distinct().sortedDescending()
+    val recordDates = remember(weightsByDate, mealsByDate, injectionsByDate, exercisesByDate, inBodyByDate) {
+        (weightsByDate.keys + mealsByDate.keys + injectionsByDate.keys + exercisesByDate.keys + inBodyByDate.keys).distinct().sortedDescending()
     }
     val dailyCaloriesByDate = remember(state.dailyCalories) { state.dailyCalories.associateBy { LocalDate.ofEpochDay(it.dateEpochDay) } }
     val mealCaloriesById = remember(state.mealCalories) { state.mealCalories.associateBy(MealCalorieEstimateEntity::mealId) }
@@ -406,6 +415,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             }
         }
         if (recordDates.isNotEmpty()) recordDates.forEach { date ->
+            val weights = weightsByDate[date].orEmpty()
             val injections = injectionsByDate[date].orEmpty()
             val meals = mealsByDate[date].orEmpty()
             val exercises = exercisesByDate[date].orEmpty()
@@ -413,12 +423,16 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
             item(key = "record-date-$date") {
                 RecordDateHeader(
                     date,
+                    weights.size,
                     injections.size,
                     meals.size,
                     exercises.size,
                     inBodyResults.size,
                     dailyCaloriesByDate[date],
                 )
+            }
+            items(weights, key = { it.id }) { weight ->
+                WeightRecordCard(weight, onDelete = { deletingWeight = weight })
             }
             items(injections, key = { it.id }) { injection ->
                 MounjaroInjectionCard(
@@ -439,7 +453,7 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
                 MealCard(
                     meal,
                     calorieEstimate = mealCaloriesById[meal.meal.id],
-                    onPhotoClick = { expandedPhotoPath = it },
+                    onPhotoClick = { expandedPhotoPaths = it },
                     onEdit = { editingMeal = meal },
                     onDelete = { deletingMeal = meal },
                 )
@@ -447,7 +461,15 @@ fun BodyLogScreen(padding: PaddingValues, viewModel: BodyLogViewModel) {
         }
     }
 
-    expandedPhotoPath?.let { path -> ExpandedMealPhoto(path, onDismiss = { expandedPhotoPath = null }) }
+    expandedPhotoPaths?.let { paths -> ExpandedMealPhotoPager(paths, onDismiss = { expandedPhotoPaths = null }) }
+    deletingWeight?.let { weight ->
+        DeleteRecordDialog(
+            title = "체중 기록을 삭제할까요?",
+            message = "삭제한 체중 기록은 복구할 수 없어요.",
+            onDismiss = { deletingWeight = null },
+            onConfirm = { viewModel.deleteWeight(weight); deletingWeight = null },
+        )
+    }
     deletingMeal?.let { meal ->
         DeleteRecordDialog(
             title = "식사 기록을 삭제할까요?",
@@ -1185,19 +1207,34 @@ private fun MonthCalendar(date: LocalDate, state: BodyLogState, onSelect: (Local
 }
 
 @Composable
-private fun MealCard(meal: MealWithDetails, calorieEstimate: MealCalorieEstimateEntity?, onPhotoClick: (String) -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun MealCard(meal: MealWithDetails, calorieEstimate: MealCalorieEstimateEntity?, onPhotoClick: (List<String>) -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            val photo = meal.photos.minByOrNull { it.sortOrder }
+            val photos = meal.photos.sortedBy { it.sortOrder }
+            val photo = photos.firstOrNull()
             if (photo != null) {
-                AsyncImage(
-                    model = File(photo.thumbnailPath),
-                    contentDescription = "식사 사진 확대 보기",
-                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(15.dp))
-                        .clickable { onPhotoClick(photo.localPath) }
+                Box(
+                    Modifier.size(56.dp).clip(RoundedCornerShape(15.dp))
+                        .clickable { onPhotoClick(photos.map { it.localPath }) }
                         .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentScale = ContentScale.Crop,
-                )
+                ) {
+                    AsyncImage(
+                        model = File(photo.thumbnailPath),
+                        contentDescription = "식사 사진 ${photos.size}장 보기",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                    if (photos.size > 1) {
+                        Text(
+                            "${photos.size}",
+                            modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp)
+                                .background(Color.Black.copy(alpha = .65f), CircleShape).padding(horizontal = 5.dp, vertical = 1.dp),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
             } else {
                 Box(Modifier.size(56.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
                     Icon(Icons.Rounded.Restaurant, null, tint = MaterialTheme.colorScheme.primary)
@@ -1224,21 +1261,58 @@ private fun MealCard(meal: MealWithDetails, calorieEstimate: MealCalorieEstimate
 }
 
 @Composable
-private fun ExpandedMealPhoto(path: String, onDismiss: () -> Unit) {
+private fun ExpandedMealPhotoPager(paths: List<String>, onDismiss: () -> Unit) {
+    val pagerState = rememberPagerState { paths.size }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(
             Modifier.fillMaxSize().background(Color.Black.copy(alpha = .92f)).clickable(onClick = onDismiss),
             contentAlignment = Alignment.Center,
         ) {
-            AsyncImage(
-                model = File(path),
-                contentDescription = "확대된 식사 사진",
+            HorizontalPager(
+                state = pagerState,
                 modifier = Modifier.fillMaxSize().padding(24.dp).clickable(onClick = {}),
-                contentScale = ContentScale.Fit,
+            ) { page ->
+                AsyncImage(
+                    model = File(paths[page]),
+                    contentDescription = "확대된 식사 사진 ${page + 1}",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+            if (paths.size > 1) Text(
+                "${pagerState.currentPage + 1} / ${paths.size}",
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 28.dp)
+                    .background(Color.Black.copy(alpha = .65f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 5.dp),
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
             )
             IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) {
                 Icon(Icons.Rounded.Close, contentDescription = "사진 닫기", tint = Color.White)
             }
+        }
+    }
+}
+
+@Composable
+private fun WeightRecordCard(weight: WeightEntryEntity, onDelete: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f)),
+    ) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(46.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.MonitorWeight, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            }
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text("체중 · ${formatWeight(weight.weightKg)} kg", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+                Text(formatRecordTime(weight.measuredAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                weight.bodyFatPercent?.let { Text("체지방 ${formatWeight(it)}%", style = MaterialTheme.typography.bodySmall) }
+                weight.condition?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                weight.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+            IconButton(onClick = onDelete) { Icon(Icons.Rounded.DeleteOutline, "체중 기록 삭제", tint = MaterialTheme.colorScheme.error) }
         }
     }
 }
@@ -1362,6 +1436,7 @@ private fun DeleteRecordDialog(title: String, message: String, onDismiss: () -> 
 @Composable
 private fun RecordDateHeader(
     date: LocalDate,
+    weightCount: Int,
     injectionCount: Int,
     mealCount: Int,
     exerciseCount: Int,
@@ -1381,6 +1456,7 @@ private fun RecordDateHeader(
             )
             Text(
                 listOfNotNull(
+                    weightCount.takeIf { it > 0 }?.let { "체중 ${it}건" },
                     injectionCount.takeIf { it > 0 }?.let { "주사 ${it}회" },
                     mealCount.takeIf { it > 0 }?.let { "식사 ${it}개" },
                     exerciseCount.takeIf { it > 0 }?.let { "운동 ${it}회" },
