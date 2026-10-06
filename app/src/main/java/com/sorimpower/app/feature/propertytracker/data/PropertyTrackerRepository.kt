@@ -39,6 +39,11 @@ class PropertyTrackerRepository(
     val events: Flow<List<PropertyListingEventEntity>> = dao.observeEvents()
     val latestRun: Flow<PropertySyncRunEntity?> = dao.observeLatestRun()
 
+    suspend fun searchComplexes(keyword: String): List<NaverLandComplex> = naverProvider.searchComplexes(keyword)
+
+    suspend fun fetchComplexDetail(complexNo: String): NaverLandComplexDetail =
+        naverProvider.fetchComplexDetail(complexNo)
+
     suspend fun addTarget(input: AddPropertyTarget): Result<Unit> = runCatching {
         val name = input.apartmentName.trim()
         require(name.isNotBlank()) { "아파트 이름을 입력해 주세요." }

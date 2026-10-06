@@ -110,6 +110,7 @@ internal fun SettingsScreen(
     accessibilityEnabled: Boolean,
     openAccessibilitySettings: () -> Unit,
     requestProtectedAction: (() -> Unit) -> Unit,
+    onOpenPropertyTracker: () -> Unit,
 ) {
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
@@ -119,6 +120,27 @@ internal fun SettingsScreen(
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
+        item {
+            Card(
+                Modifier.fillMaxWidth().clickable(onClick = onOpenPropertyTracker),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(22.dp),
+                elevation = CardDefaults.cardElevation(1.dp),
+            ) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondary),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Rounded.AccountBalance, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
+                    }
+                    Column(Modifier.padding(start = 14.dp)) {
+                        Text("부동산 시세 추적", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                        Text("관심 단지의 호가·실거래가와 갈아타기 갭을 관리하세요", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
         item {
             Card(
                 Modifier.fillMaxWidth(),

@@ -46,6 +46,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +64,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sorimpower.app.feature.propertytracker.data.AddPropertyTarget
+import com.sorimpower.app.feature.propertytracker.data.NaverLandArea
+import com.sorimpower.app.feature.propertytracker.data.NaverLandComplex
 import com.sorimpower.app.feature.propertytracker.data.PropertyAskingSnapshotEntity
 import com.sorimpower.app.feature.propertytracker.data.PropertyListingEntity
 import com.sorimpower.app.feature.propertytracker.data.PropertyListingEventEntity
@@ -126,7 +129,7 @@ fun PropertyTrackerScreen(
             ) { Text(it) }
         }
     }
-    if (showAdd) AddTargetDialog(onDismiss = { showAdd = false }) {
+    if (showAdd) AddTargetDialog(viewModel = viewModel, onDismiss = { showAdd = false }) {
         viewModel.addTarget(it)
         showAdd = false
     }
@@ -440,46 +443,145 @@ private fun ChangesTab(state: PropertyTrackerUiState) {
 }
 
 @Composable
-private fun AddTargetDialog(onDismiss: () -> Unit, onAdd: (AddPropertyTarget) -> Unit) {
+private fun AddTargetDialog(
+    viewModel: PropertyTrackerViewModel,
+    onDismiss: () -> Unit,
+    onAdd: (AddPropertyTarget) -> Unit,
+) {
+    val searchResults by viewModel.complexSearchResults.collectAsStateWithLifecycle()
+    val selectedDetail by viewModel.selectedComplexDetail.collectAsStateWithLifecycle()
+    val searching by viewModel.searchingComplex.collectAsStateWithLifecycle()
+    val searchMessage by viewModel.complexSearchMessage.collectAsStateWithLifecycle()
+    var query by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var complexInput by remember { mutableStateOf("") }
     var area by remember { mutableStateOf("") }
     var areaNo by remember { mutableStateOf("") }
     var lawdCd by remember { mutableStateOf("") }
+    var selectedComplexNo by remember { mutableStateOf<String?>(null) }
+    var manualMode by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) { onDispose(viewModel::clearComplexSearch) }
+    LaunchedEffect(selectedDetail) {
+        selectedDetail?.let { detail ->
+            name = detail.complex.complexName.ifBlank { name }
+            lawdCd = detail.complex.cortarNo.take(5).filter(Char::isDigit).ifBlank { lawdCd }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("관심 단지·평형 등록") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { OutlinedTextField(name, { name = it }, label = { Text("아파트 이름") }, singleLine = true) }
-                item { OutlinedTextField(complexInput, { complexInput = it }, label = { Text("네이버 단지 URL 또는 단지번호") }, singleLine = true) }
-                item {
-                    OutlinedTextField(
-                        area, { area = it }, label = { Text("전용면적(㎡)") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    )
-                }
-                item {
-                    OutlinedTextField(
-                        areaNo, { areaNo = it.filter(Char::isDigit) },
-                        label = { Text("네이버 평형번호(선택)") },
-                        supportingText = { Text("비워두면 전용면적으로 매물을 골라냅니다.") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
-                }
-                item {
-                    OutlinedTextField(
-                        lawdCd, { lawdCd = it.filter(Char::isDigit).take(5) },
-                        label = { Text("법정동 코드 5자리(선택)") },
-                        supportingText = { Text("입력하면 국토부 실거래가도 함께 조회합니다.") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
+                if (!manualMode) {
+                    item {
+                        Text(
+                            "단지명을 검색하면 주소와 평형을 자동으로 채워요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                query,
+                                { query = it },
+                                modifier = Modifier.weight(1f),
+                                label = { Text("단지명 또는 주소") },
+                                placeholder = { Text("예: 래미안 원베일리") },
+                                singleLine = true,
+                            )
+                            Button(
+                                onClick = { viewModel.searchComplexes(query) },
+                                enabled = query.trim().length >= 2 && !searching,
+                            ) { Text("검색") }
+                        }
+                    }
+                    if (searching) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                    searchMessage?.let { message ->
+                        item { Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                    }
+                    if (selectedComplexNo == null) {
+                        items(searchResults, key = NaverLandComplex::complexNo) { complex ->
+                            ComplexSearchResult(
+                                complex = complex,
+                                onClick = {
+                                    selectedComplexNo = complex.complexNo
+                                    name = complex.complexName
+                                    complexInput = complex.complexNo
+                                    lawdCd = complex.cortarNo.take(5).filter(Char::isDigit)
+                                    viewModel.selectComplex(complex)
+                                },
+                            )
+                        }
+                    } else {
+                        item {
+                            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f)) {
+                                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                    Text(name, fontWeight = FontWeight.Black)
+                                    selectedDetail?.complex?.address?.takeIf(String::isNotBlank)?.let {
+                                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    TextButton(onClick = {
+                                        selectedComplexNo = null
+                                        area = ""
+                                        areaNo = ""
+                                    }) { Text("다른 단지 선택") }
+                                }
+                            }
+                        }
+                        selectedDetail?.let { detail ->
+                            if (detail.areas.isEmpty()) {
+                                item { Text("자동으로 확인된 평형이 없습니다. 아래 직접 입력을 이용해 주세요.", style = MaterialTheme.typography.bodySmall) }
+                            } else {
+                                item { Text("전용면적 선택", fontWeight = FontWeight.Bold) }
+                                items(detail.areas, key = { "${it.areaNo}:${it.exclusiveAreaSqm}" }) { option ->
+                                    AreaOption(
+                                        option = option,
+                                        selected = areaNo == option.areaNo && area.toDoubleOrNull() == option.exclusiveAreaSqm,
+                                        onClick = {
+                                            areaNo = option.areaNo
+                                            area = option.exclusiveAreaSqm.toString().removeSuffix(".0")
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    item { TextButton(onClick = { manualMode = true }) { Text("URL·단지번호로 직접 입력") } }
+                } else {
+                    item { OutlinedTextField(name, { name = it }, label = { Text("아파트 이름") }, singleLine = true) }
+                    item { OutlinedTextField(complexInput, { complexInput = it }, label = { Text("네이버 단지 URL 또는 단지번호") }, singleLine = true) }
+                    item {
+                        OutlinedTextField(
+                            area, { area = it }, label = { Text("전용면적(㎡)") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        )
+                    }
+                    item {
+                        OutlinedTextField(
+                            areaNo, { areaNo = it.filter(Char::isDigit) },
+                            label = { Text("네이버 평형번호(선택)") },
+                            supportingText = { Text("비워두면 전용면적으로 매물을 골라냅니다.") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        )
+                    }
+                    item {
+                        OutlinedTextField(
+                            lawdCd, { lawdCd = it.filter(Char::isDigit).take(5) },
+                            label = { Text("법정동 코드 5자리(선택)") },
+                            supportingText = { Text("입력하면 국토부 실거래가도 함께 조회합니다.") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        )
+                    }
+                    item { TextButton(onClick = { manualMode = false }) { Text("단지명으로 검색") } }
                 }
                 item {
                     Text(
-                        "네이버 비공식 웹 API는 응답 제한이나 형식 변경으로 일시 실패할 수 있습니다. 실패한 날에는 기존 매물을 제거 처리하지 않습니다.",
+                        "단지 검색과 호가는 네이버의 비공식 웹 응답을 사용해 일시 제한되거나 형식이 바뀔 수 있습니다. 검색 실패 시 직접 입력할 수 있어요.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -495,6 +597,53 @@ private fun AddTargetDialog(onDismiss: () -> Unit, onAdd: (AddPropertyTarget) ->
             ) { Text("등록") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+@Composable
+private fun ComplexSearchResult(complex: NaverLandComplex, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .6f),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(complex.complexName.ifBlank { "단지 ${complex.complexNo}" }, fontWeight = FontWeight.Black)
+            val details = buildList {
+                complex.address.takeIf(String::isNotBlank)?.let(::add)
+                complex.totalHouseholdCount?.let { add("${it}세대") }
+                complex.useApproveYmd.takeIf(String::isNotBlank)?.let { add("사용승인 $it") }
+            }
+            if (details.isNotEmpty()) Text(details.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun AreaOption(option: NaverLandArea, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        label = {
+            Column(Modifier.padding(vertical = 3.dp)) {
+                Text(
+                    buildString {
+                        if (option.pyeongName.isNotBlank()) append("${option.pyeongName}평 · ")
+                        append("전용 ${formatArea(option.exclusiveAreaSqm)}㎡")
+                    },
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    buildList {
+                        option.supplyAreaSqm?.let { add("공급 ${formatArea(it)}㎡") }
+                        option.householdCount?.let { add("${it}세대") }
+                    }.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
     )
 }
 

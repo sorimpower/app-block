@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sorimpower.app.feature.propertytracker.data.AddPropertyTarget
+import com.sorimpower.app.feature.propertytracker.data.NaverLandComplex
+import com.sorimpower.app.feature.propertytracker.data.NaverLandComplexDetail
 import com.sorimpower.app.feature.propertytracker.data.PropertyActualTradeEntity
 import com.sorimpower.app.feature.propertytracker.data.PropertyAskingSnapshotEntity
 import com.sorimpower.app.feature.propertytracker.data.PropertyListingEntity
@@ -52,6 +54,40 @@ class PropertyTrackerViewModel(application: Application) : AndroidViewModel(appl
 
     val syncing = MutableStateFlow(false)
     val message = MutableStateFlow<String?>(null)
+    val complexSearchResults = MutableStateFlow<List<NaverLandComplex>>(emptyList())
+    val selectedComplexDetail = MutableStateFlow<NaverLandComplexDetail?>(null)
+    val searchingComplex = MutableStateFlow(false)
+    val complexSearchMessage = MutableStateFlow<String?>(null)
+
+    fun searchComplexes(keyword: String) = viewModelScope.launch {
+        searchingComplex.value = true
+        selectedComplexDetail.value = null
+        complexSearchMessage.value = null
+        runCatching { repository.searchComplexes(keyword) }
+            .onSuccess { results ->
+                complexSearchResults.value = results
+                if (results.isEmpty()) complexSearchMessage.value = "검색된 아파트 단지가 없습니다. 주소를 포함해 다시 검색해 주세요."
+            }
+            .onFailure { complexSearchMessage.value = it.message ?: "단지 검색에 실패했습니다." }
+        searchingComplex.value = false
+    }
+
+    fun selectComplex(complex: NaverLandComplex) = viewModelScope.launch {
+        searchingComplex.value = true
+        complexSearchMessage.value = null
+        selectedComplexDetail.value = null
+        runCatching { repository.fetchComplexDetail(complex.complexNo) }
+            .onSuccess { selectedComplexDetail.value = it }
+            .onFailure { complexSearchMessage.value = it.message ?: "평형 정보를 불러오지 못했습니다. 직접 입력해 주세요." }
+        searchingComplex.value = false
+    }
+
+    fun clearComplexSearch() {
+        complexSearchResults.value = emptyList()
+        selectedComplexDetail.value = null
+        complexSearchMessage.value = null
+        searchingComplex.value = false
+    }
 
     fun addTarget(input: AddPropertyTarget) {
         viewModelScope.launch {

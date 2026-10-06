@@ -246,6 +246,7 @@ internal fun SorimPowerApp(
     var editingSchedule by remember { mutableStateOf<BlockSchedule?>(null) }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
     var healthRecordTab by remember { mutableStateOf(HealthRecordTab.DAILY) }
+    var propertyTrackerOrigin by remember { mutableStateOf(Screen.HOME) }
     var protectedAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var infoScreen by remember { mutableStateOf<Screen?>(null) }
     // 알림으로 진입한 화면은 사용자가 설정한 시작 화면보다 항상 우선한다.
@@ -284,6 +285,7 @@ internal fun SorimPowerApp(
         screen = when (screen) {
             Screen.SCHEDULE, Screen.APP_RULES -> Screen.BLOCKER
             Screen.SETTINGS -> Screen.MORE
+            Screen.PROPERTY_TRACKER -> propertyTrackerOrigin
             Screen.BODY_LOG -> if (healthRecordTab == HealthRecordTab.CHECKUP) {
                 healthRecordTab = HealthRecordTab.DAILY
                 Screen.BODY_LOG
@@ -418,7 +420,10 @@ internal fun SorimPowerApp(
                 { screen = Screen.PHONE_INSIGHT },
                 { screen = Screen.PERSPECTIVE },
                 { screen = Screen.ASSETS },
-                { screen = Screen.PROPERTY_TRACKER },
+                {
+                    propertyTrackerOrigin = Screen.HOME
+                    screen = Screen.PROPERTY_TRACKER
+                },
                 openAccessibilitySettings,
             )
             Screen.ASSETS -> AssetScreen(
@@ -453,7 +458,6 @@ internal fun SorimPowerApp(
             Screen.PROPERTY_TRACKER -> PropertyTrackerScreen(padding, propertyTrackerViewModel)
             Screen.MORE -> MoreMenuScreen(
                 padding,
-                onOpenPropertyTracker = { screen = Screen.PROPERTY_TRACKER },
                 onOpenSettings = { screen = Screen.SETTINGS },
             )
             Screen.BLOCKER -> BlockerScreen(
@@ -503,6 +507,10 @@ internal fun SorimPowerApp(
                 accessibilityEnabled(),
                 openAccessibilitySettings,
                 requestProtectedAction = { protectedAction = it },
+                onOpenPropertyTracker = {
+                    propertyTrackerOrigin = Screen.SETTINGS
+                    screen = Screen.PROPERTY_TRACKER
+                },
             )
         }
         }
@@ -725,7 +733,6 @@ private fun BottomNavigationTab.screen() = when (this) {
 @Composable
 private fun MoreMenuScreen(
     padding: PaddingValues,
-    onOpenPropertyTracker: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     LazyColumn(
@@ -733,24 +740,6 @@ private fun MoreMenuScreen(
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item {
-            Card(
-                Modifier.fillMaxWidth().clickable(onClick = onOpenPropertyTracker),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(1.dp),
-            ) {
-                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(46.dp).background(MaterialTheme.colorScheme.secondary.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.AccountBalance, null, tint = MaterialTheme.colorScheme.secondary)
-                    }
-                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                        Text("부동산 시세 추적", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                        Text("호가·실거래가와 갈아타기 갭을 매일 기록해요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-        }
         item {
             Card(
                 Modifier.fillMaxWidth().clickable(onClick = onOpenSettings),

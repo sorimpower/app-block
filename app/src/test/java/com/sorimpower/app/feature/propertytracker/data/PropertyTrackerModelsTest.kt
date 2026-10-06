@@ -23,6 +23,59 @@ class PropertyTrackerModelsTest {
     }
 
     @Test
+    fun `네이버 단지 검색 응답을 등록 후보로 변환한다`() {
+        val results = NaverLandProvider.parseComplexSearch(
+            """
+            {
+              "complexes": [{
+                "complexNo": "111515",
+                "complexName": "래미안원베일리",
+                "cortarNo": "1165010700",
+                "cortarAddress": "서울시 서초구 반포동",
+                "totalHouseholdCount": 2990,
+                "useApproveYmd": "20230830"
+              }]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(1, results.size)
+        assertEquals("111515", results.single().complexNo)
+        assertEquals("1165010700", results.single().cortarNo)
+        assertEquals("서울시 서초구 반포동", results.single().address)
+        assertEquals(2990, results.single().totalHouseholdCount)
+    }
+
+    @Test
+    fun `네이버 단지 상세에서 전용면적과 평형번호를 읽는다`() {
+        val detail = NaverLandProvider.parseComplexDetail(
+            """
+            {
+              "complexDetail": {
+                "complexNo": "111515",
+                "complexName": "래미안원베일리",
+                "cortarNo": "1165010700",
+                "roadAddress": "서울시 서초구 반포대로 333"
+              },
+              "complexPyeongDetailList": [{
+                "pyeongNo": "7",
+                "pyeongName": "34",
+                "supplyArea": 112.93,
+                "exclusiveArea": 84.96,
+                "householdCountByPyeong": 786
+              }]
+            }
+            """.trimIndent(),
+            "111515",
+        )
+
+        assertEquals("래미안원베일리", detail.complex.complexName)
+        assertEquals("서울시 서초구 반포대로 333", detail.complex.address)
+        assertEquals("7", detail.areas.single().areaNo)
+        assertEquals(84.96, detail.areas.single().exclusiveAreaSqm, 0.001)
+    }
+
+    @Test
     fun `짝수와 홀수 호가 중앙값을 계산한다`() {
         assertEquals(1_000L, PropertyTrackerRepository.medianPrice(listOf(500L, 1_000L, 2_000L)))
         assertEquals(1_500L, PropertyTrackerRepository.medianPrice(listOf(1_000L, 2_000L)))
