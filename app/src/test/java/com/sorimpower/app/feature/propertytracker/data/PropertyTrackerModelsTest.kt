@@ -94,4 +94,44 @@ class PropertyTrackerModelsTest {
         assertEquals("REMOVED" to 2, PropertyTrackerRepository.nextMissingState("MISSING_PENDING", 1))
         assertEquals("REMOVED" to 2, PropertyTrackerRepository.nextMissingState("REMOVED", 2))
     }
+
+    @Test
+    fun `여러 중개사가 올린 동일 매물을 한 건으로 묶는다`() {
+        val first = listing("1", floor = "중/19", description = "한강뷰")
+        val second = listing("2", floor = "중/19", description = "로열층", confirmDate = "20261006")
+        val otherFloor = listing("3", floor = "저/19", description = "올수리")
+
+        val groups = PropertyTrackerRepository.groupDuplicateListings(listOf(first, second, otherFloor))
+
+        assertEquals(2, groups.size)
+        val duplicate = groups.single { it.listings.size == 2 }
+        assertEquals("2", duplicate.representative.articleNo)
+        assertEquals(setOf("1", "2"), duplicate.listings.map(PropertyListingEntity::articleNo).toSet())
+    }
+
+    private fun listing(
+        articleNo: String,
+        floor: String,
+        description: String,
+        confirmDate: String = "20261001",
+    ) = PropertyListingEntity(
+        articleNo = articleNo,
+        watchTargetId = "target",
+        priceKrw = 2_000_000_000L,
+        priceText = "20억",
+        supplyAreaSqm = 73.0,
+        exclusiveAreaSqm = 59.0,
+        floorInfo = floor,
+        direction = "남동향",
+        buildingName = "504동",
+        description = description,
+        tags = "",
+        confirmDate = confirmDate,
+        sourceUrl = "https://example.com/$articleNo",
+        firstSeenAt = 1L,
+        lastSeenAt = 2L,
+        status = "ACTIVE",
+        consecutiveMisses = 0,
+        removedAt = null,
+    )
 }

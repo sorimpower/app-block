@@ -25,6 +25,11 @@ data class PropertySyncResult(
     val message: String,
 )
 
+data class PropertyListingGroup(
+    val representative: PropertyListingEntity,
+    val listings: List<PropertyListingEntity>,
+)
+
 class PropertyTrackerRepository(
     context: Context,
     private val naverProvider: NaverLandProvider = NaverLandProvider(),
@@ -116,11 +121,12 @@ class PropertyTrackerRepository(
             val askingResult = runCatching { naverProvider.fetchListings(target) }
             if (askingResult.isSuccess) {
                 val fetched = askingResult.getOrThrow()
-                saveSuccessfulAskingSync(target, fetched, now, epochDay)
+                val uniqueCount = saveSuccessfulAskingSync(target, fetched, now, epochDay)
                 successes++
                 val actualTradeMessage = syncActualTrades(target)
                 val message = buildString {
-                    append("호가 ${fetched.size}건")
+                    append("호가 ${uniqueCount}개")
+                    if (fetched.size > uniqueCount) append(" · 중개사 등록 ${fetched.size}건")
                     if (actualTradeMessage.isNotBlank()) append(" · $actualTradeMessage")
                 }
                 dao.upsertTarget(target.copy(lastSyncAt = now, lastSyncStatus = "SUCCESS", lastSyncMessage = message))
@@ -146,7 +152,7 @@ class PropertyTrackerRepository(
         fetched: List<NaverLandListing>,
         now: Long,
         epochDay: Long,
-    ) {
+    ): Int {
         val old = dao.getListings(target.id)
         val oldById = old.associateBy(PropertyListingEntity::articleNo)
         val fetchedIds = fetched.mapTo(hashSetOf(), NaverLandListing::articleNo)
@@ -219,7 +225,8 @@ class PropertyTrackerRepository(
         }
         if (current.isNotEmpty() || notSeen.isNotEmpty()) dao.upsertListings(current + notSeen)
         if (events.isNotEmpty()) dao.upsertEvents(events)
-        val prices = current.map(PropertyListingEntity::priceKrw).sorted()
+        val uniqueCurrent = groupDuplicateListings(current).map(PropertyListingGroup::representative)
+        val prices = uniqueCurrent.map(PropertyListingEntity::priceKrw).sorted()
         dao.upsertSnapshot(
             PropertyAskingSnapshotEntity(
                 id = "${target.id}:$epochDay",
@@ -228,12 +235,13 @@ class PropertyTrackerRepository(
                 minPriceKrw = prices.firstOrNull() ?: 0,
                 medianPriceKrw = medianPrice(prices),
                 maxPriceKrw = prices.lastOrNull() ?: 0,
-                activeCount = current.size,
+                activeCount = uniqueCurrent.size,
                 newCount = newCount,
                 removedCount = removedCount,
                 createdAt = now,
             ),
         )
+        return uniqueCurrent.size
     }
 
     private suspend fun syncActualTrades(target: PropertyWatchTargetEntity): String {
@@ -274,5 +282,38 @@ class PropertyTrackerRepository(
             val misses = previousMisses + 1
             return (if (misses >= REQUIRED_MISSES_FOR_REMOVAL) "REMOVED" else "MISSING_PENDING") to misses
         }
+
+        fun groupDuplicateListings(listings: List<PropertyListingEntity>): List<PropertyListingGroup> =
+            listings.groupBy(::duplicateListingKey).values.map { candidates ->
+                PropertyListingGroup(
+                    representative = candidates.maxWith(
+                        compareBy<PropertyListingEntity>(PropertyListingEntity::confirmDate)
+                            .thenBy(PropertyListingEntity::lastSeenAt)
+                            .thenBy(PropertyListingEntity::articleNo),
+                    ),
+                    listings = candidates,
+                )
+            }
+
+        private fun duplicateListingKey(listing: PropertyListingEntity): String {
+            val building = normalizeListingField(listing.buildingName)
+            val floor = normalizeListingField(listing.floorInfo)
+            val direction = normalizeListingField(listing.direction)
+            if (building.isBlank() || floor.isBlank() || direction.isBlank()) return "article:${listing.articleNo}"
+            return listOf(
+                listing.status,
+                listing.priceKrw.toString(),
+                listing.supplyAreaSqm.areaKey(),
+                listing.exclusiveAreaSqm.areaKey(),
+                building,
+                floor,
+                direction,
+            ).joinToString("|")
+        }
+
+        private fun normalizeListingField(value: String): String =
+            value.trim().lowercase().replace(Regex("\\s+"), "")
+
+        private fun Double?.areaKey(): String = this?.let { (it * 10).roundToLong().toString() }.orEmpty()
     }
 }

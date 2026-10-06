@@ -69,6 +69,7 @@ import com.sorimpower.app.feature.propertytracker.data.NaverLandComplex
 import com.sorimpower.app.feature.propertytracker.data.PropertyAskingSnapshotEntity
 import com.sorimpower.app.feature.propertytracker.data.PropertyListingEntity
 import com.sorimpower.app.feature.propertytracker.data.PropertyListingEventEntity
+import com.sorimpower.app.feature.propertytracker.data.PropertyListingGroup
 import com.sorimpower.app.feature.propertytracker.data.PropertyTrackerRepository
 import com.sorimpower.app.feature.propertytracker.data.PropertyWatchTargetEntity
 import java.text.NumberFormat
@@ -189,7 +190,6 @@ private fun WatchTab(
         items(state.targets, key = PropertyWatchTargetEntity::id) { target ->
             TargetCard(
                 target,
-                state.activeListingsFor(target.id),
                 state.listingsFor(target.id),
                 state.snapshotsFor(target.id),
                 onCurrent,
@@ -204,7 +204,6 @@ private fun WatchTab(
 @Composable
 private fun TargetCard(
     target: PropertyWatchTargetEntity,
-    active: List<PropertyListingEntity>,
     all: List<PropertyListingEntity>,
     snapshots: List<PropertyAskingSnapshotEntity>,
     onCurrent: (String, Boolean) -> Unit,
@@ -214,9 +213,23 @@ private fun TargetCard(
 ) {
     val uriHandler = LocalUriHandler.current
     var expanded by remember { mutableStateOf(false) }
-    val sortedPrices = active.map(PropertyListingEntity::priceKrw).sorted()
+    val groupedListings = remember(all) { PropertyTrackerRepository.groupDuplicateListings(all) }
+    val activeGroups = groupedListings.filter { it.representative.status == "ACTIVE" }
+    val sortedPrices = activeGroups.map { it.representative.priceKrw }.sorted()
     val median = PropertyTrackerRepository.medianPrice(sortedPrices)
-    val removed = all.count { it.status == "REMOVED" }
+    val removed = groupedListings.count { it.representative.status == "REMOVED" }
+    val activeOriginalCount = all.count { it.status == "ACTIVE" }
+    val syncMessage = if (target.lastSyncStatus == "SUCCESS") {
+        buildString {
+            append("호가 ${activeGroups.size}개")
+            if (activeOriginalCount > activeGroups.size) append(" · 중개사 등록 ${activeOriginalCount}건")
+            target.lastSyncMessage.substringAfter("실거래", missingDelimiterValue = "")
+                .takeIf(String::isNotBlank)
+                ?.let { append(" · 실거래$it") }
+        }
+    } else {
+        target.lastSyncMessage
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
@@ -238,7 +251,7 @@ private fun TargetCard(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Metric("중앙 호가", formatWon(median), Modifier.weight(1f))
-                Metric("현재 매물", "${active.size}개", Modifier.weight(1f))
+                Metric("현재 매물", "${activeGroups.size}개", Modifier.weight(1f))
                 Metric("제거 매물", "${removed}개", Modifier.weight(1f))
             }
             if (snapshots.size >= 2) PriceLineChart(snapshots, Modifier.fillMaxWidth().height(96.dp))
@@ -265,7 +278,7 @@ private fun TargetCard(
                 color = syncColor(target.lastSyncStatus).copy(alpha = .1f),
             ) {
                 Text(
-                    target.lastSyncMessage,
+                    syncMessage,
                     modifier = Modifier.fillMaxWidth().padding(10.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = syncColor(target.lastSyncStatus),
@@ -273,9 +286,13 @@ private fun TargetCard(
             }
             TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "매물 접기" else "매물 보기") }
             if (expanded) {
-                all.sortedWith(compareBy<PropertyListingEntity> { it.status != "ACTIVE" }.thenBy { it.priceKrw })
-                    .take(30).forEach { listing ->
-                        ListingRow(listing) { runCatching { uriHandler.openUri(listing.sourceUrl) } }
+                groupedListings.sortedWith(
+                    compareBy<PropertyListingGroup> { it.representative.status != "ACTIVE" }
+                        .thenBy { it.representative.priceKrw },
+                ).take(30).forEach { group ->
+                        ListingRow(group.representative, group.listings.size) {
+                            runCatching { uriHandler.openUri(group.representative.sourceUrl) }
+                        }
                     }
             }
         }
@@ -283,7 +300,7 @@ private fun TargetCard(
 }
 
 @Composable
-private fun ListingRow(listing: PropertyListingEntity, open: () -> Unit) {
+private fun ListingRow(listing: PropertyListingEntity, duplicateCount: Int, open: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = open).padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -302,7 +319,14 @@ private fun ListingRow(listing: PropertyListingEntity, open: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                if (listing.status == "REMOVED") "네이버에서 제거됨" else listOf(listing.direction, listing.tags, listing.description).filter(String::isNotBlank).joinToString(" · "),
+                if (listing.status == "REMOVED") {
+                    "네이버에서 제거됨"
+                } else {
+                    buildList {
+                        if (duplicateCount > 1) add("동일 매물 · 중개사 등록 ${duplicateCount}건")
+                        addAll(listOf(listing.direction, listing.tags, listing.description).filter(String::isNotBlank))
+                    }.joinToString(" · ")
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
