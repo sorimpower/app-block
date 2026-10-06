@@ -124,6 +124,8 @@ import com.sorimpower.app.feature.perspective.presentation.PerspectiveScreen
 import com.sorimpower.app.feature.perspective.presentation.PerspectiveViewModel
 import com.sorimpower.app.feature.assets.presentation.AssetScreen
 import com.sorimpower.app.feature.assets.presentation.AssetViewModel
+import com.sorimpower.app.feature.propertytracker.presentation.PropertyTrackerScreen
+import com.sorimpower.app.feature.propertytracker.presentation.PropertyTrackerViewModel
 import com.sorimpower.app.core.ui.AppCobalt
 import com.sorimpower.app.core.ui.AppLilac
 import com.sorimpower.app.core.ui.AppNavy
@@ -142,7 +144,7 @@ import com.sorimpower.app.feature.blocker.presentation.ScheduleScreen
 import com.sorimpower.app.feature.settings.presentation.SettingsScreen
 
 private enum class Screen(val label: String) {
-    HOME("홈"), ASSETS("내 자산"), PERSPECTIVE("유튜브"), BLOCKER("차단"), BODY_LOG("건강"), AUCTION("경매"), PHONE_INSIGHT("알림"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
+    HOME("홈"), ASSETS("내 자산"), PERSPECTIVE("유튜브"), BLOCKER("차단"), BODY_LOG("건강"), AUCTION("경매"), PROPERTY_TRACKER("부동산 시세"), PHONE_INSIGHT("알림"), MORE("더보기"), SCHEDULE("조건"), APP_RULES("앱별 조건"), SETTINGS("설정")
 }
 
 private enum class HealthRecordTab(val label: String) { DAILY("데일리 기록"), CHECKUP("건강검진") }
@@ -199,6 +201,13 @@ private fun headerFeatureInfo(screen: Screen): HeaderFeatureInfo? = when (screen
         ai = listOf("AI가 임의로 자산 가격을 만들지 않음", "연동 전 직접 입력값은 MANUAL로 구분"),
         schedule = listOf("자산을 수정할 때 오늘 스냅샷 갱신", "Provider 연결 전에는 외부 시세를 가져온 것처럼 표시하지 않음"),
     )
+    Screen.PROPERTY_TRACKER -> HeaderFeatureInfo(
+        title = "부동산 시세 추적 안내",
+        description = "관심 아파트·평형의 매매 호가와 실거래가를 쌓고 갈아타기 가격 차이를 확인합니다.",
+        features = listOf("네이버 부동산 매물별 호가·가격 변경·제거 이력", "현재 집과 목표 단지의 호가·실거래 갭 및 최대 5개 단지 비교"),
+        ai = listOf("AI가 가격을 만들지 않음", "호가는 네이버 부동산 웹 응답, 실거래는 국토부 실거래 공개자료를 사용"),
+        schedule = listOf("매일 오전 8시 네트워크 연결 시 한 번 동기화", "조회 실패 시 기존 매물을 제거된 것으로 판단하지 않음"),
+    )
     else -> null
 }
 
@@ -212,6 +221,7 @@ internal fun SorimPowerApp(
     phoneInsightViewModel: PhoneInsightViewModel,
     perspectiveViewModel: PerspectiveViewModel,
     assetViewModel: AssetViewModel,
+    propertyTrackerViewModel: PropertyTrackerViewModel,
     accessibilityEnabled: () -> Boolean,
     openAccessibilitySettings: () -> Unit,
     openAuctionAnalysesRequest: Int = 0,
@@ -321,6 +331,7 @@ internal fun SorimPowerApp(
                             Screen.BLOCKER -> "앱 차단"
                             Screen.BODY_LOG -> "건강"
                             Screen.AUCTION -> "부동산 경매"
+                            Screen.PROPERTY_TRACKER -> "부동산 시세"
                             Screen.MORE -> "더보기"
                             Screen.PHONE_INSIGHT -> "AI 알림"
                             Screen.PERSPECTIVE -> "유튜브 분석"
@@ -407,6 +418,7 @@ internal fun SorimPowerApp(
                 { screen = Screen.PHONE_INSIGHT },
                 { screen = Screen.PERSPECTIVE },
                 { screen = Screen.ASSETS },
+                { screen = Screen.PROPERTY_TRACKER },
                 openAccessibilitySettings,
             )
             Screen.ASSETS -> AssetScreen(
@@ -438,7 +450,12 @@ internal fun SorimPowerApp(
                 onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } },
                 onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } },
             )
-            Screen.MORE -> MoreMenuScreen(padding, onOpenSettings = { screen = Screen.SETTINGS })
+            Screen.PROPERTY_TRACKER -> PropertyTrackerScreen(padding, propertyTrackerViewModel)
+            Screen.MORE -> MoreMenuScreen(
+                padding,
+                onOpenPropertyTracker = { screen = Screen.PROPERTY_TRACKER },
+                onOpenSettings = { screen = Screen.SETTINGS },
+            )
             Screen.BLOCKER -> BlockerScreen(
                 padding,
                 viewModel,
@@ -673,7 +690,7 @@ private fun FloatingNavigation(selected: Screen, order: List<BottomNavigationTab
             verticalAlignment = Alignment.CenterVertically,
         ) {
             order.map(BottomNavigationTab::screen).forEach { item ->
-                val active = selected == item || (item == Screen.MORE && selected == Screen.SETTINGS)
+                val active = selected == item || (item == Screen.MORE && (selected == Screen.SETTINGS || selected == Screen.PROPERTY_TRACKER))
                 Column(
                     Modifier.weight(1f).clickable { onSelected(item) }.padding(vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -706,12 +723,34 @@ private fun BottomNavigationTab.screen() = when (this) {
 }
 
 @Composable
-private fun MoreMenuScreen(padding: PaddingValues, onOpenSettings: () -> Unit) {
+private fun MoreMenuScreen(
+    padding: PaddingValues,
+    onOpenPropertyTracker: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     LazyColumn(
         Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item {
+            Card(
+                Modifier.fillMaxWidth().clickable(onClick = onOpenPropertyTracker),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(1.dp),
+            ) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(46.dp).background(MaterialTheme.colorScheme.secondary.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.AccountBalance, null, tint = MaterialTheme.colorScheme.secondary)
+                    }
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text("부동산 시세 추적", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                        Text("호가·실거래가와 갈아타기 갭을 매일 기록해요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
         item {
             Card(
                 Modifier.fillMaxWidth().clickable(onClick = onOpenSettings),

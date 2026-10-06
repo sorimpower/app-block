@@ -18,7 +18,7 @@ data class MolitTradeResult(
     val trades: List<MolitComparableTrade>,
 )
 
-internal class MolitRealEstateProvider {
+class MolitRealEstateProvider {
     suspend fun lookup(lawdCd: String, apartmentName: String, exclusiveAreaSqm: Double): MolitTradeResult {
         val result = FirebaseFunctions.getInstance("asia-northeast3")
             .getHttpsCallable("lookupMolitApartmentTrades")

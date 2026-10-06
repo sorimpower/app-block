@@ -21,6 +21,7 @@ import com.sorimpower.app.feature.healthcheckup.presentation.HealthCheckupViewMo
 import com.sorimpower.app.feature.phoneinsight.presentation.PhoneInsightViewModel
 import com.sorimpower.app.feature.perspective.presentation.PerspectiveViewModel
 import com.sorimpower.app.feature.assets.presentation.AssetViewModel
+import com.sorimpower.app.feature.propertytracker.presentation.PropertyTrackerViewModel
 import com.sorimpower.app.core.ui.SorimPowerTheme
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -32,6 +33,7 @@ class MainActivity : ComponentActivity() {
     private val phoneInsightViewModel: PhoneInsightViewModel by viewModels()
     private val perspectiveViewModel: PerspectiveViewModel by viewModels()
     private val assetViewModel: AssetViewModel by viewModels()
+    private val propertyTrackerViewModel: PropertyTrackerViewModel by viewModels()
     private var openAuctionAnalysesRequest by mutableIntStateOf(0)
     private var openPhoneInsightRequest by mutableIntStateOf(0)
     private var openPerspectiveRequest by mutableIntStateOf(0)
@@ -53,6 +55,7 @@ class MainActivity : ComponentActivity() {
                     phoneInsightViewModel,
                     perspectiveViewModel,
                     assetViewModel,
+                    propertyTrackerViewModel,
                     ::isAccessibilityServiceEnabled,
                     ::openAccessibilitySettings,
                     openAuctionAnalysesRequest,

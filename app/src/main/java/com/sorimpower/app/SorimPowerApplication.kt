@@ -9,6 +9,7 @@ import com.sorimpower.app.feature.auction.reminder.AuctionAiRecommendationSchedu
 import com.sorimpower.app.feature.bodylog.data.BodyLogRepository
 import com.sorimpower.app.feature.bodylog.reminder.MealCalorieAnalysisScheduler
 import com.sorimpower.app.feature.phoneinsight.service.PhoneInsightNotificationListenerService
+import com.sorimpower.app.feature.propertytracker.reminder.PropertyTrackerSyncScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,6 +20,7 @@ class SorimPowerApplication : Application() {
         super.onCreate()
         NotificationListenerService.requestRebind(ComponentName(this, PhoneInsightNotificationListenerService::class.java))
         AuctionAiRecommendationScheduler.restore(this)
+        PropertyTrackerSyncScheduler.restore(this)
         MealCalorieAnalysisScheduler.cancelObsoleteDailyWork(this)
         FirebaseApp.initializeApp(this) ?: return
         FirebaseAppCheck.getInstance().installSorimPowerProvider()

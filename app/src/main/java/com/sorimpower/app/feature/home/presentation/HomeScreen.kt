@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.ShowChart
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.Lock
@@ -57,6 +58,7 @@ internal fun HomeScreen(
     openPhoneInsight: () -> Unit,
     openPerspective: () -> Unit,
     openAssets: () -> Unit,
+    openPropertyTracker: () -> Unit,
     openAccessibilitySettings: () -> Unit,
 ) {
     LazyColumn(
@@ -112,6 +114,15 @@ internal fun HomeScreen(
                     onClick = openAuction,
                 )
             }
+        }
+        item {
+            HomeWideFeatureCard(
+                title = "부동산 시세 추적",
+                description = "관심 단지 호가와 갈아타기 가격 차이를 매일 기록해요",
+                icon = Icons.AutoMirrored.Rounded.ShowChart,
+                accent = AppOrange,
+                onClick = openPropertyTracker,
+            )
         }
         item {
             HomeSectionTitle("생각과 집중", "시야를 넓히고 방해를 줄여요")
