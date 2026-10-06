@@ -216,7 +216,8 @@ private fun TargetCard(
     val groupedListings = remember(all) { PropertyTrackerRepository.groupDuplicateListings(all) }
     val activeGroups = groupedListings.filter { it.representative.status == "ACTIVE" }
     val sortedPrices = activeGroups.map { it.representative.priceKrw }.sorted()
-    val median = PropertyTrackerRepository.medianPrice(sortedPrices)
+    val lowestPrice = sortedPrices.firstOrNull() ?: 0L
+    val highestPrice = sortedPrices.lastOrNull() ?: 0L
     val removed = groupedListings.count { it.representative.status == "REMOVED" }
     val activeOriginalCount = all.count { it.status == "ACTIVE" }
     val syncMessage = if (target.lastSyncStatus == "SUCCESS") {
@@ -250,7 +251,10 @@ private fun TargetCard(
                 IconButton(onClick = { onDelete(target) }) { Icon(Icons.Rounded.DeleteOutline, "삭제") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric("중앙 호가", formatWon(median), Modifier.weight(1f))
+                Metric("최저 호가", formatWon(lowestPrice), Modifier.weight(1f))
+                Metric("최고 호가", formatWon(highestPrice), Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Metric("현재 매물", "${activeGroups.size}개", Modifier.weight(1f))
                 Metric("제거 매물", "${removed}개", Modifier.weight(1f))
             }
