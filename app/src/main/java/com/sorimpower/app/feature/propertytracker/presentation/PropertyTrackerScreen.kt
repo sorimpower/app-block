@@ -165,12 +165,10 @@ private fun WatchTab(
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("매일 오전 8시 시세 기록", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        state.latestRun?.let { "최근 동기화 ${formatEpochDay(it.epochDay)} · ${syncLabel(it.status)}" }
-                            ?: "관심 단지의 매매 호가와 실거래가를 하루 한 번 저장합니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        "${LocalDate.now().format(DateTimeFormatter.ofPattern("M월 d일"))} 오전 8시 기준",
+                        fontWeight = FontWeight.Black,
+                        style = MaterialTheme.typography.titleMedium,
                     )
                 }
                 IconButton(onClick = onSync, enabled = !syncing) {
@@ -729,9 +727,7 @@ private fun formatWon(value: Long): String {
 }
 
 private fun formatArea(value: Double): String = if (value % 1.0 == 0.0) value.roundToLong().toString() else "%.1f".format(value)
-private fun formatEpochDay(epochDay: Long): String = LocalDate.ofEpochDay(epochDay).format(DateTimeFormatter.ofPattern("M월 d일"))
 private fun formatTimestamp(value: Long): String = java.time.Instant.ofEpochMilli(value).atZone(java.time.ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("M.d HH:mm"))
-private fun syncLabel(status: String) = when (status) { "SUCCESS" -> "완료"; "PARTIAL" -> "일부 완료"; "FAILED" -> "실패"; else -> "조회 중" }
 private fun syncColor(status: String) = when (status) { "SUCCESS" -> Color(0xFF21845A); "FAILED" -> Color(0xFFC6464E); else -> Color(0xFF8B6D13) }
 private fun eventLabel(type: String) = when (type) { "ADDED" -> "신규 매물"; "PRICE_CHANGED" -> "가격 변경"; "REMOVED" -> "매물 제거"; "RELISTED" -> "매물 재등록"; else -> type }
 private fun eventColor(type: String) = when (type) { "ADDED", "RELISTED" -> Color(0xFF21845A); "REMOVED" -> Color(0xFF8A818A); else -> Color(0xFFC25B26) }
