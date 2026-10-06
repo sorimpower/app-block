@@ -23,6 +23,12 @@ class PropertyTrackerModelsTest {
     }
 
     @Test
+    fun `네이버 부동산 페이지에서 세션 토큰을 읽는다`() {
+        val html = """<script>window.App={"state":{"token":{"token":"header.payload.signature"}}}</script>"""
+        assertEquals("header.payload.signature", NaverLandProvider.extractSessionToken(html))
+    }
+
+    @Test
     fun `네이버 단지 검색 응답을 등록 후보로 변환한다`() {
         val results = NaverLandProvider.parseComplexSearch(
             """

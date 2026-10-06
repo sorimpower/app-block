@@ -49,6 +49,11 @@ data class NaverLandComplexDetail(
 )
 
 class NaverLandProvider {
+    private val sessionLock = Any()
+    private val sessionCookies = linkedMapOf<String, String>()
+    private var sessionToken = ""
+    private var sessionCreatedAt = 0L
+
     suspend fun searchComplexes(keyword: String): List<NaverLandComplex> = withContext(Dispatchers.IO) {
         val query = keyword.trim()
         require(query.length >= 2) { "단지명이나 주소를 두 글자 이상 입력해 주세요." }
@@ -70,25 +75,7 @@ class NaverLandProvider {
         var hasMore: Boolean
         do {
             val endpoint = buildEndpoint(target, page)
-            val connection = URI(endpoint).toURL().openConnection() as HttpURLConnection
-            val body = try {
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 12_000
-                connection.readTimeout = 15_000
-                connection.setRequestProperty("Accept", "application/json, text/plain, */*")
-                connection.setRequestProperty("Accept-Language", "ko-KR,ko;q=0.9")
-                connection.setRequestProperty("Referer", "https://new.land.naver.com/complexes/${target.complexNo}")
-                connection.setRequestProperty(
-                    "User-Agent",
-                    "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131 Mobile Safari/537.36",
-                )
-                val status = connection.responseCode
-                if (status == 429) throw NaverLandException("네이버가 조회를 잠시 제한했습니다. 다음 동기화 때 다시 시도합니다.")
-                if (status !in 200..299) throw NaverLandException("네이버 부동산 응답 오류($status)")
-                connection.inputStream.bufferedReader().use { it.readText() }
-            } finally {
-                connection.disconnect()
-            }
+            val body = requestJson(endpoint, "https://new.land.naver.com/complexes/${target.complexNo}")
             val root = JSONObject(body)
             if (!root.has("articleList") || root.isNull("articleList")) {
                 throw NaverLandException("네이버 부동산 응답 형식이 변경되어 이번 기록을 건너뜁니다.")
@@ -176,29 +163,88 @@ class NaverLandProvider {
     private fun encode(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
 
     private fun requestJson(endpoint: String, referer: String): String {
+        ensureSession()
+        var response = executeRequest(endpoint, referer, acceptJson = true)
+        if (response.status == 401 || response.status == 429) {
+            invalidateSession()
+            ensureSession()
+            response = executeRequest(endpoint, referer, acceptJson = true)
+        }
+        if (response.status == 401) throw NaverLandException("네이버 부동산 인증 세션을 갱신하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+        if (response.status == 429) throw NaverLandException("네이버가 조회를 잠시 제한했습니다. 잠시 후 다시 시도해 주세요.")
+        if (response.status !in 200..299) throw NaverLandException("네이버 부동산 응답 오류(${response.status})")
+        return response.body
+    }
+
+    private fun ensureSession() = synchronized(sessionLock) {
+        val sessionFresh = sessionCookies.isNotEmpty() && sessionToken.isNotBlank() &&
+            System.currentTimeMillis() - sessionCreatedAt < SESSION_MAX_AGE_MS
+        if (sessionFresh) return@synchronized
+        sessionCookies.clear()
+        sessionToken = ""
+        val response = executeRequest(
+            endpoint = "https://new.land.naver.com/complexes",
+            referer = "https://new.land.naver.com/",
+            acceptJson = false,
+        )
+        if (response.status !in 200..399) {
+            throw NaverLandException("네이버 부동산 연결을 준비하지 못했습니다(${response.status}).")
+        }
+        sessionToken = extractSessionToken(response.body).orEmpty()
+        if (sessionCookies.isEmpty() || sessionToken.isBlank()) {
+            throw NaverLandException("네이버 부동산 검색 세션을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.")
+        }
+        sessionCreatedAt = System.currentTimeMillis()
+    }
+
+    private fun invalidateSession() = synchronized(sessionLock) {
+        sessionCookies.clear()
+        sessionToken = ""
+        sessionCreatedAt = 0L
+    }
+
+    private fun executeRequest(endpoint: String, referer: String, acceptJson: Boolean): HttpResponse {
         val connection = URI(endpoint).toURL().openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = "GET"
+            connection.instanceFollowRedirects = true
             connection.connectTimeout = 12_000
             connection.readTimeout = 15_000
-            connection.setRequestProperty("Accept", "application/json, text/plain, */*")
+            connection.setRequestProperty("Accept", if (acceptJson) "application/json, text/plain, */*" else "text/html,application/xhtml+xml")
             connection.setRequestProperty("Accept-Language", "ko-KR,ko;q=0.9")
             connection.setRequestProperty("Referer", referer)
-            connection.setRequestProperty(
-                "User-Agent",
-                "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131 Mobile Safari/537.36",
-            )
+            connection.setRequestProperty("User-Agent", DESKTOP_USER_AGENT)
+            synchronized(sessionLock) {
+                if (sessionCookies.isNotEmpty()) {
+                    connection.setRequestProperty("Cookie", sessionCookies.entries.joinToString("; ") { (name, value) -> "$name=$value" })
+                }
+                if (sessionToken.isNotBlank()) connection.setRequestProperty("Authorization", "Bearer $sessionToken")
+            }
             val status = connection.responseCode
-            if (status == 429) throw NaverLandException("네이버가 검색을 잠시 제한했습니다. 잠시 후 다시 시도하거나 직접 입력해 주세요.")
-            if (status !in 200..299) throw NaverLandException("네이버 부동산 검색 응답 오류($status)")
-            connection.inputStream.bufferedReader().use { it.readText() }
+            captureCookies(connection)
+            val stream = if (status in 200..399) connection.inputStream else connection.errorStream
+            HttpResponse(status, stream?.bufferedReader()?.use { it.readText() }.orEmpty())
         } finally {
             connection.disconnect()
         }
     }
 
+    private fun captureCookies(connection: HttpURLConnection) = synchronized(sessionLock) {
+        connection.headerFields.entries
+            .filter { (name, _) -> name?.equals("Set-Cookie", ignoreCase = true) == true }
+            .flatMap { it.value.orEmpty() }
+            .forEach { header ->
+                val pair = header.substringBefore(';')
+                val separator = pair.indexOf('=')
+                if (separator > 0) sessionCookies[pair.substring(0, separator).trim()] = pair.substring(separator + 1).trim()
+            }
+    }
+
     companion object {
         private const val MAX_PAGES = 20
+        private const val SESSION_MAX_AGE_MS = 20 * 60 * 1_000L
+        private const val DESKTOP_USER_AGENT =
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
         fun parseKoreanPrice(raw: String): Long? {
             val normalized = raw.replace(",", "").replace(" ", "").trim()
@@ -222,6 +268,10 @@ class NaverLandProvider {
 
         fun extractAreaNo(input: String): String? =
             Regex("(?:areaNos?|areaNo)=([0-9]+)").find(input)?.groupValues?.getOrNull(1)
+
+        fun extractSessionToken(html: String): String? =
+            Regex("\\\"token\\\"\\s*:\\s*\\{\\s*\\\"token\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+                .find(html)?.groupValues?.getOrNull(1)
 
         fun parseComplexSearch(body: String): List<NaverLandComplex> {
             val root = JSONObject(body)
@@ -277,6 +327,8 @@ class NaverLandProvider {
         }
     }
 }
+
+private data class HttpResponse(val status: Int, val body: String)
 
 class NaverLandException(message: String) : Exception(message)
 

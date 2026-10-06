@@ -80,6 +80,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.AccountBalance
+import androidx.compose.material.icons.rounded.Apartment
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Savings
@@ -227,6 +228,7 @@ internal fun SettingsScreen(
                         DestinationCard(Icons.Rounded.Psychology, "유튜브 분석", "콘텐츠 지도와 새로운 관점으로 바로 시작", state.startDestination == StartDestination.PERSPECTIVE) { viewModel.setStartDestination(StartDestination.PERSPECTIVE) }
                         DestinationCard(Icons.Rounded.FavoriteBorder, "건강", "체중과 식사 기록으로 바로 시작", state.startDestination == StartDestination.BODY_LOG) { viewModel.setStartDestination(StartDestination.BODY_LOG) }
                         DestinationCard(Icons.Rounded.Savings, "내 자산", "순자산과 자산별 평가 내역으로 바로 시작", state.startDestination == StartDestination.ASSETS) { viewModel.setStartDestination(StartDestination.ASSETS) }
+                        DestinationCard(Icons.Rounded.Apartment, "부동산 시세 추적", "관심 단지의 호가와 갈아타기 갭으로 바로 시작", state.startDestination == StartDestination.PROPERTY_TRACKER) { viewModel.setStartDestination(StartDestination.PROPERTY_TRACKER) }
                         DestinationCard(Icons.Rounded.Gavel, "부동산 경매", "관심 조건 경매 목록으로 바로 시작", state.startDestination == StartDestination.REAL_ESTATE_AUCTION) { viewModel.setStartDestination(StartDestination.REAL_ESTATE_AUCTION) }
                         DestinationCard(Icons.Rounded.Block, "앱 차단", "차단 설정으로 바로 시작", state.startDestination == StartDestination.APP_BLOCKER) { viewModel.setStartDestination(StartDestination.APP_BLOCKER) }
                     }
@@ -345,6 +347,7 @@ private fun bottomNavigationIcon(tab: BottomNavigationTab): ImageVector = when (
     BottomNavigationTab.AUCTION -> Icons.Rounded.Gavel
     BottomNavigationTab.PERSPECTIVE -> Icons.Rounded.Psychology
     BottomNavigationTab.ASSETS -> Icons.Rounded.Savings
+    BottomNavigationTab.PROPERTY_TRACKER -> Icons.Rounded.Apartment
     BottomNavigationTab.MORE -> Icons.Rounded.MoreHoriz
 }
 

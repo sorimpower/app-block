@@ -77,6 +77,7 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.AccountBalance
+import androidx.compose.material.icons.rounded.Apartment
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -255,6 +256,10 @@ internal fun SorimPowerApp(
     val hasNotificationDeepLink = openAuctionAnalysesRequest > 0 ||
         openPhoneInsightRequest > 0 ||
         openPerspectiveRequest > 0
+    val openMainScreen: (Screen) -> Unit = { target ->
+        if (target == Screen.PROPERTY_TRACKER) propertyTrackerOrigin = Screen.HOME
+        screen = target
+    }
 
     LaunchedEffect(state.loaded, state.startDestination, hasNotificationDeepLink) {
         if (state.loaded && !hasNotificationDeepLink) {
@@ -266,6 +271,7 @@ internal fun SorimPowerApp(
                 StartDestination.PHONE_INSIGHT -> Screen.PHONE_INSIGHT
                 StartDestination.PERSPECTIVE -> Screen.PERSPECTIVE
                 StartDestination.ASSETS -> Screen.ASSETS
+                StartDestination.PROPERTY_TRACKER -> Screen.PROPERTY_TRACKER
                 StartDestination.MORE -> Screen.MORE
             }
         }
@@ -375,7 +381,7 @@ internal fun SorimPowerApp(
             }
         },
         bottomBar = {
-            if (screen != Screen.SCHEDULE && screen != Screen.APP_RULES) FloatingNavigation(screen, state.bottomNavigationOrder) { screen = it }
+            if (screen != Screen.SCHEDULE && screen != Screen.APP_RULES) FloatingNavigation(screen, state.bottomNavigationOrder, openMainScreen)
         },
     ) { padding ->
         val navigationScreens = state.bottomNavigationOrder.map(BottomNavigationTab::screen)
@@ -385,14 +391,14 @@ internal fun SorimPowerApp(
                     if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE && screen != Screen.ASSETS) {
                         val tabs = state.bottomNavigationOrder.map(BottomNavigationTab::screen)
                         val index = tabs.indexOf(screen)
-                        if (index >= 0 && index < tabs.lastIndex) screen = tabs[index + 1]
+                        if (index >= 0 && index < tabs.lastIndex) openMainScreen(tabs[index + 1])
                     }
                 },
                 onSwipeRight = {
                     if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE && screen != Screen.ASSETS) {
                         val tabs = state.bottomNavigationOrder.map(BottomNavigationTab::screen)
                         val index = tabs.indexOf(screen)
-                        if (index > 0) screen = tabs[index - 1]
+                        if (index > 0) openMainScreen(tabs[index - 1])
                     }
                 },
             )
@@ -697,15 +703,18 @@ private fun FloatingNavigation(selected: Screen, order: List<BottomNavigationTab
             Modifier.fillMaxWidth().navigationBarsPadding().height(70.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            order.map(BottomNavigationTab::screen).forEach { item ->
-                val active = selected == item || (item == Screen.MORE && (selected == Screen.SETTINGS || selected == Screen.PROPERTY_TRACKER))
+            order.forEach { tab ->
+                val item = tab.screen()
+                val propertyTabVisible = BottomNavigationTab.PROPERTY_TRACKER in order
+                val active = selected == item ||
+                    (item == Screen.MORE && (selected == Screen.SETTINGS || (selected == Screen.PROPERTY_TRACKER && !propertyTabVisible)))
                 Column(
                     Modifier.weight(1f).clickable { onSelected(item) }.padding(vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     NavIcon(item, active)
                     Text(
-                        item.label,
+                        tab.label,
                         modifier = Modifier.padding(top = 3.dp),
                         color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
@@ -727,6 +736,7 @@ private fun BottomNavigationTab.screen() = when (this) {
     BottomNavigationTab.AUCTION -> Screen.AUCTION
     BottomNavigationTab.PERSPECTIVE -> Screen.PERSPECTIVE
     BottomNavigationTab.ASSETS -> Screen.ASSETS
+    BottomNavigationTab.PROPERTY_TRACKER -> Screen.PROPERTY_TRACKER
     BottomNavigationTab.MORE -> Screen.MORE
 }
 
@@ -790,6 +800,7 @@ private fun NavIcon(screen: Screen, selected: Boolean) {
         Screen.PHONE_INSIGHT -> Icons.Rounded.NotificationsNone
         Screen.PERSPECTIVE -> Icons.Rounded.Psychology
         Screen.ASSETS -> Icons.Rounded.AccountBalance
+        Screen.PROPERTY_TRACKER -> Icons.Rounded.Apartment
         Screen.MORE -> Icons.Rounded.MoreHoriz
         else -> Icons.Rounded.Settings
     }

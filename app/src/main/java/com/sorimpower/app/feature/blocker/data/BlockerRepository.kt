@@ -184,9 +184,18 @@ class BlockerRepository(private val context: Context) {
     suspend fun migrateBottomNavigation() = context.blockerDataStore.edit { preferences ->
         if ((preferences[bottomNavigationSchemaVersionKey] ?: 0) >= BOTTOM_NAVIGATION_SCHEMA_VERSION) return@edit
         val tabs = BottomNavigationTab.from(preferences[bottomNavigationOrderKey]).toMutableList()
+        var changed = false
         if (BottomNavigationTab.PERSPECTIVE !in tabs) {
             val phoneIndex = tabs.indexOf(BottomNavigationTab.PHONE_INSIGHT)
             tabs.add(if (phoneIndex >= 0) phoneIndex + 1 else 1.coerceAtMost(tabs.size), BottomNavigationTab.PERSPECTIVE)
+            changed = true
+        }
+        if (BottomNavigationTab.PROPERTY_TRACKER !in tabs) {
+            val moreIndex = tabs.indexOf(BottomNavigationTab.MORE).takeIf { it >= 0 } ?: tabs.size
+            tabs.add(moreIndex, BottomNavigationTab.PROPERTY_TRACKER)
+            changed = true
+        }
+        if (changed) {
             preferences[bottomNavigationOrderKey] = BottomNavigationTab.normalize(tabs).joinToString(",") { it.name }
         }
         preferences[bottomNavigationSchemaVersionKey] = BOTTOM_NAVIGATION_SCHEMA_VERSION
@@ -361,7 +370,7 @@ class BlockerRepository(private val context: Context) {
     companion object {
         const val DEFAULT_BLOCK_MESSAGE = "지금은 잠시 멈춰갈 시간이에요."
         private const val LEGACY_SCHEDULE_ID = "legacy-default"
-        private const val BOTTOM_NAVIGATION_SCHEMA_VERSION = 3
+        private const val BOTTOM_NAVIGATION_SCHEMA_VERSION = 4
     }
 }
 
@@ -375,6 +384,7 @@ enum class StartDestination {
     PHONE_INSIGHT,
     PERSPECTIVE,
     ASSETS,
+    PROPERTY_TRACKER,
     MORE;
 
     companion object {
@@ -383,7 +393,7 @@ enum class StartDestination {
 }
 
 enum class BottomNavigationTab(val label: String) {
-    HOME("홈"), PHONE_INSIGHT("알림"), PERSPECTIVE("유튜브"), ASSETS("자산"), BLOCKER("차단"), BODY_LOG("건강"), AUCTION("경매"), MORE("더보기");
+    HOME("홈"), PHONE_INSIGHT("알림"), PERSPECTIVE("유튜브"), ASSETS("자산"), BLOCKER("차단"), BODY_LOG("건강"), AUCTION("경매"), PROPERTY_TRACKER("시세"), MORE("더보기");
 
     companion object {
         val defaultOrder = entries.toList()
