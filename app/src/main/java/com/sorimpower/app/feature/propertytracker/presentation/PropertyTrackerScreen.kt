@@ -1,8 +1,11 @@
 package com.sorimpower.app.feature.propertytracker.presentation
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,6 +64,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -84,6 +90,7 @@ import java.time.temporal.ChronoUnit
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.roundToLong
 import kotlinx.coroutines.launch
 
@@ -96,6 +103,8 @@ private enum class PropertyTab(val label: String) {
 fun PropertyTrackerScreen(
     padding: PaddingValues,
     viewModel: PropertyTrackerViewModel,
+    onSwipeEdgeLeft: () -> Unit = {},
+    onSwipeEdgeRight: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val syncing by viewModel.syncing.collectAsStateWithLifecycle()
@@ -119,7 +128,12 @@ fun PropertyTrackerScreen(
             }
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().propertyEdgeSwipe(
+                    currentPage = pagerState.currentPage,
+                    pageCount = PropertyTab.entries.size,
+                    onSwipeEdgeLeft = onSwipeEdgeLeft,
+                    onSwipeEdgeRight = onSwipeEdgeRight,
+                ),
                 beyondViewportPageCount = 1,
             ) { page ->
                 when (PropertyTab.entries[page]) {
@@ -269,8 +283,20 @@ private fun TargetCard(
                 IconButton(onClick = { onDelete(target) }) { Icon(Icons.Rounded.DeleteOutline, "삭제") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric("최저 호가", formatWon(lowestPrice), Modifier.weight(1f))
-                Metric("최고 호가", formatWon(highestPrice), Modifier.weight(1f))
+                Metric(
+                    label = "최저 호가",
+                    value = formatWon(lowestPrice),
+                    modifier = Modifier.weight(1f),
+                    containerColor = Color(0xFFE7F7EF),
+                    valueColor = Color(0xFF167A50),
+                )
+                Metric(
+                    label = "최고 호가",
+                    value = formatWon(highestPrice),
+                    modifier = Modifier.weight(1f),
+                    containerColor = Color(0xFFFFEEE6),
+                    valueColor = Color(0xFFB64F24),
+                )
             }
             Surface(
                 shape = RoundedCornerShape(18.dp),
@@ -399,7 +425,7 @@ private fun MoveTab(state: PropertyTrackerUiState) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text("현재 집 · ${current.apartmentName}", fontWeight = FontWeight.Black)
                         Text("호가 ${formatPriceRange(currentAsking)}")
-                        Text("최근 실거래 ${formatPriceRange(currentActual)}", style = MaterialTheme.typography.bodySmall)
+                        Text("최근 실거래 ${formatPriceRange(currentActual, "최근 1년 신고 거래 없음")}", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -469,6 +495,7 @@ private fun GapRow(label: String, gap: Long, onClick: (() -> Unit)? = null) {
 @Composable
 private fun CompareTab(state: PropertyTrackerUiState, onSelect: (String, Boolean) -> Unit) {
     val selected = state.targets.filter(PropertyWatchTargetEntity::isCompareSelected)
+    val targetColors = state.targets.mapIndexed { index, target -> target.id to comparisonColor(index) }.toMap()
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -479,11 +506,11 @@ private fun CompareTab(state: PropertyTrackerUiState, onSelect: (String, Boolean
             Text("실거래 흐름과 현재 호가 범위를 한눈에 비교해요.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (selected.isEmpty()) {
-            item { EmptyCard("비교할 단지를 골라 주세요", "관심 단지 중 최대 5개를 선택할 수 있습니다.") }
+            item { EmptyCard("비교할 단지를 골라 주세요", "아래 단지 카드를 누르면 그래프에 표시됩니다.") }
         } else {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ComparisonTimelineChart(selected, state, Modifier.fillMaxWidth().height(310.dp))
+                    ComparisonTimelineChart(selected, state, targetColors, Modifier.fillMaxWidth().height(370.dp))
                     Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("매물·매매 수", fontWeight = FontWeight.Black)
@@ -496,27 +523,22 @@ private fun CompareTab(state: PropertyTrackerUiState, onSelect: (String, Boolean
                                 targets = selected,
                                 snapshotsByTarget = selected.associate { it.id to state.snapshotsFor(it.id) },
                                 tradesByTarget = selected.associate { it.id to state.tradesFor(it.id) },
+                                colorsByTarget = targetColors,
                                 modifier = Modifier.fillMaxWidth().height(170.dp),
                             )
                         }
                     }
                 }
             }
-            items(selected.withIndex().toList(), key = { it.value.id }) { (index, target) ->
-                ComparisonSummaryCard(target, state, comparisonColor(index))
-            }
         }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("비교 단지 선택", fontWeight = FontWeight.Bold)
-                state.targets.forEach { target ->
-                    FilterChip(
-                        selected = target.isCompareSelected,
-                        onClick = { onSelect(target.id, !target.isCompareSelected) },
-                        label = { Text("${target.apartmentName} · ${targetAreaLabel(target)}") },
-                    )
-                }
-            }
+        items(state.targets, key = PropertyWatchTargetEntity::id) { target ->
+            ComparisonSummaryCard(
+                target = target,
+                state = state,
+                color = targetColors.getValue(target.id),
+                selected = target.isCompareSelected,
+                onClick = { onSelect(target.id, !target.isCompareSelected) },
+            )
         }
     }
 }
@@ -745,11 +767,17 @@ private fun AreaOption(option: NaverLandArea, selected: Boolean, onClick: () -> 
 }
 
 @Composable
-private fun Metric(label: String, value: String, modifier: Modifier = Modifier) {
-    Surface(modifier, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .45f)) {
+private fun Metric(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .45f),
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Surface(modifier, shape = RoundedCornerShape(14.dp), color = containerColor) {
         Column(Modifier.padding(10.dp)) {
             Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, fontWeight = FontWeight.Black, maxLines = 1)
+            Text(value, fontWeight = FontWeight.Black, color = valueColor, maxLines = 1)
         }
     }
 }
@@ -768,136 +796,221 @@ private fun EmptyCard(title: String, body: String) {
 private fun ComparisonTimelineChart(
     targets: List<PropertyWatchTargetEntity>,
     state: PropertyTrackerUiState,
+    colorsByTarget: Map<String, Color>,
     modifier: Modifier,
 ) {
     val today = LocalDate.now()
-    val datedTrades = targets.flatMap { target ->
-        state.tradesFor(target.id).mapNotNull { trade ->
-            parseTradeDate(trade.tradeDate)?.let { date -> Triple(target.id, date, trade.priceKrw) }
-        }
+    var period by remember { mutableStateOf(PriceChartPeriod.YEAR) }
+    var showTrades by remember { mutableStateOf(true) }
+    var showAsking by remember { mutableStateOf(true) }
+    var selection by remember { mutableStateOf<PriceChartSelection?>(null) }
+    val startDate = period.startDate(today)
+    val actualRanges = targets.flatMap { target ->
+        state.tradesFor(target.id)
+            .mapNotNull { trade -> parseTradeDate(trade.tradeDate)?.let { it to trade.priceKrw } }
+            .filter { (date, _) -> date in startDate..today }
+            .groupBy { (date, _) -> if (period == PriceChartPeriod.YEAR) YearMonth.from(date) else date }
+            .map { (bucket, trades) ->
+                val prices = trades.map { it.second }
+                val date = when (bucket) {
+                    is YearMonth -> bucket.atDay(minOf(15, bucket.lengthOfMonth())).coerceAtMost(today)
+                    else -> bucket as LocalDate
+                }
+                ActualRangePoint(target.id, target.apartmentName, date, prices.min(), prices.max(), prices.size)
+            }
+            .sortedBy(ActualRangePoint::date)
     }
     val datedSnapshots = targets.flatMap { target ->
-        state.snapshotsFor(target.id).map { snapshot -> Triple(target.id, LocalDate.ofEpochDay(snapshot.epochDay), snapshot) }
-    }
-    val allPrices = buildList {
-        addAll(datedTrades.map { it.third })
-        datedSnapshots.forEach { (_, _, snapshot) ->
-            if (snapshot.minPriceKrw > 0) add(snapshot.minPriceKrw)
-            if (snapshot.maxPriceKrw > 0) add(snapshot.maxPriceKrw)
+        state.snapshotsFor(target.id).mapNotNull { snapshot ->
+            val date = LocalDate.ofEpochDay(snapshot.epochDay)
+            if (date in startDate..today && snapshot.minPriceKrw > 0 && snapshot.maxPriceKrw > 0) {
+                AskingRangePoint(target.id, target.apartmentName, date, snapshot)
+            } else {
+                null
+            }
         }
     }
-    val allDates = datedTrades.map { it.second } + datedSnapshots.map { it.second }
-    val startDate = allDates.minOrNull() ?: today
-    val endDate = maxOf(allDates.maxOrNull() ?: today, today)
+    val allPrices = buildList {
+        if (showTrades) actualRanges.forEach { add(it.minPriceKrw); add(it.maxPriceKrw) }
+        if (showAsking) datedSnapshots.forEach { add(it.snapshot.minPriceKrw); add(it.snapshot.maxPriceKrw) }
+    }
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val gridColor = MaterialTheme.colorScheme.outlineVariant
-    val surfaceColor = MaterialTheme.colorScheme.surface
+    val fallbackColor = MaterialTheme.colorScheme.primary
 
     Surface(modifier, shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("가격 흐름", fontWeight = FontWeight.Black)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("● 실거래", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("▨ 최저~최고 호가", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("가격 흐름", Modifier.weight(1f), fontWeight = FontWeight.Black)
+                PriceChartPeriod.entries.forEach { option ->
+                    FilterChip(
+                        selected = period == option,
+                        onClick = { period = option; selection = null },
+                        label = { Text(option.label) },
+                    )
+                }
             }
-            Canvas(Modifier.fillMaxWidth().weight(1f)) {
-                if (allPrices.isEmpty()) return@Canvas
-                val left = 72.dp.toPx()
-                val right = size.width - 8.dp.toPx()
-                val top = 6.dp.toPx()
-                val bottom = size.height - 22.dp.toPx()
-                val rawMin = allPrices.min()
-                val rawMax = allPrices.max()
-                val padding = ((rawMax - rawMin) * .08).roundToLong().coerceAtLeast(10_000_000L)
-                val minPrice = (rawMin - padding).coerceAtLeast(0L)
-                val maxPrice = rawMax + padding
-                val priceRange = (maxPrice - minPrice).coerceAtLeast(1L)
-                val days = ChronoUnit.DAYS.between(startDate, endDate).coerceAtLeast(1L)
-                fun x(date: LocalDate): Float = left + (right - left) * ChronoUnit.DAYS.between(startDate, date).toFloat() / days
-                fun y(price: Long): Float = bottom - (bottom - top) * (price - minPrice).toFloat() / priceRange
-
-                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                    color = labelColor.toArgb()
-                    textSize = 10.dp.toPx()
-                }
-                listOf(0f, .5f, 1f).forEach { fraction ->
-                    val lineY = bottom - (bottom - top) * fraction
-                    drawLine(gridColor, Offset(left, lineY), Offset(right, lineY), strokeWidth = 1.dp.toPx())
-                    val price = minPrice + (priceRange * fraction).roundToLong()
-                    drawContext.canvas.nativeCanvas.drawText(formatWon(price), 0f, lineY + 4.dp.toPx(), paint)
-                }
-                drawContext.canvas.nativeCanvas.drawText(startDate.format(DateTimeFormatter.ofPattern("M.d")), left, size.height, paint)
-                val endLabel = endDate.format(DateTimeFormatter.ofPattern("M.d"))
-                drawContext.canvas.nativeCanvas.drawText(endLabel, right - paint.measureText(endLabel), size.height, paint)
-
-                targets.forEachIndexed { index, target ->
-                    val color = comparisonColor(index)
-                    val snapshots = datedSnapshots
-                        .filter { it.first == target.id }
-                        .filter { it.third.minPriceKrw > 0 && it.third.maxPriceKrw > 0 }
-                        .sortedBy { it.second }
-                    if (snapshots.size == 1) {
-                        val (_, date, snapshot) = snapshots.first()
-                        val pointX = (x(date) - (targets.lastIndex - index) * 12.dp.toPx()).coerceAtLeast(left)
-                        val halfWidth = 10.dp.toPx()
-                        val upper = y(snapshot.maxPriceKrw)
-                        val lower = y(snapshot.minPriceKrw)
-                        drawRect(
-                            color.copy(alpha = .1f),
-                            topLeft = Offset(pointX - halfWidth, upper),
-                            size = androidx.compose.ui.geometry.Size(halfWidth * 2, lower - upper),
-                        )
-                        var hatchY = upper
-                        while (hatchY < lower) {
-                            drawLine(color.copy(alpha = .45f), Offset(pointX - halfWidth, hatchY + 7.dp.toPx()), Offset(pointX + halfWidth, hatchY), 1.dp.toPx())
-                            hatchY += 7.dp.toPx()
-                        }
-                        drawCircle(color, 4.dp.toPx(), Offset(pointX, upper))
-                        drawCircle(color, 4.dp.toPx(), Offset(pointX, lower))
-                    } else if (snapshots.size > 1) {
-                        val band = Path()
-                        snapshots.forEachIndexed { pointIndex, (_, date, snapshot) ->
-                            val point = Offset(x(date), y(snapshot.maxPriceKrw))
-                            if (pointIndex == 0) band.moveTo(point.x, point.y) else band.lineTo(point.x, point.y)
-                        }
-                        snapshots.asReversed().forEach { (_, date, snapshot) -> band.lineTo(x(date), y(snapshot.minPriceKrw)) }
-                        band.close()
-                        drawPath(band, color.copy(alpha = .1f))
-
-                        snapshots.zipWithNext().forEach { (first, second) ->
-                            val x1 = x(first.second)
-                            val x2 = x(second.second)
-                            val width = (x2 - x1).coerceAtLeast(1f)
-                            val step = 9.dp.toPx()
-                            var hatchX = x1
-                            while (hatchX <= x2) {
-                                val fraction = (hatchX - x1) / width
-                                val high = first.third.maxPriceKrw + ((second.third.maxPriceKrw - first.third.maxPriceKrw) * fraction).roundToLong()
-                                val low = first.third.minPriceKrw + ((second.third.minPriceKrw - first.third.minPriceKrw) * fraction).roundToLong()
-                                val upper = y(high)
-                                val lower = y(low)
-                                drawLine(color.copy(alpha = .25f), Offset(hatchX - 4.dp.toPx(), lower), Offset(hatchX + 4.dp.toPx(), upper), 1.dp.toPx())
-                                hatchX += step
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = showTrades,
+                    onClick = { if (!showTrades || showAsking) showTrades = !showTrades; selection = null },
+                    label = { Text("실거래 최저~최고") },
+                )
+                FilterChip(
+                    selected = showAsking,
+                    onClick = { if (!showAsking || showTrades) showAsking = !showAsking; selection = null },
+                    label = { Text("호가 범위") },
+                )
+            }
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                if (allPrices.isEmpty()) {
+                    Text(
+                        "선택한 기간에 표시할 가격 기록이 없습니다.",
+                        modifier = Modifier.align(Alignment.Center),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    val rawMin = allPrices.min()
+                    val rawMax = allPrices.max()
+                    val pricePadding = ((rawMax - rawMin) * .08).roundToLong().coerceAtLeast(10_000_000L)
+                    val minPrice = (rawMin - pricePadding).coerceAtLeast(0L)
+                    val maxPrice = rawMax + pricePadding
+                    val priceRange = (maxPrice - minPrice).coerceAtLeast(1L)
+                    val dayRange = ChronoUnit.DAYS.between(startDate, today).coerceAtLeast(1L)
+                    Canvas(
+                        Modifier.fillMaxSize().pointerInput(
+                            targets,
+                            actualRanges,
+                            datedSnapshots,
+                            showTrades,
+                            showAsking,
+                            minPrice,
+                            maxPrice,
+                        ) {
+                            detectTapGestures { tap ->
+                                val left = 64.dp.toPx()
+                                val right = size.width - 8.dp.toPx()
+                                val top = 6.dp.toPx()
+                                val bottom = size.height - 30.dp.toPx()
+                                fun x(date: LocalDate) = left + (right - left) * ChronoUnit.DAYS.between(startDate, date).toFloat() / dayRange
+                                fun y(price: Long) = bottom - (bottom - top) * (price - minPrice).toFloat() / priceRange
+                                val hitRadius = 24.dp.toPx()
+                                var nearestDistance = Float.MAX_VALUE
+                                var nearest: PriceChartSelection? = null
+                                if (showTrades) actualRanges.forEach { point ->
+                                    val pointX = x(point.date)
+                                    val upper = y(point.maxPriceKrw)
+                                    val lower = y(point.minPriceKrw)
+                                    val verticalDistance = when {
+                                        tap.y < upper -> upper - tap.y
+                                        tap.y > lower -> tap.y - lower
+                                        else -> 0f
+                                    }
+                                    val distance = hypot(tap.x - pointX, verticalDistance)
+                                    if (distance <= hitRadius && distance < nearestDistance) {
+                                        nearestDistance = distance
+                                        nearest = PriceChartSelection(
+                                            "${formatChartDate(point.date, period)} · ${point.targetName}\n실거래 ${formatPriceRange(PriceRange(point.minPriceKrw, point.maxPriceKrw))} · ${point.count}건",
+                                            colorsByTarget[point.targetId] ?: fallbackColor,
+                                        )
+                                    }
+                                }
+                                if (showAsking) datedSnapshots.forEach { point ->
+                                    val targetIndex = targets.indexOfFirst { it.id == point.targetId }.coerceAtLeast(0)
+                                    val targetSnapshotCount = datedSnapshots.count { it.targetId == point.targetId }
+                                    val pointX = x(point.date) - if (targetSnapshotCount == 1) (targets.lastIndex - targetIndex) * 12.dp.toPx() else 0f
+                                    val upper = y(point.snapshot.maxPriceKrw)
+                                    val lower = y(point.snapshot.minPriceKrw)
+                                    val verticalDistance = when {
+                                        tap.y < upper -> upper - tap.y
+                                        tap.y > lower -> tap.y - lower
+                                        else -> 0f
+                                    }
+                                    val distance = hypot(tap.x - pointX, verticalDistance)
+                                    if (distance <= hitRadius && distance < nearestDistance) {
+                                        nearestDistance = distance
+                                        nearest = PriceChartSelection(
+                                            "${point.date.format(DateTimeFormatter.ofPattern("yyyy년 M월 d일"))} · ${point.targetName}\n호가 ${formatPriceRange(PriceRange(point.snapshot.minPriceKrw, point.snapshot.maxPriceKrw))}",
+                                            colorsByTarget[point.targetId] ?: fallbackColor,
+                                        )
+                                    }
+                                }
+                                selection = nearest
                             }
-                            drawLine(color.copy(alpha = .75f), Offset(x1, y(first.third.maxPriceKrw)), Offset(x2, y(second.third.maxPriceKrw)), 2.dp.toPx())
-                            drawLine(color.copy(alpha = .75f), Offset(x1, y(first.third.minPriceKrw)), Offset(x2, y(second.third.minPriceKrw)), 2.dp.toPx())
+                        },
+                    ) {
+                        val left = 64.dp.toPx()
+                        val right = size.width - 8.dp.toPx()
+                        val top = 6.dp.toPx()
+                        val bottom = size.height - 30.dp.toPx()
+                        fun x(date: LocalDate): Float = left + (right - left) * ChronoUnit.DAYS.between(startDate, date).toFloat() / dayRange
+                        fun y(price: Long): Float = bottom - (bottom - top) * (price - minPrice).toFloat() / priceRange
+                        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                            color = labelColor.toArgb()
+                            textSize = 9.dp.toPx()
                         }
-                        listOf(snapshots.first(), snapshots.last()).forEach { (_, date, snapshot) ->
-                            drawCircle(color, 3.5.dp.toPx(), Offset(x(date), y(snapshot.maxPriceKrw)))
-                            drawCircle(color, 3.5.dp.toPx(), Offset(x(date), y(snapshot.minPriceKrw)))
+                        listOf(0f, .5f, 1f).forEach { fraction ->
+                            val lineY = bottom - (bottom - top) * fraction
+                            drawLine(gridColor, Offset(left, lineY), Offset(right, lineY), strokeWidth = 1.dp.toPx())
+                            val price = minPrice + (priceRange * fraction).roundToLong()
+                            drawContext.canvas.nativeCanvas.drawText(formatEokAxis(price), 0f, lineY + 4.dp.toPx(), paint)
                         }
-                    }
+                        drawContext.canvas.nativeCanvas.drawText(formatAxisDate(startDate, period), left, size.height, paint)
+                        val endLabel = formatAxisDate(today, period)
+                        drawContext.canvas.nativeCanvas.drawText(endLabel, right - paint.measureText(endLabel), size.height, paint)
 
-                    val targetTrades = datedTrades.filter { it.first == target.id }.sortedBy { it.second }
-                    val tradePath = Path()
-                    targetTrades.forEachIndexed { tradeIndex, (_, date, price) ->
-                        val point = Offset(x(date), y(price))
-                        if (tradeIndex == 0) tradePath.moveTo(point.x, point.y) else tradePath.lineTo(point.x, point.y)
+                        if (showAsking) targets.forEachIndexed { index, target ->
+                            val color = colorsByTarget[target.id] ?: comparisonColor(index)
+                            val snapshots = datedSnapshots.filter { it.targetId == target.id }.sortedBy(AskingRangePoint::date)
+                            if (snapshots.size == 1) {
+                                val point = snapshots.first()
+                                val pointX = (x(point.date) - (targets.lastIndex - index) * 12.dp.toPx()).coerceAtLeast(left)
+                                val halfWidth = 10.dp.toPx()
+                                val upper = y(point.snapshot.maxPriceKrw)
+                                val lower = y(point.snapshot.minPriceKrw)
+                                drawRect(color.copy(alpha = .1f), Offset(pointX - halfWidth, upper), androidx.compose.ui.geometry.Size(halfWidth * 2, lower - upper))
+                                var hatchY = upper
+                                while (hatchY < lower) {
+                                    drawLine(color.copy(alpha = .45f), Offset(pointX - halfWidth, hatchY + 7.dp.toPx()), Offset(pointX + halfWidth, hatchY), 1.dp.toPx())
+                                    hatchY += 7.dp.toPx()
+                                }
+                                drawCircle(color, 4.dp.toPx(), Offset(pointX, upper))
+                                drawCircle(color, 4.dp.toPx(), Offset(pointX, lower))
+                            } else if (snapshots.size > 1) {
+                                drawRangeBand(
+                                    points = snapshots.map { Triple(it.date, it.snapshot.minPriceKrw, it.snapshot.maxPriceKrw) },
+                                    color = color,
+                                    x = ::x,
+                                    y = ::y,
+                                    hatched = true,
+                                )
+                            }
+                        }
+                        if (showTrades) targets.forEachIndexed { index, target ->
+                            val color = colorsByTarget[target.id] ?: comparisonColor(index)
+                            val points = actualRanges.filter { it.targetId == target.id }.sortedBy(ActualRangePoint::date)
+                            drawRangeBand(
+                                points = points.map { Triple(it.date, it.minPriceKrw, it.maxPriceKrw) },
+                                color = color,
+                                x = ::x,
+                                y = ::y,
+                                hatched = false,
+                            )
+                        }
                     }
-                    if (targetTrades.size > 1) drawPath(tradePath, color.copy(alpha = .65f), style = Stroke(2.dp.toPx()))
-                    targetTrades.forEach { (_, date, price) ->
-                        drawCircle(color, 3.5.dp.toPx(), Offset(x(date), y(price)))
-                        drawCircle(surfaceColor, 1.2.dp.toPx(), Offset(x(date), y(price)))
+                    selection?.let { selected ->
+                        Surface(
+                            modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shadowElevation = 4.dp,
+                        ) {
+                            Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.Top) {
+                                Box(Modifier.padding(top = 4.dp).size(8.dp).background(selected.color, CircleShape))
+                                Text(selected.text, Modifier.padding(start = 7.dp), style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
                     }
                 }
             }
@@ -910,9 +1023,11 @@ private fun MarketActivityChart(
     targets: List<PropertyWatchTargetEntity>,
     snapshotsByTarget: Map<String, List<PropertyAskingSnapshotEntity>>,
     tradesByTarget: Map<String, List<PropertyActualTradeEntity>>,
+    colorsByTarget: Map<String, Color> = emptyMap(),
     modifier: Modifier,
 ) {
     val months = remember { List(12) { offset -> YearMonth.now().minusMonths((11 - offset).toLong()) } }
+    var selection by remember { mutableStateOf<MarketChartSelection?>(null) }
     val listingCounts = targets.associate { target ->
         target.id to snapshotsByTarget[target.id].orEmpty()
             .groupBy { YearMonth.from(LocalDate.ofEpochDay(it.epochDay)) }
@@ -929,51 +1044,124 @@ private fun MarketActivityChart(
     val gridColor = MaterialTheme.colorScheme.outlineVariant
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
 
-    Canvas(modifier) {
-        val left = 44.dp.toPx()
-        val right = size.width - 4.dp.toPx()
-        val listingTop = 4.dp.toPx()
-        val listingBottom = size.height * .53f
-        val salesTop = size.height * .64f
-        val salesBottom = size.height - 18.dp.toPx()
-        val monthWidth = (right - left) / months.size
-        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = labelColor.toArgb()
-            textSize = 9.dp.toPx()
-        }
-        drawContext.canvas.nativeCanvas.drawText("매물 $maxListings", 0f, listingTop + 10.dp.toPx(), paint)
-        drawContext.canvas.nativeCanvas.drawText("매매 $maxSales", 0f, salesTop + 10.dp.toPx(), paint)
-        drawLine(gridColor, Offset(left, listingBottom), Offset(right, listingBottom), 1.dp.toPx())
-        drawLine(gridColor, Offset(left, salesBottom), Offset(right, salesBottom), 1.dp.toPx())
-
-        targets.forEachIndexed { targetIndex, target ->
-            val color = comparisonColor(targetIndex)
-            val points = months.mapIndexedNotNull { monthIndex, month ->
-                listingCounts[target.id]?.get(month)?.let { count ->
-                    val x = left + monthWidth * (monthIndex + .5f)
-                    val y = listingBottom - (listingBottom - listingTop) * count / maxListings.toFloat()
-                    Offset(x, y)
+    Box(modifier) {
+        Canvas(
+            Modifier.fillMaxSize().pointerInput(targets, listingCounts, saleCounts, maxListings, maxSales) {
+                detectTapGestures { tap ->
+                    val left = 44.dp.toPx()
+                    val right = size.width - 4.dp.toPx()
+                    val listingTop = 4.dp.toPx()
+                    val listingBottom = size.height * .50f
+                    val salesTop = size.height * .61f
+                    val salesBottom = size.height - 30.dp.toPx()
+                    val monthWidth = (right - left) / months.size
+                    val hitRadius = 24.dp.toPx()
+                    var nearestDistance = Float.MAX_VALUE
+                    var nearest: MarketChartSelection? = null
+                    targets.forEachIndexed { targetIndex, target ->
+                        val color = colorsByTarget[target.id] ?: comparisonColor(targetIndex)
+                        months.forEachIndexed { monthIndex, month ->
+                            val centerX = left + monthWidth * (monthIndex + .5f)
+                            listingCounts[target.id]?.get(month)?.let { count ->
+                                val pointY = listingBottom - (listingBottom - listingTop) * count / maxListings.toFloat()
+                                val distance = hypot(tap.x - centerX, tap.y - pointY)
+                                if (distance <= hitRadius && distance < nearestDistance) {
+                                    nearestDistance = distance
+                                    nearest = MarketChartSelection(month, target.apartmentName, "매물", count, color)
+                                }
+                            }
+                            val sales = saleCounts[target.id]?.get(month) ?: 0
+                            if (sales > 0) {
+                                val groupWidth = monthWidth * .7f
+                                val barWidth = (groupWidth / targets.size).coerceAtLeast(2.dp.toPx())
+                                val barX = left + monthWidth * monthIndex + monthWidth * .15f + barWidth * targetIndex
+                                val barHeight = (salesBottom - salesTop) * sales / maxSales.toFloat()
+                                val horizontalDistance = when {
+                                    tap.x < barX -> barX - tap.x
+                                    tap.x > barX + barWidth -> tap.x - (barX + barWidth)
+                                    else -> 0f
+                                }
+                                val verticalDistance = when {
+                                    tap.y < salesBottom - barHeight -> salesBottom - barHeight - tap.y
+                                    tap.y > salesBottom -> tap.y - salesBottom
+                                    else -> 0f
+                                }
+                                val distance = hypot(horizontalDistance, verticalDistance)
+                                if (distance <= hitRadius && distance < nearestDistance) {
+                                    nearestDistance = distance
+                                    nearest = MarketChartSelection(month, target.apartmentName, "매매", sales, color)
+                                }
+                            }
+                        }
+                    }
+                    selection = nearest
                 }
             }
-            val path = Path()
-            points.forEachIndexed { index, point -> if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y) }
-            if (points.size > 1) drawPath(path, color, style = Stroke(2.5.dp.toPx()))
-            points.forEach { drawCircle(color, 3.dp.toPx(), it) }
+        ) {
+            val left = 44.dp.toPx()
+            val right = size.width - 4.dp.toPx()
+            val listingTop = 4.dp.toPx()
+            val listingBottom = size.height * .50f
+            val salesTop = size.height * .61f
+            val salesBottom = size.height - 30.dp.toPx()
+            val monthWidth = (right - left) / months.size
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = labelColor.toArgb()
+                textSize = 9.dp.toPx()
+            }
+            drawContext.canvas.nativeCanvas.drawText("매물 $maxListings", 0f, listingTop + 10.dp.toPx(), paint)
+            drawContext.canvas.nativeCanvas.drawText("매매 $maxSales", 0f, salesTop + 10.dp.toPx(), paint)
+            drawLine(gridColor, Offset(left, listingBottom), Offset(right, listingBottom), 1.dp.toPx())
+            drawLine(gridColor, Offset(left, salesBottom), Offset(right, salesBottom), 1.dp.toPx())
 
-            months.forEachIndexed { monthIndex, month ->
-                val count = saleCounts[target.id]?.get(month) ?: 0
-                if (count <= 0) return@forEachIndexed
-                val groupWidth = monthWidth * .7f
-                val barWidth = (groupWidth / targets.size).coerceAtLeast(2.dp.toPx())
-                val x = left + monthWidth * monthIndex + monthWidth * .15f + barWidth * targetIndex
-                val height = (salesBottom - salesTop) * count / maxSales.toFloat()
-                drawRect(color.copy(alpha = .75f), Offset(x, salesBottom - height), androidx.compose.ui.geometry.Size(barWidth * .82f, height))
+            targets.forEachIndexed { targetIndex, target ->
+                val color = colorsByTarget[target.id] ?: comparisonColor(targetIndex)
+                val points = months.mapIndexedNotNull { monthIndex, month ->
+                    listingCounts[target.id]?.get(month)?.let { count ->
+                        val x = left + monthWidth * (monthIndex + .5f)
+                        val y = listingBottom - (listingBottom - listingTop) * count / maxListings.toFloat()
+                        Offset(x, y)
+                    }
+                }
+                val path = Path()
+                points.forEachIndexed { index, point -> if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y) }
+                if (points.size > 1) drawPath(path, color, style = Stroke(2.5.dp.toPx()))
+                points.forEach { drawCircle(color, 3.5.dp.toPx(), it) }
+
+                months.forEachIndexed { monthIndex, month ->
+                    val count = saleCounts[target.id]?.get(month) ?: 0
+                    if (count <= 0) return@forEachIndexed
+                    val groupWidth = monthWidth * .7f
+                    val barWidth = (groupWidth / targets.size).coerceAtLeast(2.dp.toPx())
+                    val x = left + monthWidth * monthIndex + monthWidth * .15f + barWidth * targetIndex
+                    val height = (salesBottom - salesTop) * count / maxSales.toFloat()
+                    drawRect(color.copy(alpha = .75f), Offset(x, salesBottom - height), androidx.compose.ui.geometry.Size(barWidth * .82f, height))
+                }
+            }
+            listOf(0, 5, 11).forEach { index ->
+                val centerX = left + monthWidth * (index + .5f)
+                val yearLabel = "${months[index].year}년"
+                val monthLabel = "${months[index].monthValue}월"
+                drawContext.canvas.nativeCanvas.drawText(yearLabel, centerX - paint.measureText(yearLabel) / 2, size.height - 11.dp.toPx(), paint)
+                drawContext.canvas.nativeCanvas.drawText(monthLabel, centerX - paint.measureText(monthLabel) / 2, size.height, paint)
             }
         }
-        listOf(0, 5, 11).forEach { index ->
-            val label = months[index].format(DateTimeFormatter.ofPattern("M월"))
-            val x = left + monthWidth * (index + .5f) - paint.measureText(label) / 2
-            drawContext.canvas.nativeCanvas.drawText(label, x, size.height, paint)
+        selection?.let { selected ->
+            Surface(
+                modifier = Modifier.align(Alignment.TopEnd).padding(3.dp),
+                shape = RoundedCornerShape(9.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 4.dp,
+            ) {
+                Row(Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(7.dp).background(selected.color, CircleShape))
+                    Text(
+                        "${selected.month.year}년 ${selected.month.monthValue}월 · ${selected.targetName}\n${selected.kind} ${selected.count}${if (selected.kind == "매물") "개" else "건"}",
+                        Modifier.padding(start = 6.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
         }
     }
 }
@@ -983,25 +1171,131 @@ private fun ComparisonSummaryCard(
     target: PropertyWatchTargetEntity,
     state: PropertyTrackerUiState,
     color: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
 ) {
     val asking = askingRange(state, target.id)
     val actual = actualRange(state, target.id)
-    Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) color.copy(alpha = .1f) else MaterialTheme.colorScheme.surface,
+        ),
+        border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) color else MaterialTheme.colorScheme.outlineVariant),
+    ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(10.dp).background(color, CircleShape))
                 Text(target.apartmentName, Modifier.padding(start = 8.dp).weight(1f), fontWeight = FontWeight.Black)
                 Text(targetAreaLabel(target), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            Text(
+                if (selected) "그래프에 표시 중 · 누르면 숨김" else "누르면 그래프에 표시",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) color else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row {
                 Text("현재 호가", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(formatPriceRange(asking), fontWeight = FontWeight.Bold)
             }
             Row {
                 Text("최근 실거래", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(formatPriceRange(actual), fontWeight = FontWeight.Bold)
+                Text(formatPriceRange(actual, "최근 1년 신고 거래 없음"), fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+private enum class PriceChartPeriod(val label: String) {
+    WEEK("주"), MONTH("월"), YEAR("년");
+
+    fun startDate(today: LocalDate): LocalDate = when (this) {
+        WEEK -> today.minusDays(6)
+        MONTH -> today.minusMonths(1)
+        YEAR -> today.minusYears(1)
+    }
+}
+
+private data class ActualRangePoint(
+    val targetId: String,
+    val targetName: String,
+    val date: LocalDate,
+    val minPriceKrw: Long,
+    val maxPriceKrw: Long,
+    val count: Int,
+)
+
+private data class AskingRangePoint(
+    val targetId: String,
+    val targetName: String,
+    val date: LocalDate,
+    val snapshot: PropertyAskingSnapshotEntity,
+)
+
+private data class PriceChartSelection(val text: String, val color: Color)
+
+private data class MarketChartSelection(
+    val month: YearMonth,
+    val targetName: String,
+    val kind: String,
+    val count: Int,
+    val color: Color,
+)
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRangeBand(
+    points: List<Triple<LocalDate, Long, Long>>,
+    color: Color,
+    x: (LocalDate) -> Float,
+    y: (Long) -> Float,
+    hatched: Boolean,
+) {
+    if (points.isEmpty()) return
+    if (points.size == 1) {
+        val (date, minPrice, maxPrice) = points.first()
+        val pointX = x(date)
+        val upper = y(maxPrice)
+        val lower = y(minPrice)
+        drawLine(color.copy(alpha = .75f), Offset(pointX, upper), Offset(pointX, lower), 2.dp.toPx())
+        drawCircle(color, 3.5.dp.toPx(), Offset(pointX, upper))
+        drawCircle(color, 3.5.dp.toPx(), Offset(pointX, lower))
+        return
+    }
+    val sorted = points.sortedBy { it.first }
+    val band = Path()
+    sorted.forEachIndexed { index, (date, _, maxPrice) ->
+        val point = Offset(x(date), y(maxPrice))
+        if (index == 0) band.moveTo(point.x, point.y) else band.lineTo(point.x, point.y)
+    }
+    sorted.asReversed().forEach { (date, minPrice, _) -> band.lineTo(x(date), y(minPrice)) }
+    band.close()
+    drawPath(band, color.copy(alpha = if (hatched) .1f else .07f))
+    sorted.zipWithNext().forEach { (first, second) ->
+        val x1 = x(first.first)
+        val x2 = x(second.first)
+        drawLine(color.copy(alpha = .72f), Offset(x1, y(first.second)), Offset(x2, y(second.second)), 2.dp.toPx())
+        drawLine(color.copy(alpha = .72f), Offset(x1, y(first.third)), Offset(x2, y(second.third)), 2.dp.toPx())
+        if (hatched) {
+            val width = (x2 - x1).coerceAtLeast(1f)
+            var hatchX = x1
+            while (hatchX <= x2) {
+                val fraction = (hatchX - x1) / width
+                val low = first.second + ((second.second - first.second) * fraction).roundToLong()
+                val high = first.third + ((second.third - first.third) * fraction).roundToLong()
+                drawLine(
+                    color.copy(alpha = .3f),
+                    Offset(hatchX - 4.dp.toPx(), y(low)),
+                    Offset(hatchX + 4.dp.toPx(), y(high)),
+                    1.dp.toPx(),
+                )
+                hatchX += 9.dp.toPx()
+            }
+        }
+    }
+    val circles = if (hatched) listOf(sorted.first(), sorted.last()) else sorted
+    circles.forEach { (date, minPrice, maxPrice) ->
+        drawCircle(color, 3.5.dp.toPx(), Offset(x(date), y(minPrice)))
+        drawCircle(color, 3.5.dp.toPx(), Offset(x(date), y(maxPrice)))
     }
 }
 
@@ -1021,13 +1315,23 @@ private fun actualRange(state: PropertyTrackerUiState, id: String): PriceRange =
         PriceRange(prices.minOrNull() ?: 0L, prices.maxOrNull() ?: 0L)
     }
 
-private fun formatPriceRange(range: PriceRange): String = when {
-    !range.isAvailable -> "기록 없음"
+private fun formatPriceRange(range: PriceRange, emptyText: String = "기록 없음"): String = when {
+    !range.isAvailable -> emptyText
     range.min == range.max -> formatWon(range.min)
     else -> "${formatWon(range.min)} ~ ${formatWon(range.max)}"
 }
 
 private fun parseTradeDate(value: String): LocalDate? = runCatching { LocalDate.parse(value) }.getOrNull()
+
+private fun formatEokAxis(value: Long): String = "%.2f억".format(Locale.KOREA, value / 100_000_000.0)
+
+private fun formatAxisDate(date: LocalDate, period: PriceChartPeriod): String = date.format(
+    DateTimeFormatter.ofPattern(if (period == PriceChartPeriod.YEAR) "yyyy.M" else "yyyy.M.d"),
+)
+
+private fun formatChartDate(date: LocalDate, period: PriceChartPeriod): String = date.format(
+    DateTimeFormatter.ofPattern(if (period == PriceChartPeriod.YEAR) "yyyy년 M월" else "yyyy년 M월 d일"),
+)
 
 private fun comparisonColor(index: Int): Color = listOf(
     Color(0xFF4556D7),
@@ -1072,3 +1376,32 @@ private fun formatWon(value: Long): String {
 
 private fun formatArea(value: Double): String = if (value % 1.0 == 0.0) value.roundToLong().toString() else "%.1f".format(value)
 private fun syncColor(status: String) = when (status) { "SUCCESS" -> Color(0xFF21845A); "FAILED" -> Color(0xFFC6464E); else -> Color(0xFF8B6D13) }
+
+private fun Modifier.propertyEdgeSwipe(
+    currentPage: Int,
+    pageCount: Int,
+    onSwipeEdgeLeft: () -> Unit,
+    onSwipeEdgeRight: () -> Unit,
+): Modifier = pointerInput(currentPage, pageCount) {
+    awaitPointerEventScope {
+        while (true) {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            var dx = 0f
+            var dy = 0f
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                if (!change.pressed) {
+                    if (abs(dx) > 100f && abs(dx) > abs(dy) * 1.2f) {
+                        if (dx < 0 && currentPage == pageCount - 1) onSwipeEdgeLeft()
+                        if (dx > 0 && currentPage == 0) onSwipeEdgeRight()
+                    }
+                    break
+                }
+                val delta = change.positionChange()
+                dx += delta.x
+                dy += delta.y
+            }
+        }
+    }
+}

@@ -107,6 +107,16 @@ function normalizeApartmentName(value) {
   return String(value || "").normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/[\s·._-]+/g, "");
 }
 
+function apartmentNameMatches(expectedName, candidateName) {
+  const expected = normalizeApartmentName(expectedName).replace(/(?:아파트|단지)$/g, "");
+  const candidate = normalizeApartmentName(candidateName).replace(/(?:아파트|단지)$/g, "");
+  if (!expected || !candidate) return false;
+  if (expected === candidate) return true;
+  const shorter = expected.length <= candidate.length ? expected : candidate;
+  const longer = expected.length > candidate.length ? expected : candidate;
+  return shorter.length >= 3 && longer.includes(shorter);
+}
+
 function recentYearMonths(count) {
   const now = new Date();
   return Array.from({ length: count }, (_, offset) => {
@@ -125,11 +135,36 @@ function normalizePublicDataServiceKey(value) {
   }
 }
 
+async function fetchMolitMonth(params, dealYmd) {
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(
+        `https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade?${params}`,
+        { signal: AbortSignal.timeout(15_000) },
+      );
+      const xml = await response.text();
+      if (!response.ok || /<resultCode>\s*(?:20|30|31)\s*<\/resultCode>/i.test(xml)) {
+        console.error("MOLIT request failed", response.status, dealYmd, xml.slice(0, 300));
+        throw new HttpsError("internal", "국토부 실거래가 인증 또는 조회에 실패했습니다.");
+      }
+      return xml;
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      lastError = error;
+      console.warn("MOLIT connection retry", dealYmd, attempt + 1, String(error?.message || error));
+      if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 800));
+    }
+  }
+  console.error("MOLIT connection failed", dealYmd, lastError);
+  throw new HttpsError("unavailable", "국토부 서버 연결이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.");
+}
+
 /** 국토부 아파트 실거래를 고정 Canonical Dataset에서만 조회한다. */
 exports.lookupMolitApartmentTrades = onCall(
   {
     region: "asia-northeast3",
-    timeoutSeconds: 60,
+    timeoutSeconds: 120,
     enforceAppCheck: true,
     serviceAccount: "sorimpower-ff78e@appspot.gserviceaccount.com",
     secrets: [molitServiceKey],
@@ -146,7 +181,6 @@ exports.lookupMolitApartmentTrades = onCall(
     // data.go.kr에서 제공하는 인코딩 키를 URLSearchParams가 다시 인코딩하지 않게 원문으로 복원한다.
     const key = normalizePublicDataServiceKey(molitServiceKey.value());
     if (!key) throw new HttpsError("failed-precondition", "국토부 인증키가 등록되지 않았습니다.");
-    const expectedName = normalizeApartmentName(apartmentName);
     const areaTolerance = Math.max(2.0, exclusiveAreaSqm * 0.03);
     const pages = [];
     const yearMonths = recentYearMonths(months);
@@ -154,13 +188,7 @@ exports.lookupMolitApartmentTrades = onCall(
     for (let index = 0; index < yearMonths.length; index += 3) {
       const chunk = await Promise.all(yearMonths.slice(index, index + 3).map(async (dealYmd) => {
         const params = new URLSearchParams({ serviceKey: key, LAWD_CD: lawdCd, DEAL_YMD: dealYmd, pageNo: "1", numOfRows: "1000" });
-        const response = await fetch(`https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade?${params}`, { signal: AbortSignal.timeout(15_000) });
-        const xml = await response.text();
-        if (!response.ok || /<resultCode>\s*(?:20|30|31)\s*<\/resultCode>/i.test(xml)) {
-          console.error("MOLIT request failed", response.status, dealYmd, xml.slice(0, 300));
-          throw new HttpsError("internal", "국토부 실거래가 인증 또는 조회에 실패했습니다.");
-        }
-        return xml;
+        return fetchMolitMonth(params, dealYmd);
       }));
       pages.push(...chunk);
     }
@@ -184,7 +212,8 @@ exports.lookupMolitApartmentTrades = onCall(
         };
       })
       .filter(trade => !trade.cancelledOn && trade.priceKrw > 0 && Number.isFinite(trade.exclusiveAreaSqm))
-      .filter(trade => normalizeApartmentName(trade.apartmentName) === expectedName)
+      // 네이버의 "광장현대5단지"와 국토부의 "현대5"처럼 접두 지명·단지 접미사가 다른 경우도 같은 단지로 본다.
+      .filter(trade => apartmentNameMatches(apartmentName, trade.apartmentName))
       .filter(trade => Math.abs(trade.exclusiveAreaSqm - exclusiveAreaSqm) <= areaTolerance)
       .sort((a, b) => b.tradeDate.localeCompare(a.tradeDate))
       .slice(0, 500)

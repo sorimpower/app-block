@@ -461,7 +461,12 @@ internal fun SorimPowerApp(
                 onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } },
                 onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } },
             )
-            Screen.PROPERTY_TRACKER -> PropertyTrackerScreen(padding, propertyTrackerViewModel)
+            Screen.PROPERTY_TRACKER -> PropertyTrackerScreen(
+                padding = padding,
+                viewModel = propertyTrackerViewModel,
+                onSwipeEdgeLeft = { moveToAdjacentScreen(state, screen, 1) { screen = it } },
+                onSwipeEdgeRight = { moveToAdjacentScreen(state, screen, -1) { screen = it } },
+            )
             Screen.MORE -> MoreMenuScreen(
                 padding,
                 onOpenSettings = { screen = Screen.SETTINGS },
