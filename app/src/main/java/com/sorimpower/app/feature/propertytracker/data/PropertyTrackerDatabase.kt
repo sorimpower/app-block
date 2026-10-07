@@ -58,6 +58,7 @@ data class PropertyAskingSnapshotEntity(
     val watchTargetId: String,
     val epochDay: Long,
     val minPriceKrw: Long,
+    // 기존 DB 호환용 필드. 화면과 비교 계산에는 사용하지 않는다.
     val medianPriceKrw: Long,
     val maxPriceKrw: Long,
     val activeCount: Int,

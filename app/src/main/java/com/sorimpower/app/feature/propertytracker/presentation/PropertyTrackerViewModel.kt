@@ -116,7 +116,7 @@ class PropertyTrackerViewModel(application: Application) : AndroidViewModel(appl
         repository.setCompareSelected(id, selected).onFailure { message.value = it.message }
     }
 
-    fun syncNow() = viewModelScope.launch { sync(force = false) }
+    fun syncNow() = viewModelScope.launch { sync(force = true) }
 
     private suspend fun sync(force: Boolean) {
         syncing.value = true

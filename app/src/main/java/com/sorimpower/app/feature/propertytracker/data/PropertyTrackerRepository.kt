@@ -57,7 +57,7 @@ class PropertyTrackerRepository(
         require(input.exclusiveAreaSqm > 0) { "전용면적을 확인해 주세요." }
         val lawdCd = input.lawdCd.filter(Char::isDigit)
         require(lawdCd.isBlank() || lawdCd.length == 5) { "법정동 코드는 5자리입니다." }
-        val areaNo = input.areaNo.filter(Char::isDigit).ifBlank {
+        val areaNo = NaverLandProvider.parseAreaNos(input.areaNo).joinToString(",").ifBlank {
             NaverLandProvider.extractAreaNo(input.complexInput).orEmpty()
         }
         require(dao.getTargets().none { it.complexNo == complexNo && kotlin.math.abs(it.exclusiveAreaSqm - input.exclusiveAreaSqm) < 0.1 }) {
@@ -233,7 +233,7 @@ class PropertyTrackerRepository(
                 watchTargetId = target.id,
                 epochDay = epochDay,
                 minPriceKrw = prices.firstOrNull() ?: 0,
-                medianPriceKrw = medianPrice(prices),
+                medianPriceKrw = 0,
                 maxPriceKrw = prices.lastOrNull() ?: 0,
                 activeCount = uniqueCurrent.size,
                 newCount = newCount,
@@ -248,9 +248,9 @@ class PropertyTrackerRepository(
         if (target.lawdCd.isBlank()) return "실거래 미연동(법정동 코드 필요)"
         return runCatching {
             val result = molitProvider.lookup(target.lawdCd, target.apartmentName, target.exclusiveAreaSqm)
-            val trades = result.trades.map { trade ->
+            val trades = result.trades.mapIndexed { index, trade ->
                 PropertyActualTradeEntity(
-                    id = "${target.id}:${trade.tradeDate}:${trade.priceKrw}:${trade.floor}",
+                    id = "${target.id}:${trade.tradeDate}:${trade.priceKrw}:${trade.floor}:${trade.exclusiveAreaSqm}:$index",
                     watchTargetId = target.id,
                     apartmentName = trade.apartmentName,
                     exclusiveAreaSqm = trade.exclusiveAreaSqm,
@@ -259,9 +259,16 @@ class PropertyTrackerRepository(
                     floor = trade.floor,
                 )
             }
+            dao.deleteTrades(target.id)
             if (trades.isNotEmpty()) dao.upsertTrades(trades)
             "실거래 ${trades.size}건"
-        }.getOrElse { "실거래 조회 실패" }
+        }.getOrElse { error ->
+            val reason = error.message
+                ?.substringBefore('\n')
+                ?.take(80)
+                ?.takeIf(String::isNotBlank)
+            if (reason == null) "실거래 조회 실패" else "실거래 조회 실패($reason)"
+        }
     }
 
     companion object {
@@ -269,13 +276,6 @@ class PropertyTrackerRepository(
         private val SYNC_MUTEX = Mutex()
         private const val REQUIRED_MISSES_FOR_REMOVAL = 2
         private const val MAX_SELECTIONS = 5
-
-        fun medianPrice(sortedPrices: List<Long>): Long {
-            if (sortedPrices.isEmpty()) return 0
-            val middle = sortedPrices.size / 2
-            return if (sortedPrices.size % 2 == 1) sortedPrices[middle]
-            else ((sortedPrices[middle - 1] + sortedPrices[middle]) / 2.0).roundToLong()
-        }
 
         fun nextMissingState(previousStatus: String, previousMisses: Int): Pair<String, Int> {
             if (previousStatus == "REMOVED") return "REMOVED" to previousMisses

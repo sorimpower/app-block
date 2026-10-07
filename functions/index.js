@@ -115,6 +115,16 @@ function recentYearMonths(count) {
   });
 }
 
+function normalizePublicDataServiceKey(value) {
+  const key = String(value || "").trim();
+  if (!/%[0-9a-f]{2}/i.test(key)) return key;
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return key;
+  }
+}
+
 /** 국토부 아파트 실거래를 고정 Canonical Dataset에서만 조회한다. */
 exports.lookupMolitApartmentTrades = onCall(
   {
@@ -133,7 +143,8 @@ exports.lookupMolitApartmentTrades = onCall(
     if (!apartmentName || apartmentName.length > 100) throw new HttpsError("invalid-argument", "아파트 단지명을 확인해 주세요.");
     if (!Number.isFinite(exclusiveAreaSqm) || exclusiveAreaSqm <= 0 || exclusiveAreaSqm > 500) throw new HttpsError("invalid-argument", "전용면적을 확인해 주세요.");
 
-    const key = molitServiceKey.value().trim();
+    // data.go.kr에서 제공하는 인코딩 키를 URLSearchParams가 다시 인코딩하지 않게 원문으로 복원한다.
+    const key = normalizePublicDataServiceKey(molitServiceKey.value());
     if (!key) throw new HttpsError("failed-precondition", "국토부 인증키가 등록되지 않았습니다.");
     const expectedName = normalizeApartmentName(apartmentName);
     const areaTolerance = Math.max(2.0, exclusiveAreaSqm * 0.03);
@@ -176,7 +187,7 @@ exports.lookupMolitApartmentTrades = onCall(
       .filter(trade => normalizeApartmentName(trade.apartmentName) === expectedName)
       .filter(trade => Math.abs(trade.exclusiveAreaSqm - exclusiveAreaSqm) <= areaTolerance)
       .sort((a, b) => b.tradeDate.localeCompare(a.tradeDate))
-      .slice(0, 20)
+      .slice(0, 500)
       .map(({ cancelledOn, ...trade }) => trade);
 
     return {

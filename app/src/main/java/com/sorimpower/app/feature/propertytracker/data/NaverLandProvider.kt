@@ -71,62 +71,66 @@ class NaverLandProvider {
         val listings = mutableListOf<NaverLandListing>()
         var matchingArticleCount = 0
         var invalidPriceCount = 0
-        var page = 1
-        var hasMore: Boolean
-        do {
-            val endpoint = buildEndpoint(target, page)
-            val body = requestJson(endpoint, "https://new.land.naver.com/complexes/${target.complexNo}")
-            val root = JSONObject(body)
-            if (!root.has("articleList") || root.isNull("articleList")) {
-                throw NaverLandException("네이버 부동산 응답 형식이 변경되어 이번 기록을 건너뜁니다.")
-            }
-            val articles = root.optJSONArray("articleList")
-            if (articles != null) {
-                for (index in 0 until articles.length()) {
-                    val item = articles.optJSONObject(index) ?: continue
-                    val area = item.optDoubleOrNull("area2")
-                    if (target.areaNo.isBlank() && area != null && abs(area - target.exclusiveAreaSqm) > 0.8) continue
-                    matchingArticleCount++
-                    val articleNo = item.optString("articleNo").trim()
-                    val priceText = item.optString("dealOrWarrantPrc").trim()
-                    val price = parseKoreanPrice(priceText)
-                    if (price == null) {
-                        invalidPriceCount++
-                        continue
-                    }
-                    if (articleNo.isBlank()) continue
-                    val tags = item.optJSONArray("tagList")?.let { array ->
-                        (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }.joinToString(" · ")
-                    }.orEmpty()
-                    listings += NaverLandListing(
-                        articleNo = articleNo,
-                        priceKrw = price,
-                        priceText = priceText,
-                        supplyAreaSqm = item.optDoubleOrNull("area1"),
-                        exclusiveAreaSqm = area,
-                        floorInfo = item.optString("floorInfo"),
-                        direction = item.optString("direction"),
-                        buildingName = item.optString("buildingName"),
-                        description = item.optString("articleFeatureDesc"),
-                        tags = tags,
-                        confirmDate = item.optString("articleConfirmYmd"),
-                        sourceUrl = item.optString("cpPcArticleBridgeUrl").ifBlank {
-                            "https://new.land.naver.com/complexes/${target.complexNo}?articleNo=$articleNo"
-                        },
-                    )
+        val requestedAreaNos = parseAreaNos(target.areaNo).ifEmpty { listOf("") }
+        requestedAreaNos.forEachIndexed { areaIndex, requestedAreaNo ->
+            var page = 1
+            var hasMore: Boolean
+            do {
+                val endpoint = buildEndpoint(target, requestedAreaNo, page)
+                val body = requestJson(endpoint, "https://new.land.naver.com/complexes/${target.complexNo}")
+                val root = JSONObject(body)
+                if (!root.has("articleList") || root.isNull("articleList")) {
+                    throw NaverLandException("네이버 부동산 응답 형식이 변경되어 이번 기록을 건너뜁니다.")
                 }
-            }
-            hasMore = root.optBoolean("isMoreData", false) && page < MAX_PAGES
-            page++
-            if (hasMore) delay(350)
-        } while (hasMore)
+                val articles = root.optJSONArray("articleList")
+                if (articles != null) {
+                    for (index in 0 until articles.length()) {
+                        val item = articles.optJSONObject(index) ?: continue
+                        val area = item.optDoubleOrNull("area2")
+                        if (requestedAreaNo.isBlank() && area != null && abs(area - target.exclusiveAreaSqm) > AREA_TOLERANCE_SQM) continue
+                        matchingArticleCount++
+                        val articleNo = item.optString("articleNo").trim()
+                        val priceText = item.optString("dealOrWarrantPrc").trim()
+                        val price = parseKoreanPrice(priceText)
+                        if (price == null) {
+                            invalidPriceCount++
+                            continue
+                        }
+                        if (articleNo.isBlank()) continue
+                        val tags = item.optJSONArray("tagList")?.let { array ->
+                            (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }.joinToString(" · ")
+                        }.orEmpty()
+                        listings += NaverLandListing(
+                            articleNo = articleNo,
+                            priceKrw = price,
+                            priceText = priceText,
+                            supplyAreaSqm = item.optDoubleOrNull("area1"),
+                            exclusiveAreaSqm = area,
+                            floorInfo = item.optString("floorInfo"),
+                            direction = item.optString("direction"),
+                            buildingName = item.optString("buildingName"),
+                            description = item.optString("articleFeatureDesc"),
+                            tags = tags,
+                            confirmDate = item.optString("articleConfirmYmd"),
+                            sourceUrl = item.optString("cpPcArticleBridgeUrl").ifBlank {
+                                "https://new.land.naver.com/complexes/${target.complexNo}?articleNo=$articleNo"
+                            },
+                        )
+                    }
+                }
+                hasMore = root.optBoolean("isMoreData", false) && page < MAX_PAGES
+                page++
+                if (hasMore) delay(350)
+            } while (hasMore)
+            if (areaIndex < requestedAreaNos.lastIndex) delay(350)
+        }
         if (matchingArticleCount > 0 && invalidPriceCount == matchingArticleCount) {
             throw NaverLandException("네이버 호가 형식을 읽지 못해 이번 기록을 건너뜁니다.")
         }
         listings.distinctBy(NaverLandListing::articleNo)
     }
 
-    private fun buildEndpoint(target: PropertyWatchTargetEntity, page: Int): String {
+    private fun buildEndpoint(target: PropertyWatchTargetEntity, areaNo: String, page: Int): String {
         val params = linkedMapOf(
             "realEstateType" to "APT:ABYG:JGC",
             "tradeType" to "A1",
@@ -150,7 +154,7 @@ class NaverLandProvider {
             "page" to page.toString(),
             "complexNo" to target.complexNo,
             "buildingNos" to "",
-            "areaNos" to target.areaNo,
+            "areaNos" to areaNo,
             "type" to "list",
             "order" to "rank",
         )
@@ -242,6 +246,7 @@ class NaverLandProvider {
 
     companion object {
         private const val MAX_PAGES = 20
+        private const val AREA_TOLERANCE_SQM = 2.0
         private const val SESSION_MAX_AGE_MS = 20 * 60 * 1_000L
         private const val DESKTOP_USER_AGENT =
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -268,6 +273,12 @@ class NaverLandProvider {
 
         fun extractAreaNo(input: String): String? =
             Regex("(?:areaNos?|areaNo)=([0-9]+)").find(input)?.groupValues?.getOrNull(1)
+
+        fun parseAreaNos(value: String): List<String> = value
+            .split(',')
+            .map(String::trim)
+            .filter { it.isNotBlank() && it.all(Char::isDigit) }
+            .distinct()
 
         fun extractSessionToken(html: String): String? =
             Regex("\\\"token\\\"\\s*:\\s*\\{\\s*\\\"token\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")

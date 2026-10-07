@@ -82,10 +82,10 @@ class PropertyTrackerModelsTest {
     }
 
     @Test
-    fun `짝수와 홀수 호가 중앙값을 계산한다`() {
-        assertEquals(1_000L, PropertyTrackerRepository.medianPrice(listOf(500L, 1_000L, 2_000L)))
-        assertEquals(1_500L, PropertyTrackerRepository.medianPrice(listOf(1_000L, 2_000L)))
-        assertEquals(0L, PropertyTrackerRepository.medianPrice(emptyList()))
+    fun `여러 네이버 평형번호를 정규화한다`() {
+        assertEquals(listOf("1", "2"), NaverLandProvider.parseAreaNos("1, 2,1"))
+        assertEquals(listOf("7"), NaverLandProvider.parseAreaNos("7"))
+        assertEquals(emptyList<String>(), NaverLandProvider.parseAreaNos("잘못된 값"))
     }
 
     @Test

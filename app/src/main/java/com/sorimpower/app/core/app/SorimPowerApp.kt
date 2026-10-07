@@ -388,14 +388,14 @@ internal fun SorimPowerApp(
         Box(
                 Modifier.fillMaxSize().horizontalSwipe(
                 onSwipeLeft = {
-                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE && screen != Screen.ASSETS) {
+                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE && screen != Screen.ASSETS && screen != Screen.PROPERTY_TRACKER) {
                         val tabs = state.bottomNavigationOrder.map(BottomNavigationTab::screen)
                         val index = tabs.indexOf(screen)
                         if (index >= 0 && index < tabs.lastIndex) openMainScreen(tabs[index + 1])
                     }
                 },
                 onSwipeRight = {
-                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE && screen != Screen.ASSETS) {
+                    if (screen != Screen.AUCTION && screen != Screen.PHONE_INSIGHT && screen != Screen.BODY_LOG && screen != Screen.PERSPECTIVE && screen != Screen.ASSETS && screen != Screen.PROPERTY_TRACKER) {
                         val tabs = state.bottomNavigationOrder.map(BottomNavigationTab::screen)
                         val index = tabs.indexOf(screen)
                         if (index > 0) openMainScreen(tabs[index - 1])
