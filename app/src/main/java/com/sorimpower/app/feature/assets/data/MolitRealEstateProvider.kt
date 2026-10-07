@@ -1,6 +1,7 @@
 package com.sorimpower.app.feature.assets.data
 
 import com.google.firebase.functions.FirebaseFunctions
+import com.google.firebase.functions.FirebaseFunctionsException
 import kotlinx.coroutines.tasks.await
 
 data class MolitComparableTrade(
@@ -20,17 +21,28 @@ data class MolitTradeResult(
 
 class MolitRealEstateProvider {
     suspend fun lookup(lawdCd: String, apartmentName: String, exclusiveAreaSqm: Double): MolitTradeResult {
-        val result = FirebaseFunctions.getInstance("asia-northeast3")
-            .getHttpsCallable("lookupMolitApartmentTrades")
-            .call(
-                mapOf(
-                    "lawdCd" to lawdCd,
-                    "apartmentName" to apartmentName,
-                    "exclusiveAreaSqm" to exclusiveAreaSqm,
-                    "months" to 12,
-                ),
-            )
-            .await()
+        val result = try {
+            FirebaseFunctions.getInstance("asia-northeast3")
+                .getHttpsCallable("lookupMolitApartmentTrades")
+                .call(
+                    mapOf(
+                        "lawdCd" to lawdCd,
+                        "apartmentName" to apartmentName,
+                        "exclusiveAreaSqm" to exclusiveAreaSqm,
+                        "months" to 12,
+                    ),
+                )
+                .await()
+        } catch (error: FirebaseFunctionsException) {
+            val message = when (error.code) {
+                FirebaseFunctionsException.Code.UNAVAILABLE,
+                FirebaseFunctionsException.Code.DEADLINE_EXCEEDED,
+                FirebaseFunctionsException.Code.INTERNAL,
+                -> "국토부 서버 연결 지연"
+                else -> error.message ?: "국토부 실거래 조회 실패"
+            }
+            throw IllegalStateException(message, error)
+        }
         val data = result.data as? Map<*, *> ?: error("국토부 응답 형식이 올바르지 않습니다.")
         val trades = (data["trades"] as? List<*>)?.mapNotNull { raw ->
             val item = raw as? Map<*, *> ?: return@mapNotNull null

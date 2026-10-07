@@ -425,7 +425,7 @@ private fun MoveTab(state: PropertyTrackerUiState) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text("현재 집 · ${current.apartmentName}", fontWeight = FontWeight.Black)
                         Text("호가 ${formatPriceRange(currentAsking)}")
-                        Text("최근 실거래 ${formatPriceRange(currentActual, "최근 1년 신고 거래 없음")}", style = MaterialTheme.typography.bodySmall)
+                        Text("최근 실거래 ${formatPriceRange(currentActual, emptyActualText(current))}", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -456,7 +456,12 @@ private fun MoveTab(state: PropertyTrackerUiState) {
                             GapRow("실거래 최저 갭", actual.min - currentActual.min)
                             GapRow("실거래 최고 갭", actual.max - currentActual.max)
                         } else {
-                            Text("비교 가능한 실거래가 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                if (hasActualTradeSyncFailure(current) || hasActualTradeSyncFailure(target)) "국토부 실거래 조회가 지연되고 있습니다."
+                                else "최근 1년 비교 가능한 신고 거래가 없습니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
@@ -1201,7 +1206,7 @@ private fun ComparisonSummaryCard(
             }
             Row {
                 Text("최근 실거래", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(formatPriceRange(actual, "최근 1년 신고 거래 없음"), fontWeight = FontWeight.Bold)
+                Text(formatPriceRange(actual, emptyActualText(target)), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1314,6 +1319,12 @@ private fun actualRange(state: PropertyTrackerUiState, id: String): PriceRange =
     state.tradesFor(id).map(PropertyActualTradeEntity::priceKrw).filter { it > 0 }.let { prices ->
         PriceRange(prices.minOrNull() ?: 0L, prices.maxOrNull() ?: 0L)
     }
+
+private fun hasActualTradeSyncFailure(target: PropertyWatchTargetEntity): Boolean =
+    target.lastSyncMessage.contains("실거래 조회 실패")
+
+private fun emptyActualText(target: PropertyWatchTargetEntity): String =
+    if (hasActualTradeSyncFailure(target)) "실거래 조회 지연" else "최근 1년 신고 거래 없음"
 
 private fun formatPriceRange(range: PriceRange, emptyText: String = "기록 없음"): String = when {
     !range.isAvailable -> emptyText
