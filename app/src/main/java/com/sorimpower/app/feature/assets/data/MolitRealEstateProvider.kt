@@ -29,7 +29,7 @@ class MolitRealEstateProvider {
                         "lawdCd" to lawdCd,
                         "apartmentName" to apartmentName,
                         "exclusiveAreaSqm" to exclusiveAreaSqm,
-                        "months" to 12,
+                        "months" to 18,
                     ),
                 )
                 .await()

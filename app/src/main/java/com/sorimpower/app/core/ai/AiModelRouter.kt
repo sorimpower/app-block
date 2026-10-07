@@ -19,6 +19,8 @@ internal class AiModelRouter(context: Context) {
         AiTaskType.AUCTION_RIGHTS_ANALYSIS,
         AiTaskType.PHONE_INSIGHT_BATCH,
         AiTaskType.YOUTUBE_INTEREST_HISTORY_ANALYSIS,
+        AiTaskType.PROPERTY_LISTING_ANALYSIS,
+        AiTaskType.PROPERTY_COMPARISON_ANALYSIS,
         -> openAi.generate(model, request)
     }
 }

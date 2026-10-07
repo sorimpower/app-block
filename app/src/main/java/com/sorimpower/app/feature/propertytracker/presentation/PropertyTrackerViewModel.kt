@@ -7,6 +7,7 @@ import com.sorimpower.app.feature.propertytracker.data.AddPropertyTarget
 import com.sorimpower.app.feature.propertytracker.data.NaverLandComplex
 import com.sorimpower.app.feature.propertytracker.data.NaverLandComplexDetail
 import com.sorimpower.app.feature.propertytracker.data.PropertyActualTradeEntity
+import com.sorimpower.app.feature.propertytracker.data.PropertyAiAnalyzer
 import com.sorimpower.app.feature.propertytracker.data.PropertyAskingSnapshotEntity
 import com.sorimpower.app.feature.propertytracker.data.PropertyListingEntity
 import com.sorimpower.app.feature.propertytracker.data.PropertyListingEventEntity
@@ -34,8 +35,15 @@ data class PropertyTrackerUiState(
     fun tradesFor(targetId: String) = trades.filter { it.watchTargetId == targetId }
 }
 
+data class PropertyAiUiState(
+    val loading: Boolean = false,
+    val title: String = "",
+    val content: String? = null,
+)
+
 class PropertyTrackerViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PropertyTrackerRepository(application)
+    private val aiAnalyzer = PropertyAiAnalyzer()
     private val core = combine(
         repository.targets,
         repository.listings,
@@ -58,6 +66,7 @@ class PropertyTrackerViewModel(application: Application) : AndroidViewModel(appl
     val selectedComplexDetail = MutableStateFlow<NaverLandComplexDetail?>(null)
     val searchingComplex = MutableStateFlow(false)
     val complexSearchMessage = MutableStateFlow<String?>(null)
+    val aiState = MutableStateFlow(PropertyAiUiState())
 
     fun searchComplexes(keyword: String) = viewModelScope.launch {
         searchingComplex.value = true
@@ -117,6 +126,49 @@ class PropertyTrackerViewModel(application: Application) : AndroidViewModel(appl
     }
 
     fun syncNow() = viewModelScope.launch { sync(force = true) }
+
+    fun analyzeListings(targetId: String) = viewModelScope.launch {
+        if (aiState.value.loading) return@launch
+        val snapshot = state.value
+        val target = snapshot.targets.firstOrNull { it.id == targetId } ?: return@launch
+        aiState.value = PropertyAiUiState(loading = true, title = "${target.apartmentName} 매물 AI 분석")
+        runCatching {
+            aiAnalyzer.analyzeListings(target, snapshot.activeListingsFor(target.id), snapshot.tradesFor(target.id))
+        }.onSuccess { result ->
+            aiState.value = PropertyAiUiState(title = "${target.apartmentName} 매물 AI 분석", content = result)
+        }.onFailure { error ->
+            aiState.value = PropertyAiUiState()
+            message.value = error.message ?: "매물 AI 분석에 실패했습니다."
+        }
+    }
+
+    fun analyzeComparison() = viewModelScope.launch {
+        if (aiState.value.loading) return@launch
+        val snapshot = state.value
+        val current = snapshot.targets.firstOrNull(PropertyWatchTargetEntity::isCurrentHome)
+        val selected = snapshot.targets.filter { it.isCompareSelected && it.id != current?.id }
+        if (current == null) {
+            message.value = "관심 탭에서 현재 집을 먼저 선택해 주세요."
+            return@launch
+        }
+        if (selected.isEmpty()) {
+            message.value = "비교 카드에서 갈아타기 후보를 한 곳 이상 선택해 주세요."
+            return@launch
+        }
+        aiState.value = PropertyAiUiState(loading = true, title = "갈아타기 AI 분석")
+        runCatching {
+            aiAnalyzer.analyzeComparison(current, selected, snapshot.listings, snapshot.snapshots, snapshot.trades)
+        }.onSuccess { result ->
+            aiState.value = PropertyAiUiState(title = "갈아타기 AI 분석", content = result)
+        }.onFailure { error ->
+            aiState.value = PropertyAiUiState()
+            message.value = error.message ?: "갈아타기 AI 분석에 실패했습니다."
+        }
+    }
+
+    fun closeAiAnalysis() {
+        if (!aiState.value.loading) aiState.value = PropertyAiUiState()
+    }
 
     private suspend fun sync(force: Boolean) {
         syncing.value = true

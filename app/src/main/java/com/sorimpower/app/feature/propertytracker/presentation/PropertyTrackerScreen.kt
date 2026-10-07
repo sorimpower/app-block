@@ -4,7 +4,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,17 +18,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SwapHoriz
@@ -35,6 +41,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -86,6 +94,8 @@ import com.sorimpower.app.feature.propertytracker.data.PropertyWatchTargetEntity
 import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.Instant
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -109,6 +119,7 @@ fun PropertyTrackerScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val syncing by viewModel.syncing.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val aiState by viewModel.aiState.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState { PropertyTab.entries.size }
     val coroutineScope = rememberCoroutineScope()
     var showAdd by remember { mutableStateOf(false) }
@@ -146,9 +157,15 @@ fun PropertyTrackerScreen(
                         onMove = viewModel::setMoveTarget,
                         onCompare = viewModel::setCompareSelected,
                         onDelete = { deleteTarget = it },
+                        onAnalyze = viewModel::analyzeListings,
                     )
                     PropertyTab.MOVE -> MoveTab(state)
-                    PropertyTab.COMPARE -> CompareTab(state, viewModel::setCompareSelected)
+                    PropertyTab.COMPARE -> CompareTab(
+                        state = state,
+                        onSelect = viewModel::setCompareSelected,
+                        analyzing = aiState.loading,
+                        onAnalyze = viewModel::analyzeComparison,
+                    )
                 }
             }
         }
@@ -174,6 +191,9 @@ fun PropertyTrackerScreen(
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("취소") } },
         )
     }
+    if (aiState.loading || aiState.content != null) {
+        PropertyAiAnalysisDialog(aiState, viewModel::closeAiAnalysis)
+    }
 }
 
 @Composable
@@ -186,6 +206,7 @@ private fun WatchTab(
     onMove: (String, Boolean) -> Unit,
     onCompare: (String, Boolean) -> Unit,
     onDelete: (PropertyWatchTargetEntity) -> Unit,
+    onAnalyze: (String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -226,6 +247,7 @@ private fun WatchTab(
                 onMove,
                 onCompare,
                 onDelete,
+                onAnalyze,
             )
         }
     }
@@ -241,9 +263,10 @@ private fun TargetCard(
     onMove: (String, Boolean) -> Unit,
     onCompare: (String, Boolean) -> Unit,
     onDelete: (PropertyWatchTargetEntity) -> Unit,
+    onAnalyze: (String) -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
-    var expanded by remember { mutableStateOf(false) }
+    var expandedSection by remember(target.id) { mutableStateOf<String?>(null) }
     val groupedListings = remember(all) { PropertyTrackerRepository.groupDuplicateListings(all) }
     val activeGroups = groupedListings.filter { it.representative.status == "ACTIVE" }
     val sortedPrices = activeGroups.map { it.representative.priceKrw }.sorted()
@@ -348,8 +371,16 @@ private fun TargetCard(
                     color = syncColor(target.lastSyncStatus),
                 )
             }
-            TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "매물 접기" else "매물 보기") }
-            if (expanded) {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                TextButton(onClick = { expandedSection = if (expandedSection == "listings") null else "listings" }) {
+                    Text(if (expandedSection == "listings") "매물 접기" else "매물 보기")
+                }
+                TextButton(onClick = { expandedSection = if (expandedSection == "trades") null else "trades" }) {
+                    Text(if (expandedSection == "trades") "현황 접기" else "매매 현황")
+                }
+                TextButton(onClick = { onAnalyze(target.id) }) { Text("AI 추천") }
+            }
+            if (expandedSection == "listings") {
                 groupedListings.sortedWith(
                     compareBy<PropertyListingGroup> { it.representative.status != "ACTIVE" }
                         .thenBy { it.representative.priceKrw },
@@ -359,6 +390,34 @@ private fun TargetCard(
                         }
                     }
             }
+            if (expandedSection == "trades") {
+                if (trades.isEmpty()) {
+                    Text(
+                        emptyActualText(target),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    trades.sortedByDescending(PropertyActualTradeEntity::tradeDate).take(30).forEach { trade ->
+                        ActualTradeRow(trade)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActualTradeRow(trade: PropertyActualTradeEntity) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).background(Color(0xFFF08A35), CircleShape))
+        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+            Text(formatWon(trade.priceKrw), fontWeight = FontWeight.Bold)
+            Text(
+                "${formatTradeDate(trade.tradeDate)} · ${trade.floor.ifBlank { "층 미상" }}층 · 전용 ${formatArea(trade.exclusiveAreaSqm)}㎡",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -498,9 +557,22 @@ private fun GapRow(label: String, gap: Long, onClick: (() -> Unit)? = null) {
 }
 
 @Composable
-private fun CompareTab(state: PropertyTrackerUiState, onSelect: (String, Boolean) -> Unit) {
+private fun CompareTab(
+    state: PropertyTrackerUiState,
+    onSelect: (String, Boolean) -> Unit,
+    analyzing: Boolean,
+    onAnalyze: () -> Unit,
+) {
     val selected = state.targets.filter(PropertyWatchTargetEntity::isCompareSelected)
     val targetColors = state.targets.mapIndexed { index, target -> target.id to comparisonColor(index) }.toMap()
+    var period by remember { mutableStateOf(ComparePeriod.YEAR) }
+    var priceMode by remember { mutableStateOf(ComparePriceMode.ACTUAL_RANGE) }
+    var activityTargetId by remember(selected) { mutableStateOf(selected.firstOrNull()?.id) }
+    LaunchedEffect(selected.map(PropertyWatchTargetEntity::id)) {
+        if (activityTargetId !in selected.map(PropertyWatchTargetEntity::id)) {
+            activityTargetId = selected.firstOrNull()?.id
+        }
+    }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -510,42 +582,167 @@ private fun CompareTab(state: PropertyTrackerUiState, onSelect: (String, Boolean
             Text("단지 가격 비교", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
             Text("실거래 흐름과 현재 호가 범위를 한눈에 비교해요.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (selected.isEmpty()) {
-            item { EmptyCard("비교할 단지를 골라 주세요", "아래 단지 카드를 누르면 그래프에 표시됩니다.") }
+        item {
+            CompareTargetSelector(
+                allTargets = state.targets,
+                selected = selected,
+                colorsByTarget = targetColors,
+                onSelect = onSelect,
+            )
+        }
+        item {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                ComparePeriod.entries.forEach { option ->
+                    FilterChip(
+                        selected = period == option,
+                        onClick = { period = option },
+                        label = { Text(option.label) },
+                    )
+                }
+            }
+        }
+        if (selected.size < 2) {
+            item { EmptyCard("비교 단지를 2곳 이상 골라 주세요", "상단 카드에서 관심 단지를 추가하면 가격 흐름을 비교할 수 있어요.") }
         } else {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ComparisonTimelineChart(selected, state, targetColors, Modifier.fillMaxWidth().height(370.dp))
-                    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("매물·매매 수", fontWeight = FontWeight.Black)
-                            Text(
-                                "선은 월말 매물 수, 막대는 월별 실거래 건수예요.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            MarketActivityChart(
-                                targets = selected,
-                                snapshotsByTarget = selected.associate { it.id to state.snapshotsFor(it.id) },
-                                tradesByTarget = selected.associate { it.id to state.tradesFor(it.id) },
-                                colorsByTarget = targetColors,
-                                modifier = Modifier.fillMaxWidth().height(170.dp),
+                ComparisonTimelineChart(
+                    targets = selected,
+                    state = state,
+                    colorsByTarget = targetColors,
+                    period = period,
+                    mode = priceMode,
+                    onModeChange = { priceMode = it },
+                    modifier = Modifier.fillMaxWidth().height(430.dp),
+                )
+            }
+            item {
+                MarketActivitySection(
+                    targets = selected,
+                    state = state,
+                    colorsByTarget = targetColors,
+                    selectedTargetId = activityTargetId ?: selected.first().id,
+                    onSelectTarget = { activityTargetId = it },
+                    period = period,
+                )
+            }
+            item { CompareSummaryPager(selected, state, targetColors) }
+            item {
+                Button(onClick = onAnalyze, enabled = !analyzing, modifier = Modifier.fillMaxWidth()) {
+                    if (analyzing) CircularProgressIndicator(Modifier.padding(end = 8.dp).size(18.dp), strokeWidth = 2.dp)
+                    Text(if (analyzing) "갈아타기 분석 중" else "AI로 갈아타기 분석")
+                }
+            }
+            item {
+                val delayed = selected.filter(::hasActualTradeSyncFailure)
+                val latestSync = selected.mapNotNull(PropertyWatchTargetEntity::lastSyncAt).maxOrNull() ?: 0L
+                Text(
+                    buildString {
+                        if (latestSync > 0) append("업데이트 ${formatSyncTime(latestSync)}")
+                        if (delayed.isNotEmpty()) {
+                            if (isNotEmpty()) append(" · ")
+                            append("실거래 업데이트 지연 ${delayed.size}곳")
+                        }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (delayed.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompareTargetSelector(
+    allTargets: List<PropertyWatchTargetEntity>,
+    selected: List<PropertyWatchTargetEntity>,
+    colorsByTarget: Map<String, Color>,
+    onSelect: (String, Boolean) -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("비교 단지 (${selected.size}/4)", Modifier.weight(1f), fontWeight = FontWeight.Black)
+                Box {
+                    TextButton(onClick = { menuOpen = true }, enabled = selected.size < 4 && selected.size < allTargets.size) {
+                        Icon(Icons.Rounded.Add, null, Modifier.size(17.dp))
+                        Text("단지 추가")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        allTargets.filterNot { it.isCompareSelected }.forEach { target ->
+                            DropdownMenuItem(
+                                text = { Text(target.apartmentName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                onClick = { onSelect(target.id, true); menuOpen = false },
                             )
                         }
                     }
                 }
             }
-        }
-        items(state.targets, key = PropertyWatchTargetEntity::id) { target ->
-            ComparisonSummaryCard(
-                target = target,
-                state = state,
-                color = targetColors.getValue(target.id),
-                selected = target.isCompareSelected,
-                onClick = { onSelect(target.id, !target.isCompareSelected) },
-            )
+            if (selected.isEmpty()) {
+                Text("관심 단지 중 2~4곳을 선택해 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            selected.chunked(2).forEach { rowTargets ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rowTargets.forEach { target ->
+                        val color = colorsByTarget[target.id] ?: MaterialTheme.colorScheme.primary
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(15.dp),
+                            color = color.copy(alpha = .08f),
+                            border = BorderStroke(1.dp, color.copy(alpha = .32f)),
+                        ) {
+                            Row(Modifier.padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(10.dp).background(color, CircleShape))
+                                Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                                    Text(target.apartmentName, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                                    Text(targetAreaLabel(target), maxLines = 1, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                IconButton(onClick = { onSelect(target.id, false) }, modifier = Modifier.size(28.dp)) {
+                                    Icon(Icons.Rounded.Close, "비교에서 제외", Modifier.size(17.dp))
+                                }
+                            }
+                        }
+                    }
+                    if (rowTargets.size == 1) Box(Modifier.weight(1f))
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun PropertyAiAnalysisDialog(state: PropertyAiUiState, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = { if (!state.loading) onDismiss() },
+        title = { Text(state.title.ifBlank { "부동산 AI 분석" }, fontWeight = FontWeight.Black) },
+        text = {
+            if (state.loading) {
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 28.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    Text("저장된 매물과 실거래를 분석하고 있어요.", Modifier.padding(start = 12.dp))
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxWidth().height(500.dp)) {
+                    item {
+                        Text(
+                            state.content.orEmpty(),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (!state.loading) TextButton(onClick = onDismiss) { Text("확인") }
+        },
+    )
 }
 
 @Composable
@@ -802,6 +999,159 @@ private fun ComparisonTimelineChart(
     targets: List<PropertyWatchTargetEntity>,
     state: PropertyTrackerUiState,
     colorsByTarget: Map<String, Color>,
+    period: ComparePeriod,
+    mode: ComparePriceMode,
+    onModeChange: (ComparePriceMode) -> Unit,
+    modifier: Modifier,
+) {
+    val today = LocalDate.now()
+    val earliest = targets.flatMap { target ->
+        state.tradesFor(target.id).mapNotNull { parseTradeDate(it.tradeDate) } +
+            state.snapshotsFor(target.id).map { LocalDate.ofEpochDay(it.epochDay) }
+    }.minOrNull()
+    val startDate = period.startDate(today, earliest)
+    val points = remember(targets, state.trades, state.snapshots, period, mode, startDate) {
+        buildComparePricePoints(targets, state, period, mode, startDate, today)
+    }
+    var selectedDate by remember(period, mode) { mutableStateOf<LocalDate?>(null) }
+    var hiddenIds by remember(targets.map(PropertyWatchTargetEntity::id)) { mutableStateOf(emptySet<String>()) }
+    val visiblePoints = points.filterNot { it.targetId in hiddenIds }
+    val values = visiblePoints.flatMap { listOf(it.minValue, it.maxValue) }
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val gridColor = MaterialTheme.colorScheme.outlineVariant
+
+    Surface(modifier, shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("가격 흐름", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                ComparePriceMode.entries.forEach { option ->
+                    FilterChip(selected = mode == option, onClick = { onModeChange(option) }, label = { Text(option.label) })
+                }
+            }
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                if (values.isEmpty()) {
+                    Text(
+                        if (mode == ComparePriceMode.ASKING_GAP) "호가 중간값과 직전 3개월 실거래가 모두 있어야 계산할 수 있어요."
+                        else "선택한 기간에 표시할 가격 기록이 없습니다.",
+                        Modifier.align(Alignment.Center),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = labelColor,
+                    )
+                } else {
+                    val rawMin = values.min()
+                    val rawMax = values.max()
+                    val minimumPadding = if (mode == ComparePriceMode.ASKING_GAP) 2.0 else 10_000_000.0
+                    val valuePadding = ((rawMax - rawMin) * .1).coerceAtLeast(minimumPadding)
+                    val minValue = if (mode == ComparePriceMode.ASKING_GAP) rawMin - valuePadding else (rawMin - valuePadding).coerceAtLeast(0.0)
+                    val maxValue = rawMax + valuePadding
+                    val valueRange = (maxValue - minValue).coerceAtLeast(1.0)
+                    val dayRange = ChronoUnit.DAYS.between(startDate, today).coerceAtLeast(1L)
+                    Canvas(
+                        Modifier.fillMaxSize()
+                            .pointerInput(visiblePoints, startDate, today) {
+                                detectTapGestures { tap ->
+                                    val left = 60.dp.toPx()
+                                    val right = size.width - 8.dp.toPx()
+                                    val fraction = ((tap.x - left) / (right - left)).coerceIn(0f, 1f)
+                                    val date = startDate.plusDays((dayRange * fraction).roundToLong())
+                                    selectedDate = visiblePoints.minByOrNull { abs(ChronoUnit.DAYS.between(it.date, date)) }?.date
+                                }
+                            }
+                            .pointerInput(visiblePoints, startDate, today) {
+                                fun selectAt(x: Float) {
+                                    val left = 60.dp.toPx()
+                                    val right = size.width - 8.dp.toPx()
+                                    val fraction = ((x - left) / (right - left)).coerceIn(0f, 1f)
+                                    val date = startDate.plusDays((dayRange * fraction).roundToLong())
+                                    selectedDate = visiblePoints.minByOrNull { abs(ChronoUnit.DAYS.between(it.date, date)) }?.date
+                                }
+                                detectHorizontalDragGestures(
+                                    onDragStart = { selectAt(it.x) },
+                                    onHorizontalDrag = { change, _ -> selectAt(change.position.x) },
+                                )
+                            },
+                    ) {
+                        val left = 60.dp.toPx()
+                        val right = size.width - 8.dp.toPx()
+                        val top = 6.dp.toPx()
+                        val bottom = size.height - 30.dp.toPx()
+                        fun x(date: LocalDate) = left + (right - left) * ChronoUnit.DAYS.between(startDate, date).toFloat() / dayRange
+                        fun y(value: Double) = bottom - (bottom - top) * ((value - minValue) / valueRange).toFloat()
+                        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                            color = labelColor.toArgb()
+                            textSize = 9.dp.toPx()
+                        }
+                        listOf(0f, .25f, .5f, .75f, 1f).forEach { fraction ->
+                            val lineY = bottom - (bottom - top) * fraction
+                            drawLine(gridColor, Offset(left, lineY), Offset(right, lineY), 1.dp.toPx())
+                            val value = minValue + valueRange * fraction
+                            val label = if (mode == ComparePriceMode.ASKING_GAP) "%.1f%%".format(value) else formatEokAxis(value.roundToLong())
+                            drawContext.canvas.nativeCanvas.drawText(label, 0f, lineY + 4.dp.toPx(), paint)
+                        }
+                        if (mode == ComparePriceMode.ASKING_GAP && minValue < 0 && maxValue > 0) {
+                            drawLine(labelColor.copy(alpha = .7f), Offset(left, y(0.0)), Offset(right, y(0.0)), 1.5.dp.toPx())
+                        }
+                        drawContext.canvas.nativeCanvas.drawText(formatAxisDate(startDate, period), left, size.height, paint)
+                        val endLabel = formatAxisDate(today, period)
+                        drawContext.canvas.nativeCanvas.drawText(endLabel, right - paint.measureText(endLabel), size.height, paint)
+                        targets.forEachIndexed { index, target ->
+                            if (target.id in hiddenIds) return@forEachIndexed
+                            val color = colorsByTarget[target.id] ?: comparisonColor(index)
+                            splitPriceSegments(points.filter { it.targetId == target.id }, period).forEach { segment ->
+                                drawCompareRangeSegment(segment, color, ::x, ::y, mode == ComparePriceMode.ASKING_RANGE)
+                            }
+                        }
+                        selectedDate?.let { date ->
+                            drawLine(labelColor.copy(alpha = .72f), Offset(x(date), top), Offset(x(date), bottom), 1.dp.toPx())
+                        }
+                    }
+                    selectedDate?.let { date ->
+                        val selectedPoints = visiblePoints.filter { it.date == date }
+                        Surface(
+                            Modifier.align(Alignment.TopEnd).padding(4.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            shadowElevation = 4.dp,
+                        ) {
+                            Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(formatChartDate(date, period), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                selectedPoints.forEach { point ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(Modifier.size(7.dp).background(colorsByTarget[point.targetId] ?: MaterialTheme.colorScheme.primary, CircleShape))
+                                        Text("${point.targetName}  ${formatComparePoint(point, mode)}", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                targets.forEachIndexed { index, target ->
+                    val color = colorsByTarget[target.id] ?: comparisonColor(index)
+                    Row(
+                        Modifier.clickable { hiddenIds = if (target.id in hiddenIds) hiddenIds - target.id else hiddenIds + target.id }.padding(vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.size(8.dp).background(if (target.id in hiddenIds) color.copy(alpha = .25f) else color, CircleShape))
+                        Text(
+                            target.apartmentName,
+                            Modifier.padding(start = 5.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (target.id in hiddenIds) labelColor.copy(alpha = .5f) else labelColor,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegacyComparisonTimelineChart(
+    targets: List<PropertyWatchTargetEntity>,
+    state: PropertyTrackerUiState,
+    colorsByTarget: Map<String, Color>,
     modifier: Modifier,
 ) {
     val today = LocalDate.now()
@@ -1017,6 +1367,227 @@ private fun ComparisonTimelineChart(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarketActivitySection(
+    targets: List<PropertyWatchTargetEntity>,
+    state: PropertyTrackerUiState,
+    colorsByTarget: Map<String, Color>,
+    selectedTargetId: String,
+    onSelectTarget: (String) -> Unit,
+    period: ComparePeriod,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val target = targets.firstOrNull { it.id == selectedTargetId } ?: targets.first()
+    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("매물 · 매매 수", Modifier.weight(1f), fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+                Box {
+                    TextButton(onClick = { menuOpen = true }) {
+                        Box(Modifier.size(8.dp).background(colorsByTarget[target.id] ?: MaterialTheme.colorScheme.primary, CircleShape))
+                        Text(target.apartmentName, Modifier.padding(start = 6.dp), maxLines = 1)
+                        Icon(Icons.Rounded.ArrowDropDown, null)
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        targets.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.apartmentName) },
+                                onClick = { onSelectTarget(option.id); menuOpen = false },
+                            )
+                        }
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("■ 매매 거래량(건)", style = MaterialTheme.typography.labelSmall, color = Color(0xFFB79BF6))
+                Text("● 매물 수(개)", style = MaterialTheme.typography.labelSmall, color = colorsByTarget[target.id] ?: MaterialTheme.colorScheme.primary)
+            }
+            CompareMarketActivityChart(
+                target = target,
+                snapshots = state.snapshotsFor(target.id),
+                trades = state.tradesFor(target.id),
+                color = colorsByTarget[target.id] ?: MaterialTheme.colorScheme.primary,
+                period = period,
+                modifier = Modifier.fillMaxWidth().height(190.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompareMarketActivityChart(
+    target: PropertyWatchTargetEntity,
+    snapshots: List<PropertyAskingSnapshotEntity>,
+    trades: List<PropertyActualTradeEntity>,
+    color: Color,
+    period: ComparePeriod,
+    modifier: Modifier,
+) {
+    val today = LocalDate.now()
+    val earliest = (snapshots.map { LocalDate.ofEpochDay(it.epochDay) } + trades.mapNotNull { parseTradeDate(it.tradeDate) }).minOrNull()
+    val startDate = period.startDate(today, earliest)
+    val points = remember(target.id, snapshots, trades, period) {
+        val listingCounts = snapshots
+            .map { LocalDate.ofEpochDay(it.epochDay) to it }
+            .filter { it.first in startDate..today }
+            .groupBy { period.bucket(it.first) }
+            .mapValues { (_, entries) -> entries.maxByOrNull { it.second.epochDay }?.second?.activeCount ?: 0 }
+        val tradeCounts = trades.mapNotNull { parseTradeDate(it.tradeDate) }
+            .filter { it in startDate..today }
+            .groupingBy(period::bucket)
+            .eachCount()
+        (listingCounts.keys + tradeCounts.keys).distinct().sorted().map { date ->
+            MarketActivityPoint(date, tradeCounts[date] ?: 0, listingCounts[date])
+        }
+    }
+    var selectedDate by remember(period, target.id) { mutableStateOf<LocalDate?>(null) }
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val gridColor = MaterialTheme.colorScheme.outlineVariant
+    val barColor = Color(0xFFB79BF6)
+    val maxListings = points.mapNotNull(MarketActivityPoint::listingCount).maxOrNull()?.coerceAtLeast(1) ?: 1
+    val maxTrades = points.maxOfOrNull(MarketActivityPoint::tradeCount)?.coerceAtLeast(1) ?: 1
+    val dayRange = ChronoUnit.DAYS.between(startDate, today).coerceAtLeast(1L)
+
+    Box(modifier) {
+        if (points.isEmpty()) {
+            Text("선택한 기간에 활동 기록이 없습니다.", Modifier.align(Alignment.Center), style = MaterialTheme.typography.bodySmall, color = labelColor)
+        } else {
+            Canvas(
+                Modifier.fillMaxSize()
+                    .pointerInput(points, startDate, today) {
+                        fun selectAt(positionX: Float) {
+                            val left = 44.dp.toPx()
+                            val right = size.width - 38.dp.toPx()
+                            val fraction = ((positionX - left) / (right - left)).coerceIn(0f, 1f)
+                            val date = startDate.plusDays((dayRange * fraction).roundToLong())
+                            selectedDate = points.minByOrNull { abs(ChronoUnit.DAYS.between(it.date, date)) }?.date
+                        }
+                        detectTapGestures { selectAt(it.x) }
+                    }
+                    .pointerInput(points, startDate, today) {
+                        fun selectAt(positionX: Float) {
+                            val left = 44.dp.toPx()
+                            val right = size.width - 38.dp.toPx()
+                            val fraction = ((positionX - left) / (right - left)).coerceIn(0f, 1f)
+                            val date = startDate.plusDays((dayRange * fraction).roundToLong())
+                            selectedDate = points.minByOrNull { abs(ChronoUnit.DAYS.between(it.date, date)) }?.date
+                        }
+                        detectHorizontalDragGestures(
+                            onDragStart = { selectAt(it.x) },
+                            onHorizontalDrag = { change, _ -> selectAt(change.position.x) },
+                        )
+                    },
+            ) {
+                val left = 44.dp.toPx()
+                val right = size.width - 38.dp.toPx()
+                val top = 6.dp.toPx()
+                val bottom = size.height - 30.dp.toPx()
+                fun x(date: LocalDate) = left + (right - left) * ChronoUnit.DAYS.between(startDate, date).toFloat() / dayRange
+                fun listingY(value: Int) = bottom - (bottom - top) * value / maxListings.toFloat()
+                fun tradeHeight(value: Int) = (bottom - top) * value / maxTrades.toFloat()
+                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    this.color = labelColor.toArgb()
+                    textSize = 9.dp.toPx()
+                }
+                listOf(0f, .5f, 1f).forEach { fraction ->
+                    val lineY = bottom - (bottom - top) * fraction
+                    drawLine(gridColor, Offset(left, lineY), Offset(right, lineY), 1.dp.toPx())
+                    drawContext.canvas.nativeCanvas.drawText((maxTrades * fraction).roundToLong().toString(), 0f, lineY + 4.dp.toPx(), paint)
+                    val rightLabel = (maxListings * fraction).roundToLong().toString()
+                    drawContext.canvas.nativeCanvas.drawText(rightLabel, size.width - paint.measureText(rightLabel), lineY + 4.dp.toPx(), paint)
+                }
+                val barWidth = ((right - left) / points.size.coerceAtLeast(1) * .55f).coerceIn(4.dp.toPx(), 24.dp.toPx())
+                points.forEach { point ->
+                    val height = tradeHeight(point.tradeCount)
+                    drawRect(barColor.copy(alpha = .55f), Offset(x(point.date) - barWidth / 2, bottom - height), androidx.compose.ui.geometry.Size(barWidth, height))
+                }
+                val listingPoints = points.mapNotNull { point -> point.listingCount?.let { point to Offset(x(point.date), listingY(it)) } }
+                splitActivitySegments(listingPoints, period).forEach { segment ->
+                    val path = Path()
+                    segment.forEachIndexed { index, (_, point) -> if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y) }
+                    if (segment.size > 1) drawPath(path, color, style = Stroke(2.5.dp.toPx()))
+                    segment.forEach { (_, point) -> drawCircle(color, 3.5.dp.toPx(), point) }
+                }
+                listOf(startDate, startDate.plusDays(dayRange / 2), today).forEach { date ->
+                    val label = formatAxisDate(date, period)
+                    val labelX = x(date).coerceIn(left + paint.measureText(label) / 2, right - paint.measureText(label) / 2)
+                    drawContext.canvas.nativeCanvas.drawText(label, labelX - paint.measureText(label) / 2, size.height, paint)
+                }
+                selectedDate?.let { date -> drawLine(labelColor.copy(alpha = .7f), Offset(x(date), top), Offset(x(date), bottom), 1.dp.toPx()) }
+            }
+            selectedDate?.let { date ->
+                val point = points.firstOrNull { it.date == date } ?: return@let
+                Surface(
+                    Modifier.align(Alignment.TopEnd).padding(3.dp),
+                    shape = RoundedCornerShape(9.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 4.dp,
+                ) {
+                    Column(Modifier.padding(horizontal = 9.dp, vertical = 6.dp)) {
+                        Text(formatChartDate(date, period), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                        Text("매매 ${point.tradeCount}건 · 매물 ${point.listingCount?.let { "${it}개" } ?: "기록 없음"}", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompareSummaryPager(
+    targets: List<PropertyWatchTargetEntity>,
+    state: PropertyTrackerUiState,
+    colorsByTarget: Map<String, Color>,
+) {
+    val pagerState = rememberPagerState { 3 }
+    val summaryHeight = (92 + targets.size.coerceAtMost(4) * 30).dp
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("주요 요약", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().height(summaryHeight), pageSpacing = 10.dp) { page ->
+            val rows = when (page) {
+                0 -> targets.map { target ->
+                    val median = recentTradeMedian(state.tradesFor(target.id), LocalDate.now())
+                    SummaryRow(target, median, median?.let(::formatWon) ?: emptyActualText(target))
+                }.sortedByDescending { it.numericValue ?: Long.MIN_VALUE }
+                1 -> targets.map { target ->
+                    val returnRate = oneYearReturn(state.tradesFor(target.id), LocalDate.now())
+                    SummaryRow(target, returnRate?.times(100)?.roundToLong(), returnRate?.let { "%+.1f%%".format(it) } ?: "계산 불가")
+                }.sortedByDescending { it.numericValue ?: Long.MIN_VALUE }
+                else -> targets.map { target ->
+                    val gap = currentAskingGapPercent(state, target.id)
+                    SummaryRow(target, gap?.times(100)?.roundToLong(), gap?.let { "%+.1f%%".format(it) } ?: "계산 불가")
+                }.sortedByDescending { it.numericValue ?: Long.MIN_VALUE }
+            }
+            SummaryRankingCard(listOf("현재 가격 요약", "1년 상승률", "호가 괴리율 순위")[page], rows, colorsByTarget)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            repeat(3) { index ->
+                Box(
+                    Modifier.padding(horizontal = 3.dp).size(if (pagerState.currentPage == index) 8.dp else 6.dp)
+                        .background(if (pagerState.currentPage == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryRankingCard(title: String, rows: List<SummaryRow>, colorsByTarget: Map<String, Color>) {
+    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(title, fontWeight = FontWeight.Black)
+            rows.take(4).forEachIndexed { index, row ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${index + 1}", Modifier.width(22.dp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Box(Modifier.size(8.dp).background(colorsByTarget[row.target.id] ?: MaterialTheme.colorScheme.primary, CircleShape))
+                    Text(row.target.apartmentName, Modifier.padding(start = 7.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(row.displayValue, fontWeight = FontWeight.Black)
                 }
             }
         }
@@ -1304,6 +1875,209 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRangeBand(
     }
 }
 
+private enum class ComparePeriod(val label: String) {
+    WEEK("1주일"), MONTH("1개월"), THREE_MONTHS("3개월"), SIX_MONTHS("6개월"), YEAR("1년"), THREE_YEARS("3년"), ALL("전체");
+
+    fun startDate(today: LocalDate, earliest: LocalDate? = null): LocalDate = when (this) {
+        WEEK -> today.minusDays(6)
+        MONTH -> today.minusMonths(1)
+        THREE_MONTHS -> today.minusMonths(3)
+        SIX_MONTHS -> today.minusMonths(6)
+        YEAR -> today.minusYears(1)
+        THREE_YEARS -> today.minusYears(3)
+        ALL -> earliest ?: today.minusYears(1)
+    }
+
+    fun bucket(date: LocalDate): LocalDate = when (this) {
+        WEEK, MONTH -> date
+        THREE_MONTHS -> date.minusDays(date.dayOfWeek.value.toLong() - 1)
+        SIX_MONTHS, YEAR, THREE_YEARS -> date.withDayOfMonth(1)
+        ALL -> date.withDayOfYear(1)
+    }
+
+    fun adjacent(first: LocalDate, second: LocalDate): Boolean = when (this) {
+        WEEK, MONTH -> ChronoUnit.DAYS.between(first, second) <= 1
+        THREE_MONTHS -> ChronoUnit.WEEKS.between(first, second) <= 1
+        SIX_MONTHS, YEAR, THREE_YEARS -> ChronoUnit.MONTHS.between(YearMonth.from(first), YearMonth.from(second)) <= 1
+        ALL -> second.year - first.year <= 1
+    }
+}
+
+private enum class ComparePriceMode(val label: String) {
+    ACTUAL_RANGE("실거래 최저~최고"), ASKING_RANGE("호가 범위"), ASKING_GAP("호가 괴리")
+}
+
+private data class ComparePricePoint(
+    val targetId: String,
+    val targetName: String,
+    val date: LocalDate,
+    val minValue: Double,
+    val maxValue: Double,
+    val centerValue: Double?,
+    val count: Int,
+)
+
+private data class MarketActivityPoint(
+    val date: LocalDate,
+    val tradeCount: Int,
+    val listingCount: Int?,
+)
+
+private data class SummaryRow(
+    val target: PropertyWatchTargetEntity,
+    val numericValue: Long?,
+    val displayValue: String,
+)
+
+private fun buildComparePricePoints(
+    targets: List<PropertyWatchTargetEntity>,
+    state: PropertyTrackerUiState,
+    period: ComparePeriod,
+    mode: ComparePriceMode,
+    startDate: LocalDate,
+    today: LocalDate,
+): List<ComparePricePoint> = targets.flatMap { target ->
+    when (mode) {
+        ComparePriceMode.ACTUAL_RANGE -> state.tradesFor(target.id)
+            .mapNotNull { trade -> parseTradeDate(trade.tradeDate)?.let { it to trade.priceKrw } }
+            .filter { it.first in startDate..today }
+            .groupBy { period.bucket(it.first) }
+            .map { (date, entries) ->
+                val prices = entries.map { it.second }.sorted()
+                ComparePricePoint(target.id, target.apartmentName, date, prices.first().toDouble(), prices.last().toDouble(), prices.medianLong().toDouble(), prices.size)
+            }
+        ComparePriceMode.ASKING_RANGE -> state.snapshotsFor(target.id)
+            .filter { LocalDate.ofEpochDay(it.epochDay) in startDate..today && it.minPriceKrw > 0 && it.maxPriceKrw > 0 }
+            .groupBy { period.bucket(LocalDate.ofEpochDay(it.epochDay)) }
+            .mapNotNull { (date, entries) -> entries.maxByOrNull(PropertyAskingSnapshotEntity::epochDay)?.let { snapshot ->
+                ComparePricePoint(
+                    target.id,
+                    target.apartmentName,
+                    date,
+                    snapshot.minPriceKrw.toDouble(),
+                    snapshot.maxPriceKrw.toDouble(),
+                    snapshot.medianPriceKrw.takeIf { it > 0 }?.toDouble(),
+                    snapshot.activeCount,
+                )
+            } }
+        ComparePriceMode.ASKING_GAP -> state.snapshotsFor(target.id)
+            .filter { LocalDate.ofEpochDay(it.epochDay) in startDate..today && it.medianPriceKrw > 0 }
+            .groupBy { period.bucket(LocalDate.ofEpochDay(it.epochDay)) }
+            .mapNotNull { (date, entries) ->
+                val snapshot = entries.maxByOrNull(PropertyAskingSnapshotEntity::epochDay) ?: return@mapNotNull null
+                val snapshotDate = LocalDate.ofEpochDay(snapshot.epochDay)
+                val actualMedian = state.tradesFor(target.id).mapNotNull { trade ->
+                    parseTradeDate(trade.tradeDate)?.takeIf { it in snapshotDate.minusMonths(3)..snapshotDate }?.let { trade.priceKrw }
+                }.medianLongOrNull() ?: return@mapNotNull null
+                val gap = (snapshot.medianPriceKrw - actualMedian) * 100.0 / actualMedian
+                ComparePricePoint(target.id, target.apartmentName, date, gap, gap, gap, snapshot.activeCount)
+            }
+    }
+}.sortedBy(ComparePricePoint::date)
+
+private fun splitPriceSegments(points: List<ComparePricePoint>, period: ComparePeriod): List<List<ComparePricePoint>> {
+    if (points.isEmpty()) return emptyList()
+    val result = mutableListOf<MutableList<ComparePricePoint>>()
+    points.sortedBy(ComparePricePoint::date).forEach { point ->
+        val current = result.lastOrNull()
+        if (current == null || !period.adjacent(current.last().date, point.date)) result += mutableListOf(point)
+        else current += point
+    }
+    return result
+}
+
+private fun splitActivitySegments(
+    points: List<Pair<MarketActivityPoint, Offset>>,
+    period: ComparePeriod,
+): List<List<Pair<MarketActivityPoint, Offset>>> {
+    if (points.isEmpty()) return emptyList()
+    val result = mutableListOf<MutableList<Pair<MarketActivityPoint, Offset>>>()
+    points.forEach { point ->
+        val current = result.lastOrNull()
+        if (current == null || !period.adjacent(current.last().first.date, point.first.date)) result += mutableListOf(point)
+        else current += point
+    }
+    return result
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCompareRangeSegment(
+    points: List<ComparePricePoint>,
+    color: Color,
+    x: (LocalDate) -> Float,
+    y: (Double) -> Float,
+    hatched: Boolean,
+) {
+    if (points.isEmpty()) return
+    val sorted = points.sortedBy(ComparePricePoint::date)
+    if (sorted.size == 1) {
+        val point = sorted.first()
+        drawLine(color.copy(alpha = .75f), Offset(x(point.date), y(point.maxValue)), Offset(x(point.date), y(point.minValue)), 2.dp.toPx())
+        drawCircle(color, 3.5.dp.toPx(), Offset(x(point.date), y(point.maxValue)))
+        drawCircle(color, 3.5.dp.toPx(), Offset(x(point.date), y(point.minValue)))
+        point.centerValue?.let { drawCircle(color, 3.dp.toPx(), Offset(x(point.date), y(it))) }
+        return
+    }
+    val band = Path()
+    sorted.forEachIndexed { index, point ->
+        if (index == 0) band.moveTo(x(point.date), y(point.maxValue)) else band.lineTo(x(point.date), y(point.maxValue))
+    }
+    sorted.asReversed().forEach { band.lineTo(x(it.date), y(it.minValue)) }
+    band.close()
+    drawPath(band, color.copy(alpha = if (hatched) .11f else .09f))
+    if (hatched) {
+        sorted.zipWithNext().forEach { (first, second) ->
+            val x1 = x(first.date)
+            val x2 = x(second.date)
+            val width = (x2 - x1).coerceAtLeast(1f)
+            var hatchX = x1
+            while (hatchX <= x2) {
+                val fraction = (hatchX - x1) / width
+                val low = first.minValue + (second.minValue - first.minValue) * fraction
+                val high = first.maxValue + (second.maxValue - first.maxValue) * fraction
+                drawLine(color.copy(alpha = .28f), Offset(hatchX - 4.dp.toPx(), y(low)), Offset(hatchX + 4.dp.toPx(), y(high)), 1.dp.toPx())
+                hatchX += 9.dp.toPx()
+            }
+        }
+    }
+    val centers = sorted.mapNotNull { point -> point.centerValue?.let { Offset(x(point.date), y(it)) } }
+    val centerPath = Path()
+    centers.forEachIndexed { index, point -> if (index == 0) centerPath.moveTo(point.x, point.y) else centerPath.lineTo(point.x, point.y) }
+    if (centers.size > 1) drawPath(centerPath, color, style = Stroke(2.5.dp.toPx()))
+    centers.forEach { drawCircle(color, 3.dp.toPx(), it) }
+    listOf(sorted.first(), sorted.last()).distinct().forEach { point ->
+        drawCircle(color, 3.5.dp.toPx(), Offset(x(point.date), y(point.minValue)))
+        drawCircle(color, 3.5.dp.toPx(), Offset(x(point.date), y(point.maxValue)))
+    }
+}
+
+private fun formatComparePoint(point: ComparePricePoint, mode: ComparePriceMode): String = when (mode) {
+    ComparePriceMode.ASKING_GAP -> "%+.1f%%".format(point.centerValue ?: point.minValue)
+    else -> formatPriceRange(PriceRange(point.minValue.roundToLong(), point.maxValue.roundToLong())) +
+        if (mode == ComparePriceMode.ACTUAL_RANGE) " · ${point.count}건" else ""
+}
+
+private fun recentTradeMedian(trades: List<PropertyActualTradeEntity>, today: LocalDate): Long? = trades.mapNotNull { trade ->
+    parseTradeDate(trade.tradeDate)?.takeIf { it in today.minusMonths(3)..today }?.let { trade.priceKrw }
+}.medianLongOrNull()
+
+private fun oneYearReturn(trades: List<PropertyActualTradeEntity>, today: LocalDate): Double? {
+    val current = recentTradeMedian(trades, today) ?: return null
+    val base = trades.mapNotNull { trade ->
+        parseTradeDate(trade.tradeDate)?.takeIf { it in today.minusMonths(15)..today.minusMonths(9) }?.let { trade.priceKrw }
+    }.medianLongOrNull() ?: return null
+    return (current - base) * 100.0 / base
+}
+
+private fun currentAskingGapPercent(state: PropertyTrackerUiState, targetId: String): Double? {
+    val asking = PropertyTrackerRepository.groupDuplicateListings(state.activeListingsFor(targetId))
+        .map { it.representative.priceKrw }.filter { it > 0 }.medianLongOrNull() ?: return null
+    val actual = recentTradeMedian(state.tradesFor(targetId), LocalDate.now()) ?: return null
+    return (asking - actual) * 100.0 / actual
+}
+
+private fun List<Long>.medianLongOrNull(): Long? = if (isEmpty()) null else sorted().medianLong()
+private fun List<Long>.medianLong(): Long = if (size % 2 == 1) this[size / 2] else (this[size / 2 - 1] + this[size / 2]) / 2
+
 private data class PriceRange(val min: Long = 0L, val max: Long = 0L) {
     val isAvailable: Boolean get() = min > 0L && max > 0L
 }
@@ -1324,7 +2098,7 @@ private fun hasActualTradeSyncFailure(target: PropertyWatchTargetEntity): Boolea
     target.lastSyncMessage.contains("실거래 조회 실패")
 
 private fun emptyActualText(target: PropertyWatchTargetEntity): String =
-    if (hasActualTradeSyncFailure(target)) "실거래 조회 지연" else "최근 1년 신고 거래 없음"
+    if (hasActualTradeSyncFailure(target)) "실거래 조회 지연" else "최근 18개월 신고 거래 없음"
 
 private fun formatPriceRange(range: PriceRange, emptyText: String = "기록 없음"): String = when {
     !range.isAvailable -> emptyText
@@ -1334,6 +2108,14 @@ private fun formatPriceRange(range: PriceRange, emptyText: String = "기록 없�
 
 private fun parseTradeDate(value: String): LocalDate? = runCatching { LocalDate.parse(value) }.getOrNull()
 
+private fun formatTradeDate(value: String): String = parseTradeDate(value)
+    ?.format(DateTimeFormatter.ofPattern("yyyy년 M월 d일"))
+    ?: value
+
+private fun formatSyncTime(value: Long): String = Instant.ofEpochMilli(value)
+    .atZone(ZoneId.of("Asia/Seoul"))
+    .format(DateTimeFormatter.ofPattern("M월 d일 HH:mm"))
+
 private fun formatEokAxis(value: Long): String = "%.2f억".format(Locale.KOREA, value / 100_000_000.0)
 
 private fun formatAxisDate(date: LocalDate, period: PriceChartPeriod): String = date.format(
@@ -1342,6 +2124,24 @@ private fun formatAxisDate(date: LocalDate, period: PriceChartPeriod): String = 
 
 private fun formatChartDate(date: LocalDate, period: PriceChartPeriod): String = date.format(
     DateTimeFormatter.ofPattern(if (period == PriceChartPeriod.YEAR) "yyyy년 M월" else "yyyy년 M월 d일"),
+)
+
+private fun formatAxisDate(date: LocalDate, period: ComparePeriod): String = date.format(
+    DateTimeFormatter.ofPattern(
+        when (period) {
+            ComparePeriod.WEEK, ComparePeriod.MONTH -> "yyyy.M.d"
+            else -> "yyyy.M"
+        },
+    ),
+)
+
+private fun formatChartDate(date: LocalDate, period: ComparePeriod): String = date.format(
+    DateTimeFormatter.ofPattern(
+        when (period) {
+            ComparePeriod.WEEK, ComparePeriod.MONTH -> "yyyy년 M월 d일"
+            else -> "yyyy년 M월"
+        },
+    ),
 )
 
 private fun comparisonColor(index: Int): Color = listOf(

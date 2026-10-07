@@ -89,7 +89,7 @@ class PropertyTrackerRepository(
 
     suspend fun setMoveTarget(id: String, selected: Boolean): Result<Unit> = runCatching {
         val targets = dao.getTargets()
-        if (selected && targets.count(PropertyWatchTargetEntity::isMoveTarget) >= MAX_SELECTIONS) {
+        if (selected && targets.count(PropertyWatchTargetEntity::isMoveTarget) >= MAX_MOVE_SELECTIONS) {
             error("갈아타기 후보는 최대 5개까지 선택할 수 있습니다.")
         }
         dao.updateMoveTarget(id, selected)
@@ -97,8 +97,8 @@ class PropertyTrackerRepository(
 
     suspend fun setCompareSelected(id: String, selected: Boolean): Result<Unit> = runCatching {
         val targets = dao.getTargets()
-        if (selected && targets.count(PropertyWatchTargetEntity::isCompareSelected) >= MAX_SELECTIONS) {
-            error("비교 단지는 최대 5개까지 선택할 수 있습니다.")
+        if (selected && targets.count(PropertyWatchTargetEntity::isCompareSelected) >= MAX_COMPARE_SELECTIONS) {
+            error("비교 단지는 최대 4개까지 선택할 수 있습니다.")
         }
         dao.updateCompareSelected(id, selected)
     }
@@ -233,7 +233,11 @@ class PropertyTrackerRepository(
                 watchTargetId = target.id,
                 epochDay = epochDay,
                 minPriceKrw = prices.firstOrNull() ?: 0,
-                medianPriceKrw = 0,
+                medianPriceKrw = if (prices.isEmpty()) 0 else if (prices.size % 2 == 1) {
+                    prices[prices.size / 2]
+                } else {
+                    (prices[prices.size / 2 - 1] + prices[prices.size / 2]) / 2
+                },
                 maxPriceKrw = prices.lastOrNull() ?: 0,
                 activeCount = uniqueCurrent.size,
                 newCount = newCount,
@@ -275,7 +279,8 @@ class PropertyTrackerRepository(
         private val KOREA_ZONE = ZoneId.of("Asia/Seoul")
         private val SYNC_MUTEX = Mutex()
         private const val REQUIRED_MISSES_FOR_REMOVAL = 2
-        private const val MAX_SELECTIONS = 5
+        private const val MAX_MOVE_SELECTIONS = 5
+        private const val MAX_COMPARE_SELECTIONS = 4
 
         fun nextMissingState(previousStatus: String, previousMisses: Int): Pair<String, Int> {
             if (previousStatus == "REMOVED") return "REMOVED" to previousMisses
