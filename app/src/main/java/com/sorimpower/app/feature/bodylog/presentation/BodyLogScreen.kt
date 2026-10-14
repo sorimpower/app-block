@@ -4,7 +4,6 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.Paint
 import android.net.Uri
 import android.os.Build
 import android.widget.Toast
@@ -12,7 +11,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.health.connect.client.PermissionController
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -62,15 +60,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -118,6 +109,38 @@ import com.sorimpower.app.feature.bodylog.domain.localDate
 import com.sorimpower.app.core.ui.AppCobalt
 import com.sorimpower.app.core.ui.AppNavy
 import com.sorimpower.app.core.ui.AppOrange
+import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberBottom
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberStart
+import com.patrykandpatrick.vico.compose.cartesian.layer.continuous
+import com.patrykandpatrick.vico.compose.cartesian.layer.point
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberColumnCartesianLayer
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLine
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
+import com.patrykandpatrick.vico.compose.cartesian.marker.rememberDefaultCartesianMarker
+import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
+import com.patrykandpatrick.vico.compose.cartesian.rememberVicoScrollState
+import com.patrykandpatrick.vico.compose.cartesian.rememberVicoZoomState
+import com.patrykandpatrick.vico.compose.common.ProvideVicoTheme
+import com.patrykandpatrick.vico.compose.common.component.rememberLineComponent
+import com.patrykandpatrick.vico.compose.common.component.rememberShapeComponent
+import com.patrykandpatrick.vico.compose.common.component.rememberTextComponent
+import com.patrykandpatrick.vico.compose.common.fill
+import com.patrykandpatrick.vico.compose.m3.common.rememberM3VicoTheme
+import com.patrykandpatrick.vico.core.cartesian.axis.HorizontalAxis
+import com.patrykandpatrick.vico.core.cartesian.axis.VerticalAxis
+import com.patrykandpatrick.vico.core.cartesian.Zoom
+import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
+import com.patrykandpatrick.vico.core.cartesian.data.CartesianLayerRangeProvider
+import com.patrykandpatrick.vico.core.cartesian.data.CartesianValueFormatter
+import com.patrykandpatrick.vico.core.cartesian.data.columnSeries
+import com.patrykandpatrick.vico.core.cartesian.data.lineSeries
+import com.patrykandpatrick.vico.core.cartesian.layer.ColumnCartesianLayer
+import com.patrykandpatrick.vico.core.cartesian.layer.LineCartesianLayer
+import com.patrykandpatrick.vico.core.cartesian.marker.ColumnCartesianLayerMarkerTarget
+import com.patrykandpatrick.vico.core.cartesian.marker.DefaultCartesianMarker
+import com.patrykandpatrick.vico.core.cartesian.marker.LineCartesianLayerMarkerTarget
+import com.patrykandpatrick.vico.core.common.shape.CorneredShape
 import java.io.File
 import java.time.DayOfWeek
 import java.time.Instant
@@ -129,7 +152,6 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
 import java.time.temporal.ChronoUnit
 import java.util.Locale
-import kotlin.math.abs
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -878,16 +900,9 @@ private fun moveMonthWeek(date: LocalDate, direction: Int): LocalDate {
 
 @Composable
 private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dailyCalories: List<com.sorimpower.app.feature.bodylog.data.DailyCalorieSummaryEntity>, healthActivity: List<com.sorimpower.app.feature.bodylog.data.DailyHealthActivityEntity>, exercises: List<ExerciseEntryEntity>, latestWeightKg: Double?, firstWeightKg: Double?, targetWeightKg: Double?, weightsHidden: Boolean) {
-    var selectedPoint by remember(points) { mutableStateOf<ChartPoint?>(null) }
     val primaryColor = MaterialTheme.colorScheme.primary
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
     val month = YearMonth.from(selectedMonth)
-    val xAxisLabels = remember(month) {
-        List(7) { index ->
-            val day = 1 + ((month.lengthOfMonth() - 1) * index / 6)
-            day.toString() + "일"
-        }.distinct()
-    }
     Card(Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(16.dp)) {
             if (points.isEmpty()) {
@@ -897,77 +912,61 @@ private fun WeightChart(points: List<ChartPoint>, selectedMonth: LocalDate, dail
                 val referenceWeight = firstWeightKg ?: points.minByOrNull(ChartPoint::timestamp)?.value ?: 80.0
                 val displayMin = referenceWeight - 20.0
                 val displayMax = referenceWeight + 10.0
-                val displayRange = displayMax - displayMin
-                val yAxisValues = List(7) { displayMin + it * 5.0 }
-                selectedPoint?.let { point ->
-                    Row(
-                        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(point.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(if (weightsHidden) HIDDEN_WEIGHT else "${formatWeight(point.value)} kg", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
-                    }
-                }
-                Canvas(
-                    Modifier.fillMaxWidth().height(210.dp).pointerInput(points) {
-                        detectTapGestures { tap ->
-                            val left = 42.dp.toPx()
-                            val right = 2.dp.toPx()
-                            val usableWidth = size.width - left - right
-                            val tapped = points.minByOrNull { point ->
-                                val day = Instant.ofEpochMilli(point.timestamp).atZone(ZoneId.systemDefault()).dayOfMonth
-                                val x = left + usableWidth * (day - 1).toFloat() / (month.lengthOfMonth() - 1).coerceAtLeast(1)
-                                abs(tap.x - x)
-                            }
-                            selectedPoint = tapped
+                val modelProducer = remember { CartesianChartModelProducer() }
+                LaunchedEffect(points) {
+                    modelProducer.runTransaction {
+                        lineSeries {
+                            series(
+                                x = points.map { Instant.ofEpochMilli(it.timestamp).atZone(ZoneId.systemDefault()).dayOfMonth },
+                                y = points.map(ChartPoint::value),
+                            )
                         }
-                    },
-                ) {
-                    val left = 42.dp.toPx(); val right = 2.dp.toPx(); val top = 12.dp.toPx(); val bottom = size.height - 12.dp.toPx()
-                    val usableWidth = size.width - left - right
-                    fun xFor(point: ChartPoint): Float {
-                        val day = Instant.ofEpochMilli(point.timestamp).atZone(ZoneId.systemDefault()).dayOfMonth
-                        return left + usableWidth * (day - 1).toFloat() / (month.lengthOfMonth() - 1).coerceAtLeast(1)
-                    }
-                    fun yForValue(value: Double): Float = bottom - ((value.coerceIn(displayMin, displayMax) - displayMin) / displayRange).toFloat() * (bottom - top)
-                    fun yFor(point: ChartPoint): Float = yForValue(point.value)
-
-                    val axisLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = android.graphics.Color.rgb(105, 102, 110)
-                        textSize = 10.dp.toPx()
-                        textAlign = Paint.Align.RIGHT
-                    }
-                    yAxisValues.forEach { value ->
-                        val y = yForValue(value)
-                        drawLine(Color(0xFFE8E5EC), Offset(left, y), Offset(size.width - right, y), strokeWidth = 1.dp.toPx())
-                        drawContext.canvas.nativeCanvas.drawText(formatWeight(value), left - 6.dp.toPx(), y + 4.dp.toPx(), axisLabelPaint)
-                    }
-                    xAxisLabels.indices.forEach { index ->
-                        val x = left + usableWidth * index / (xAxisLabels.size - 1).toFloat()
-                        drawLine(Color(0xFFF1EEF3), Offset(x, top), Offset(x, bottom), strokeWidth = 1.dp.toPx())
-                    }
-                    val path = Path()
-                    points.forEachIndexed { index, point ->
-                        val x = xFor(point)
-                        val y = yFor(point)
-                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                    }
-                    drawPath(path, primaryColor, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
-                    selectedPoint?.let { point ->
-                        val x = xFor(point)
-                        drawLine(primaryColor.copy(alpha = .25f), Offset(x, top), Offset(x, bottom), strokeWidth = 1.dp.toPx())
-                    }
-                    points.forEach { point ->
-                        val x = xFor(point)
-                        val y = yFor(point)
-                        drawCircle(if (point == selectedPoint) primaryColor else tertiaryColor, if (point == selectedPoint) 5.dp.toPx() else 3.dp.toPx(), Offset(x, y))
                     }
                 }
-                Row(Modifier.fillMaxWidth().padding(start = 40.dp, end = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    xAxisLabels.forEach { label ->
-                        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                val line = LineCartesianLayer.rememberLine(
+                    LineCartesianLayer.LineFill.single(fill(primaryColor)),
+                    LineCartesianLayer.LineStroke.continuous(2.4.dp),
+                    pointProvider = LineCartesianLayer.PointProvider.single(
+                        LineCartesianLayer.point(rememberShapeComponent(fill(tertiaryColor), CorneredShape.Pill), 6.dp),
+                    ),
+                )
+                val marker = rememberDefaultCartesianMarker(
+                    label = rememberTextComponent(),
+                    valueFormatter = DefaultCartesianMarker.ValueFormatter { _, targets ->
+                        val day = targets.firstOrNull()?.x?.toInt() ?: 1
+                        val value = targets.filterIsInstance<LineCartesianLayerMarkerTarget>()
+                            .firstOrNull()?.points?.firstOrNull()?.entry?.y
+                        "${month.monthValue}월 ${day}일 · " + if (weightsHidden) HIDDEN_WEIGHT else "${value?.let(::formatWeight) ?: "-"} kg"
+                    },
+                )
+                ProvideVicoTheme(rememberM3VicoTheme()) {
+                    CartesianChartHost(
+                        chart = rememberCartesianChart(
+                            rememberLineCartesianLayer(
+                                lineProvider = LineCartesianLayer.LineProvider.series(line),
+                                rangeProvider = CartesianLayerRangeProvider.fixed(
+                                    minX = 1.0,
+                                    maxX = month.lengthOfMonth().toDouble(),
+                                    minY = displayMin,
+                                    maxY = displayMax,
+                                ),
+                            ),
+                            startAxis = VerticalAxis.rememberStart(
+                                valueFormatter = CartesianValueFormatter { _, value, _ -> if (weightsHidden) "••" else formatWeight(value) },
+                            ),
+                            bottomAxis = HorizontalAxis.rememberBottom(
+                                valueFormatter = CartesianValueFormatter { _, value, _ -> "${value.toInt()}일" },
+                            ),
+                            marker = marker,
+                        ),
+                        modelProducer = modelProducer,
+                        modifier = Modifier.fillMaxWidth().height(230.dp),
+                        scrollState = rememberVicoScrollState(scrollEnabled = false),
+                        zoomState = rememberVicoZoomState(
+                            zoomEnabled = false,
+                            initialZoom = Zoom.x((month.lengthOfMonth() - 1).toDouble()),
+                        ),
+                    )
                 }
                 DailyCalorieBarChart(
                     selectedMonth = month,
@@ -993,7 +992,6 @@ private fun DailyCalorieBarChart(
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
-    val minimumColor = MaterialTheme.colorScheme.error
     val values = remember(selectedMonth, dailyCalories, healthActivity, exercises) {
         val intakeByDate = dailyCalories
             .filter { YearMonth.from(LocalDate.ofEpochDay(it.dateEpochDay)) == selectedMonth }
@@ -1025,12 +1023,6 @@ private fun DailyCalorieBarChart(
         val highestActivity = values.maxOfOrNull { value -> (activityByDate[value.dateEpochDay]?.activeCalories?.toInt() ?: 0) + (exerciseCaloriesByDate[value.dateEpochDay] ?: 0) } ?: 0
         (kotlin.math.ceil(maxOf(values.maxOf { it.intakeCalories }, highestReference, highestActivity) / 500.0) * 500.0).toInt().coerceAtLeast(1_500)
     }
-    val xAxisDays = remember(selectedMonth) {
-        List(7) { index ->
-            1 + ((selectedMonth.lengthOfMonth() - 1) * index / 6)
-        }.distinct()
-    }
-    var selectedSummary by remember(values) { mutableStateOf<DailyCalorieChartValue?>(null) }
     Text("일별 총 칼로리", Modifier.padding(top = 16.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
     Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("● 섭취", color = tertiaryColor, style = MaterialTheme.typography.labelSmall)
@@ -1044,87 +1036,65 @@ private fun DailyCalorieBarChart(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    selectedSummary?.let { summary ->
-        val date = LocalDate.ofEpochDay(summary.dateEpochDay)
-        Text(
-            date.format(DateTimeFormatter.ofPattern("M월 d일", Locale.KOREAN)) + " · 섭취 " + summary.intakeCalories + " kcal · 활동 소모 " + ((activityByDate[summary.dateEpochDay]?.activeCalories?.toInt() ?: 0) + (exerciseCaloriesByDate[summary.dateEpochDay] ?: 0)) + if (activityByDate[summary.dateEpochDay]?.activeCaloriesEstimated == true) " kcal (걸음 추정 포함)" else " kcal",
-            Modifier.padding(top = 4.dp),
-            color = primaryColor,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.labelMedium,
-        )
+    val days = values.map { LocalDate.ofEpochDay(it.dateEpochDay).dayOfMonth }
+    val activityValues = values.map { summary ->
+        (activityByDate[summary.dateEpochDay]?.activeCalories?.toInt() ?: 0) + (exerciseCaloriesByDate[summary.dateEpochDay] ?: 0)
     }
-    Canvas(
-        Modifier.fillMaxWidth().height(126.dp).padding(top = 6.dp).pointerInput(values, selectedMonth) {
-            detectTapGestures { tap ->
-                val left = 38.dp.toPx()
-                val right = 2.dp.toPx()
-                val usableWidth = size.width - left - right
-                selectedSummary = values.minByOrNull { summary ->
-                    val day = LocalDate.ofEpochDay(summary.dateEpochDay).dayOfMonth
-                    val x = left + usableWidth * (day - 1).toFloat() / (selectedMonth.lengthOfMonth() - 1).coerceAtLeast(1)
-                    abs(tap.x - x)
-                }
+    val modelProducer = remember { CartesianChartModelProducer() }
+    LaunchedEffect(values, activityValues) {
+        modelProducer.runTransaction {
+            columnSeries {
+                series(x = days, y = values.map(DailyCalorieChartValue::intakeCalories))
+                series(x = days, y = activityValues)
+            }
+        }
+    }
+    val columns = listOf(tertiaryColor, Color(0xFF129C8C)).map { color ->
+        rememberLineComponent(fill(color), thickness = 7.dp, shape = CorneredShape.Pill)
+    }
+    val marker = rememberDefaultCartesianMarker(
+        label = rememberTextComponent(),
+        valueFormatter = DefaultCartesianMarker.ValueFormatter { _, targets ->
+            val target = targets.filterIsInstance<ColumnCartesianLayerMarkerTarget>().firstOrNull()
+            val day = target?.x?.toInt() ?: 1
+            val entries = target?.columns.orEmpty().map { it.entry.y.toInt() }
+            val epochDay = selectedMonth.atDay(day.coerceIn(1, selectedMonth.lengthOfMonth())).toEpochDay()
+            buildString {
+                append("${selectedMonth.monthValue}월 ${day}일 · 섭취 ${entries.getOrNull(0) ?: 0} kcal")
+                append(" · 활동 ${entries.getOrNull(1) ?: 0} kcal")
+                if (activityByDate[epochDay]?.activeCaloriesEstimated == true) append(" (걸음 추정 포함)")
             }
         },
-    ) {
-        val left = 38.dp.toPx()
-        val right = 2.dp.toPx()
-        val top = 5.dp.toPx()
-        val bottom = size.height - 22.dp.toPx()
-        val usableWidth = size.width - left - right
-        val axisLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.rgb(105, 102, 110)
-            textSize = 10.dp.toPx()
-            textAlign = Paint.Align.RIGHT
-        }
-        listOf(0, maxCalories / 2, maxCalories).distinct().forEach { calories ->
-            val y = bottom - (calories.toFloat() / maxCalories) * (bottom - top)
-            drawLine(Color(0xFFE8E5EC), Offset(left, y), Offset(size.width - right, y), strokeWidth = 1.dp.toPx())
-            drawContext.canvas.nativeCanvas.drawText(calories.toString(), left - 6.dp.toPx(), y + 4.dp.toPx(), axisLabelPaint)
-        }
-        calorieReference?.let { reference ->
-            listOf("최소" to reference.minimumCalories, "감량" to reference.dietCalories, "유지" to reference.maintenanceCalories).forEach { (label, calories) ->
-                val y = bottom - (calories.toFloat() / maxCalories).coerceIn(0f, 1f) * (bottom - top)
-                val color = when (label) {
-                    "최소" -> minimumColor
-                    "감량" -> tertiaryColor
-                    else -> primaryColor
-                }
-                drawLine(color.copy(alpha = .72f), Offset(left, y), Offset(size.width - right, y), strokeWidth = 1.5.dp.toPx())
-                axisLabelPaint.color = color.toArgb()
-                drawContext.canvas.nativeCanvas.drawText(calories.toString(), left - 6.dp.toPx(), y + 4.dp.toPx(), axisLabelPaint)
-                axisLabelPaint.color = android.graphics.Color.rgb(105, 102, 110)
-            }
-        }
-        values.forEach { summary ->
-            val day = LocalDate.ofEpochDay(summary.dateEpochDay).dayOfMonth
-            val x = left + usableWidth * (day - 1).toFloat() / (selectedMonth.lengthOfMonth() - 1).coerceAtLeast(1)
-            val intakeY = bottom - (summary.intakeCalories.toFloat() / maxCalories).coerceIn(0f, 1f) * (bottom - top)
-            val activityCalories = (activityByDate[summary.dateEpochDay]?.activeCalories ?: 0.0) + (exerciseCaloriesByDate[summary.dateEpochDay] ?: 0)
-            val activityY = bottom - (activityCalories.toFloat() / maxCalories).coerceIn(0f, 1f) * (bottom - top)
-            val isSelected = summary.dateEpochDay == selectedSummary?.dateEpochDay
-            drawLine(
-                if (isSelected) primaryColor else tertiaryColor,
-                Offset(x, bottom),
-                Offset(x, intakeY),
-                strokeWidth = if (isSelected) 7.dp.toPx() else 5.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-            if (activityCalories > 0.0) drawLine(
-                Color(0xFF129C8C), Offset(x, bottom), Offset(x, activityY),
-                strokeWidth = if (isSelected) 3.dp.toPx() else 2.5.dp.toPx(), cap = StrokeCap.Round,
-            )
-        }
-        val dateLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.rgb(105, 102, 110)
-            textSize = 10.dp.toPx()
-            textAlign = Paint.Align.CENTER
-        }
-        xAxisDays.forEach { day ->
-            val x = left + usableWidth * (day - 1).toFloat() / (selectedMonth.lengthOfMonth() - 1).coerceAtLeast(1)
-            drawContext.canvas.nativeCanvas.drawText("${day}일", x, size.height - 3.dp.toPx(), dateLabelPaint)
-        }
+    )
+    ProvideVicoTheme(rememberM3VicoTheme()) {
+        CartesianChartHost(
+            chart = rememberCartesianChart(
+                rememberColumnCartesianLayer(
+                    columnProvider = ColumnCartesianLayer.ColumnProvider.series(columns),
+                    mergeMode = { ColumnCartesianLayer.MergeMode.Grouped(2f) },
+                    rangeProvider = CartesianLayerRangeProvider.fixed(
+                        minX = 1.0,
+                        maxX = selectedMonth.lengthOfMonth().toDouble(),
+                        minY = 0.0,
+                        maxY = maxCalories.toDouble(),
+                    ),
+                ),
+                startAxis = VerticalAxis.rememberStart(
+                    valueFormatter = CartesianValueFormatter { _, value, _ -> value.toInt().toString() },
+                ),
+                bottomAxis = HorizontalAxis.rememberBottom(
+                    valueFormatter = CartesianValueFormatter { _, value, _ -> "${value.toInt()}일" },
+                ),
+                marker = marker,
+            ),
+            modelProducer = modelProducer,
+            modifier = Modifier.fillMaxWidth().height(170.dp).padding(top = 6.dp),
+            scrollState = rememberVicoScrollState(scrollEnabled = false),
+            zoomState = rememberVicoZoomState(
+                zoomEnabled = false,
+                initialZoom = Zoom.x((selectedMonth.lengthOfMonth() - 1).toDouble()),
+            ),
+        )
     }
 }
 
