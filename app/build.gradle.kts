@@ -74,6 +74,8 @@ dependencies {
     implementation(libs.androidx.health.connect)
     ksp(libs.androidx.room.compiler)
     implementation(libs.coil.compose)
+    implementation(libs.vico.compose)
+    implementation(libs.vico.compose.m3)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.functions)
     implementation("com.google.firebase:firebase-ai")
