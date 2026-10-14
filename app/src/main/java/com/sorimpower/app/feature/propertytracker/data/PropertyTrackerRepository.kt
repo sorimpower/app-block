@@ -254,18 +254,27 @@ class PropertyTrackerRepository(
             val result = molitProvider.lookup(target.lawdCd, target.apartmentName, target.exclusiveAreaSqm)
             val trades = result.trades.mapIndexed { index, trade ->
                 PropertyActualTradeEntity(
-                    id = "${target.id}:${trade.tradeDate}:${trade.priceKrw}:${trade.floor}:${trade.exclusiveAreaSqm}:$index",
+                    id = "${target.id}:${trade.tradeType}:${trade.tradeDate}:${trade.priceKrw}:${trade.floor}:${trade.exclusiveAreaSqm}:$index",
                     watchTargetId = target.id,
                     apartmentName = trade.apartmentName,
                     exclusiveAreaSqm = trade.exclusiveAreaSqm,
                     priceKrw = trade.priceKrw,
                     tradeDate = trade.tradeDate,
                     floor = trade.floor,
+                    tradeType = trade.tradeType,
                 )
             }
-            dao.deleteTrades(target.id)
-            if (trades.isNotEmpty()) dao.upsertTrades(trades)
-            "실거래 ${trades.size}건"
+            val partial = result.requestedPageCount > 0 && result.fetchedPageCount < result.requestedPageCount
+            if (partial) {
+                val existingKeys = dao.getTrades(target.id).mapTo(hashSetOf(), ::tradeIdentity)
+                val newlyFetched = trades.filter { tradeIdentity(it) !in existingKeys }
+                if (newlyFetched.isNotEmpty()) dao.upsertTrades(newlyFetched)
+                "실거래 일부 조회 ${trades.size}건(${result.fetchedPageCount}/${result.requestedPageCount}개 월·유형 응답)"
+            } else {
+                dao.deleteTrades(target.id)
+                if (trades.isNotEmpty()) dao.upsertTrades(trades)
+                "실거래 ${trades.size}건(매매·분양/입주권)"
+            }
         }.getOrElse { error ->
             val reason = error.message
                 ?.substringBefore('\n')
@@ -281,6 +290,15 @@ class PropertyTrackerRepository(
         private const val REQUIRED_MISSES_FOR_REMOVAL = 2
         private const val MAX_MOVE_SELECTIONS = 5
         private const val MAX_COMPARE_SELECTIONS = 4
+
+        private fun tradeIdentity(trade: PropertyActualTradeEntity): String = listOf(
+            trade.tradeType,
+            trade.apartmentName,
+            trade.exclusiveAreaSqm.toString(),
+            trade.priceKrw.toString(),
+            trade.tradeDate,
+            trade.floor,
+        ).joinToString("|")
 
         fun nextMissingState(previousStatus: String, previousMisses: Int): Pair<String, Int> {
             if (previousStatus == "REMOVED") return "REMOVED" to previousMisses

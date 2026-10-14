@@ -135,28 +135,28 @@ function normalizePublicDataServiceKey(value) {
   }
 }
 
-async function fetchMolitMonth(params, dealYmd) {
+async function fetchMolitMonth(endpoint, params, dealYmd) {
   let lastError;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       const response = await fetch(
-        `https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade?${params}`,
-        { signal: AbortSignal.timeout(15_000) },
+        `https://apis.data.go.kr/1613000/${endpoint.service}/${endpoint.operation}?${params}`,
+        { signal: AbortSignal.timeout(12_000) },
       );
       const xml = await response.text();
       if (!response.ok || /<resultCode>\s*(?:20|30|31)\s*<\/resultCode>/i.test(xml)) {
-        console.error("MOLIT request failed", response.status, dealYmd, xml.slice(0, 300));
+        console.error("MOLIT request failed", endpoint.type, response.status, dealYmd, xml.slice(0, 300));
         throw new HttpsError("internal", "국토부 실거래가 인증 또는 조회에 실패했습니다.");
       }
-      return xml;
+      return { xml, endpoint };
     } catch (error) {
       if (error instanceof HttpsError) throw error;
       lastError = error;
-      console.warn("MOLIT connection retry", dealYmd, attempt + 1, String(error?.message || error));
-      if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 800));
+      console.warn("MOLIT connection retry", endpoint.type, dealYmd, attempt + 1, String(error?.message || error));
+      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 600 * (attempt + 1)));
     }
   }
-  console.error("MOLIT connection failed", dealYmd, lastError);
+  console.error("MOLIT connection failed", endpoint.type, dealYmd, lastError);
   throw new HttpsError("unavailable", "국토부 서버 연결이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.");
 }
 
@@ -182,19 +182,29 @@ exports.lookupMolitApartmentTrades = onCall(
     const key = normalizePublicDataServiceKey(molitServiceKey.value());
     if (!key) throw new HttpsError("failed-precondition", "국토부 인증키가 등록되지 않았습니다.");
     const areaTolerance = Math.max(2.0, exclusiveAreaSqm * 0.03);
+    const endpoints = [
+      { service: "RTMSDataSvcAptTrade", operation: "getRTMSDataSvcAptTrade", type: "아파트 매매" },
+      { service: "RTMSDataSvcSilvTrade", operation: "getRTMSDataSvcSilvTrade", type: "분양·입주권" },
+    ];
     const pages = [];
+    const failedRequests = [];
     const yearMonths = recentYearMonths(months);
-    // 공공데이터 게이트웨이의 초당 호출 제한을 피하려고 최대 3개월씩만 병렬 조회한다.
+    // 공공데이터 게이트웨이의 초당 호출 제한을 피하려고 월별 두 자료형을 최대 3개월씩 조회한다.
     for (let index = 0; index < yearMonths.length; index += 3) {
-      const chunk = await Promise.all(yearMonths.slice(index, index + 3).map(async (dealYmd) => {
+      const requests = yearMonths.slice(index, index + 3).flatMap(dealYmd => endpoints.map(endpoint => {
         const params = new URLSearchParams({ serviceKey: key, LAWD_CD: lawdCd, DEAL_YMD: dealYmd, pageNo: "1", numOfRows: "1000" });
-        return fetchMolitMonth(params, dealYmd);
+        return { dealYmd, endpoint, promise: fetchMolitMonth(endpoint, params, dealYmd) };
       }));
-      pages.push(...chunk);
+      const chunk = await Promise.allSettled(requests.map(request => request.promise));
+      chunk.forEach((result, requestIndex) => {
+        if (result.status === "fulfilled") pages.push(result.value);
+        else failedRequests.push(`${requests[requestIndex].dealYmd}:${requests[requestIndex].endpoint.type}`);
+      });
     }
+    if (pages.length === 0) throw new HttpsError("unavailable", "국토부 전체 조회가 지연되고 있습니다. 잠시 후 다시 시도해 주세요.");
 
-    const trades = pages.flatMap(xml => [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map(match => match[1]))
-      .map(item => {
+    const trades = pages.flatMap(({ xml, endpoint }) => [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map(match => ({ item: match[1], endpoint })))
+      .map(({ item, endpoint }) => {
         const name = xmlValue(item, "aptNm", "아파트");
         const area = Number(xmlValue(item, "excluUseAr", "전용면적"));
         const amountManwon = Number(xmlValue(item, "dealAmount", "거래금액").replace(/,/g, ""));
@@ -209,6 +219,7 @@ exports.lookupMolitApartmentTrades = onCall(
           tradeDate: /^\d{4}$/.test(year) && month !== "00" && day !== "00" ? `${year}-${month}-${day}` : "",
           floor: xmlValue(item, "floor", "층"),
           cancelledOn,
+          tradeType: endpoint.type,
         };
       })
       .filter(trade => !trade.cancelledOn && trade.priceKrw > 0 && Number.isFinite(trade.exclusiveAreaSqm))
@@ -221,8 +232,12 @@ exports.lookupMolitApartmentTrades = onCall(
 
     return {
       providerId: "MOLIT_RTMS",
-      algorithmVersion: "REAL_ESTATE_APT_V1",
+      algorithmVersion: "REAL_ESTATE_APT_AND_RIGHTS_V2",
       queriedAt: new Date().toISOString(),
+      requestedMonths: months,
+      requestedPageCount: months * endpoints.length,
+      fetchedPageCount: pages.length,
+      failedRequests,
       trades,
     };
   },

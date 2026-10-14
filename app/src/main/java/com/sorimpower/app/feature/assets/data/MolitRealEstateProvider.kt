@@ -10,12 +10,16 @@ data class MolitComparableTrade(
     val priceKrw: Long,
     val tradeDate: String,
     val floor: String,
+    val tradeType: String,
 )
 
 data class MolitTradeResult(
     val providerId: String,
     val algorithmVersion: String,
     val queriedAt: String,
+    val requestedPageCount: Int,
+    val fetchedPageCount: Int,
+    val failedRequests: List<String>,
     val trades: List<MolitComparableTrade>,
 )
 
@@ -53,12 +57,16 @@ class MolitRealEstateProvider {
                 priceKrw = priceKrw,
                 tradeDate = item["tradeDate"] as? String ?: "",
                 floor = item["floor"] as? String ?: "",
+                tradeType = item["tradeType"] as? String ?: "아파트 매매",
             )
         } ?: emptyList()
         return MolitTradeResult(
             providerId = data["providerId"] as? String ?: "MOLIT_RTMS",
             algorithmVersion = data["algorithmVersion"] as? String ?: "REAL_ESTATE_APT_V1",
             queriedAt = data["queriedAt"] as? String ?: "",
+            requestedPageCount = (data["requestedPageCount"] as? Number)?.toInt() ?: 0,
+            fetchedPageCount = (data["fetchedPageCount"] as? Number)?.toInt() ?: 0,
+            failedRequests = (data["failedRequests"] as? List<*>)?.mapNotNull { it as? String }.orEmpty(),
             trades = trades,
         )
     }

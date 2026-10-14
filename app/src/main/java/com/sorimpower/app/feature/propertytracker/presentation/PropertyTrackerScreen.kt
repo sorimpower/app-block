@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -106,12 +107,15 @@ import com.patrykandpatrick.vico.compose.common.fill
 import com.patrykandpatrick.vico.compose.common.component.rememberShapeComponent
 import com.patrykandpatrick.vico.compose.common.component.rememberTextComponent
 import com.patrykandpatrick.vico.compose.m3.common.rememberM3VicoTheme
+import com.patrykandpatrick.vico.core.cartesian.CartesianDrawingContext
+import com.patrykandpatrick.vico.core.cartesian.axis.Axis
 import com.patrykandpatrick.vico.core.cartesian.axis.HorizontalAxis
 import com.patrykandpatrick.vico.core.cartesian.axis.VerticalAxis
 import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
 import com.patrykandpatrick.vico.core.cartesian.data.CartesianLayerRangeProvider
 import com.patrykandpatrick.vico.core.cartesian.data.CartesianValueFormatter
 import com.patrykandpatrick.vico.core.cartesian.data.lineSeries
+import com.patrykandpatrick.vico.core.cartesian.decoration.Decoration
 import com.patrykandpatrick.vico.core.cartesian.layer.LineCartesianLayer
 import com.patrykandpatrick.vico.core.cartesian.marker.DefaultCartesianMarker
 import com.patrykandpatrick.vico.core.cartesian.marker.LineCartesianLayerMarkerTarget
@@ -439,7 +443,7 @@ private fun ActualTradeRow(trade: PropertyActualTradeEntity) {
         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
             Text(formatWon(trade.priceKrw), fontWeight = FontWeight.Bold)
             Text(
-                "${formatTradeDate(trade.tradeDate)} · ${trade.floor.ifBlank { "층 미상" }}층 · 전용 ${formatArea(trade.exclusiveAreaSqm)}㎡",
+                "${formatTradeDate(trade.tradeDate)} · ${trade.tradeType} · ${trade.floor.ifBlank { "층 미상" }}층 · 전용 ${formatArea(trade.exclusiveAreaSqm)}㎡",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -490,6 +494,7 @@ private fun MoveTab(state: PropertyTrackerUiState) {
     val uriHandler = LocalUriHandler.current
     val current = state.targets.firstOrNull(PropertyWatchTargetEntity::isCurrentHome)
     val targets = state.targets.filter(PropertyWatchTargetEntity::isMoveTarget)
+    var gapPeriod by remember { mutableStateOf(MoveGapPeriod.DAILY_MONTH) }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -513,7 +518,26 @@ private fun MoveTab(state: PropertyTrackerUiState) {
                     }
                 }
             }
-            items(targets, key = PropertyWatchTargetEntity::id) { target ->
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("호가 갭 흐름", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "현재 집 대비 후보 단지의 최저·최고 호가 차이가 어떻게 바뀌었는지 봅니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        MoveGapPeriod.entries.forEach { option ->
+                            FilterChip(
+                                selected = gapPeriod == option,
+                                onClick = { gapPeriod = option },
+                                label = { Text(option.label) },
+                            )
+                        }
+                    }
+                }
+            }
+            itemsIndexed(targets, key = { _, target -> target.id }) { index, target ->
                 val asking = askingRange(state, target.id)
                 val actual = actualRange(state, target.id)
                 val targetGroups = PropertyTrackerRepository.groupDuplicateListings(state.activeListingsFor(target.id))
@@ -547,6 +571,13 @@ private fun MoveTab(state: PropertyTrackerUiState) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                        MoveAskingGapFlowChart(
+                            currentSnapshots = state.snapshotsFor(current.id),
+                            targetSnapshots = state.snapshotsFor(target.id),
+                            period = gapPeriod,
+                            color = comparisonColor(index),
+                            modifier = Modifier.fillMaxWidth().height(210.dp),
+                        )
                     }
                 }
             }
@@ -578,6 +609,132 @@ private fun GapRow(label: String, gap: Long, onClick: (() -> Unit)? = null) {
                 tint = MaterialTheme.colorScheme.primary,
             )
         }
+    }
+}
+
+@Composable
+private fun MoveAskingGapFlowChart(
+    currentSnapshots: List<PropertyAskingSnapshotEntity>,
+    targetSnapshots: List<PropertyAskingSnapshotEntity>,
+    period: MoveGapPeriod,
+    color: Color,
+    modifier: Modifier,
+) {
+    val today = LocalDate.now()
+    val startDate = period.startDate(today)
+    val points = remember(currentSnapshots, targetSnapshots, period, startDate) {
+        buildMoveGapPoints(currentSnapshots, targetSnapshots, period, startDate, today)
+    }
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(modifier, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .34f)) {
+        if (points.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    "같은 날짜·월에 수집된 호가 기록이 아직 부족해요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = labelColor,
+                )
+            }
+        } else {
+            val lowColor = color
+            val highColor = Color(0xFFE2576A)
+            val values = points.flatMap { listOf(it.lowGap.toDouble(), it.highGap.toDouble()) }
+            val rawMin = values.min()
+            val rawMax = values.max()
+            val padding = ((rawMax - rawMin) * .15).coerceAtLeast(10_000_000.0)
+            val minValue = rawMin - padding
+            val maxValue = rawMax + padding
+            val rangeBands = remember(points, color) {
+                listOf(
+                    VicoRangeBand(
+                        x = points.map { it.date.toEpochDay() },
+                        minY = points.map { minOf(it.lowGap, it.highGap).toDouble() },
+                        maxY = points.map { maxOf(it.lowGap, it.highGap).toDouble() },
+                        color = color,
+                    ),
+                )
+            }
+            val modelProducer = remember { CartesianChartModelProducer() }
+            LaunchedEffect(points) {
+                modelProducer.runTransaction {
+                    lineSeries {
+                        series(x = points.map { it.date.toEpochDay() }, y = points.map(MoveGapPoint::lowGap))
+                        series(x = points.map { it.date.toEpochDay() }, y = points.map(MoveGapPoint::highGap))
+                    }
+                }
+            }
+            val lines = listOf(lowColor, highColor).map { lineColor ->
+                LineCartesianLayer.rememberLine(
+                    LineCartesianLayer.LineFill.single(fill(lineColor)),
+                    LineCartesianLayer.LineStroke.continuous(2.2.dp),
+                    pointProvider = LineCartesianLayer.PointProvider.single(
+                        LineCartesianLayer.point(rememberShapeComponent(fill(lineColor), CorneredShape.Pill), 5.dp),
+                    ),
+                )
+            }
+            val axisFormatter = remember { CartesianValueFormatter { _, value, _ -> formatEokAxis(value.roundToLong()) } }
+            val dateFormatter = remember(period) {
+                CartesianValueFormatter { _, value, _ ->
+                    LocalDate.ofEpochDay(value.roundToLong()).format(DateTimeFormatter.ofPattern(period.axisPattern))
+                }
+            }
+            val markerFormatter = remember(period) {
+                DefaultCartesianMarker.ValueFormatter { _, targets ->
+                    val date = targets.firstOrNull()?.x?.roundToLong()?.let(LocalDate::ofEpochDay)
+                    val markerValues = targets.filterIsInstance<LineCartesianLayerMarkerTarget>()
+                        .flatMap(LineCartesianLayerMarkerTarget::points)
+                        .map { it.entry.y.roundToLong() }
+                    buildString {
+                        if (date != null) append(date.format(DateTimeFormatter.ofPattern(period.detailPattern)))
+                        markerValues.getOrNull(0)?.let { append("  최저 ${formatSignedWon(it)}") }
+                        markerValues.getOrNull(1)?.let { append(" · 최고 ${formatSignedWon(it)}") }
+                    }
+                }
+            }
+            val marker = rememberDefaultCartesianMarker(
+                label = rememberTextComponent(),
+                valueFormatter = markerFormatter,
+            )
+            val decoration = remember(rangeBands) { RangeBandDecoration(rangeBands) }
+            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    GapLegend("최저 호가 갭", lowColor)
+                    GapLegend("최고 호가 갭", highColor)
+                }
+                ProvideVicoTheme(rememberM3VicoTheme()) {
+                    CartesianChartHost(
+                        chart = rememberCartesianChart(
+                            rememberLineCartesianLayer(
+                                lineProvider = LineCartesianLayer.LineProvider.series(lines),
+                                rangeProvider = CartesianLayerRangeProvider.fixed(
+                                    minX = startDate.toEpochDay().toDouble(),
+                                    maxX = today.toEpochDay().toDouble(),
+                                    minY = minValue,
+                                    maxY = maxValue,
+                                ),
+                            ),
+                            startAxis = VerticalAxis.rememberStart(valueFormatter = axisFormatter),
+                            bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFormatter),
+                            marker = marker,
+                            decorations = listOf(decoration),
+                        ),
+                        modelProducer = modelProducer,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        scrollState = rememberVicoScrollState(scrollEnabled = false),
+                        zoomState = rememberVicoZoomState(zoomEnabled = false),
+                    )
+                }
+                Text("빗금은 두 호가 갭 사이 범위이며, 선을 누르면 값을 볼 수 있어요.", style = MaterialTheme.typography.labelSmall, color = labelColor)
+            }
+        }
+    }
+}
+
+@Composable
+private fun GapLegend(label: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).background(color, CircleShape))
+        Text(label, Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -1037,6 +1194,9 @@ private fun ComparisonTimelineChart(
     val lineData = remember(visiblePoints, period, mode, colorsByTarget) {
         buildVicoPriceSeries(visiblePoints, period, mode, colorsByTarget)
     }
+    val rangeBands = remember(visiblePoints, period, mode, colorsByTarget) {
+        buildVicoRangeBands(visiblePoints, period, mode, colorsByTarget)
+    }
 
     Surface(modifier, shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1068,26 +1228,44 @@ private fun ComparisonTimelineChart(
                         period = period,
                         minValue = minValue,
                         maxValue = maxValue,
+                        startDate = startDate,
+                        endDate = today,
+                        rangeBands = rangeBands,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
             Text(
                 if (mode == ComparePriceMode.ASKING_GAP) "선을 누르면 날짜별 호가 괴리율을 확인할 수 있어요."
-                else "진한 선은 대표값, 옅은 위·아래 선은 최저~최고 범위예요. 선을 눌러 값을 확인하세요.",
+                else "빗금 영역은 해당 날짜·월의 최저~최고 범위, 진한 선은 중앙값이에요. 오른쪽 빈 구간은 아직 신고·수집 자료가 없는 기간입니다.",
                 style = MaterialTheme.typography.labelSmall,
                 color = labelColor,
             )
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 targets.forEachIndexed { index, target ->
                     val color = colorsByTarget[target.id] ?: comparisonColor(index)
+                    val latestDate = when (mode) {
+                        ComparePriceMode.ACTUAL_RANGE -> state.tradesFor(target.id).mapNotNull { parseTradeDate(it.tradeDate) }.maxOrNull()
+                        ComparePriceMode.ASKING_RANGE, ComparePriceMode.ASKING_GAP -> state.snapshotsFor(target.id)
+                            .maxOfOrNull(PropertyAskingSnapshotEntity::epochDay)?.let(LocalDate::ofEpochDay)
+                    }
                     Row(
                         Modifier.clickable { hiddenIds = if (target.id in hiddenIds) hiddenIds - target.id else hiddenIds + target.id }.padding(vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(Modifier.size(8.dp).background(if (target.id in hiddenIds) color.copy(alpha = .25f) else color, CircleShape))
                         Text(
-                            target.apartmentName,
+                            buildString {
+                                append(target.apartmentName)
+                                append(" · ")
+                                append(
+                                    when {
+                                        latestDate != null -> latestDate.format(DateTimeFormatter.ofPattern("M.d"))
+                                        mode == ComparePriceMode.ACTUAL_RANGE && hasActualTradeSyncFailure(target) -> "동기화 지연"
+                                        else -> "자료 없음"
+                                    },
+                                )
+                            },
                             Modifier.padding(start = 5.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = if (target.id in hiddenIds) labelColor.copy(alpha = .5f) else labelColor,
@@ -1106,6 +1284,9 @@ private fun PriceFlowVicoChart(
     period: ComparePeriod,
     minValue: Double,
     maxValue: Double,
+    startDate: LocalDate,
+    endDate: LocalDate,
+    rangeBands: List<VicoRangeBand>,
     modifier: Modifier,
 ) {
     val modelProducer = remember { CartesianChartModelProducer() }
@@ -1163,16 +1344,23 @@ private fun PriceFlowVicoChart(
         label = rememberTextComponent(),
         valueFormatter = markerFormatter,
     )
+    val rangeDecoration = remember(rangeBands) { RangeBandDecoration(rangeBands) }
     ProvideVicoTheme(rememberM3VicoTheme()) {
         CartesianChartHost(
             chart = rememberCartesianChart(
                 rememberLineCartesianLayer(
                     lineProvider = LineCartesianLayer.LineProvider.series(chartLines),
-                    rangeProvider = CartesianLayerRangeProvider.fixed(minY = minValue, maxY = maxValue),
+                    rangeProvider = CartesianLayerRangeProvider.fixed(
+                        minX = startDate.toEpochDay().toDouble(),
+                        maxX = endDate.toEpochDay().toDouble(),
+                        minY = minValue,
+                        maxY = maxValue,
+                    ),
                 ),
                 startAxis = VerticalAxis.rememberStart(valueFormatter = axisFormatter),
                 bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFormatter),
                 marker = marker,
+                decorations = listOf(rangeDecoration),
             ),
             modelProducer = modelProducer,
             modifier = modifier,
@@ -1590,7 +1778,17 @@ private fun CompareMarketActivityChart(
                     shadowElevation = 4.dp,
                 ) {
                     Column(Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(formatChartDate(date, period), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                formatChartDate(date, period),
+                                Modifier.weight(1f),
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                            IconButton(onClick = { selectedDate = null }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Rounded.Close, "안내 닫기", Modifier.size(16.dp))
+                            }
+                        }
                         targets.forEachIndexed { index, target ->
                             val point = pointsByTarget[target.id].orEmpty().firstOrNull { it.date == date }
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1643,6 +1841,15 @@ private fun CompareSummaryPager(
                 )
             }
         }
+        Text(
+            when (metric) {
+                CompareSummaryMetric.CURRENT_PRICE -> "국토부에 신고된 최근 3개월의 아파트 매매·분양/입주권 거래 중앙값입니다. 호가가 아니에요."
+                CompareSummaryMetric.ONE_YEAR_RETURN -> "최근 3개월 신고 거래 중앙값과 1년 전 구간을 비교합니다."
+                CompareSummaryMetric.ASKING_GAP -> "현재 네이버 매물 호가 중앙값과 최근 신고 거래 중앙값의 차이입니다."
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         SummaryRankingCard(metric.title, rows, colorsByTarget)
     }
 }
@@ -1973,12 +2180,31 @@ private enum class ComparePeriod(val label: String) {
     }
 }
 
+private enum class MoveGapPeriod(
+    val label: String,
+    val axisPattern: String,
+    val detailPattern: String,
+) {
+    DAILY_MONTH("1개월 · 일별", "M.d", "M월 d일"),
+    MONTHLY_YEAR("1년 · 월별", "yy.M", "yyyy년 M월");
+
+    fun startDate(today: LocalDate): LocalDate = when (this) {
+        DAILY_MONTH -> today.minusDays(29)
+        MONTHLY_YEAR -> today.minusYears(1)
+    }
+
+    fun bucket(date: LocalDate): LocalDate = when (this) {
+        DAILY_MONTH -> date
+        MONTHLY_YEAR -> date.withDayOfMonth(1)
+    }
+}
+
 private enum class ComparePriceMode(val label: String) {
     ACTUAL_RANGE("실거래 최저~최고"), ASKING_RANGE("호가 범위"), ASKING_GAP("호가 괴리")
 }
 
 private enum class CompareSummaryMetric(val label: String, val title: String) {
-    CURRENT_PRICE("현재 가격", "현재 가격 요약"),
+    CURRENT_PRICE("최근 실거래", "최근 3개월 신고 거래 중앙값"),
     ONE_YEAR_RETURN("1년 상승률", "1년 상승률"),
     ASKING_GAP("호가 괴리", "호가 괴리율 순위"),
 }
@@ -2000,10 +2226,94 @@ private data class VicoPriceSeries(
     val primary: Boolean,
 )
 
+private data class VicoRangeBand(
+    val x: List<Long>,
+    val minY: List<Double>,
+    val maxY: List<Double>,
+    val color: Color,
+)
+
+private class RangeBandDecoration(private val bands: List<VicoRangeBand>) : Decoration {
+    override fun drawUnderLayers(context: CartesianDrawingContext) {
+        if (bands.isEmpty()) return
+        val bounds = context.layerBounds
+        val xRange = context.ranges
+        val yRange = context.ranges.getYRange(Axis.Position.Vertical.Start)
+        if (xRange.maxX <= xRange.minX || yRange.maxY <= yRange.minY) return
+        fun x(value: Long): Float = bounds.left +
+            ((value - xRange.minX) / (xRange.maxX - xRange.minX) * bounds.width()).toFloat()
+        fun y(value: Double): Float = bounds.bottom -
+            ((value - yRange.minY) / (yRange.maxY - yRange.minY) * bounds.height()).toFloat()
+
+        val canvas = context.canvas
+        bands.forEach { band ->
+            val pointCount = minOf(band.x.size, band.minY.size, band.maxY.size)
+            if (pointCount == 0) return@forEach
+            val fillPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = band.color.copy(alpha = .13f).toArgb()
+                style = android.graphics.Paint.Style.FILL
+            }
+            val hatchPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = band.color.copy(alpha = .34f).toArgb()
+                strokeWidth = context.dpToPx(1f)
+                style = android.graphics.Paint.Style.STROKE
+            }
+            if (pointCount > 1) {
+                val path = android.graphics.Path()
+                repeat(pointCount) { index ->
+                    val pointX = x(band.x[index])
+                    val pointY = y(band.maxY[index])
+                    if (index == 0) path.moveTo(pointX, pointY) else path.lineTo(pointX, pointY)
+                }
+                repeat(pointCount) { reverseIndex ->
+                    val index = pointCount - reverseIndex - 1
+                    path.lineTo(x(band.x[index]), y(band.minY[index]))
+                }
+                path.close()
+                canvas.drawPath(path, fillPaint)
+                canvas.save()
+                canvas.clipPath(path)
+                val spacing = context.dpToPx(10f)
+                var hatchX = bounds.left - bounds.height()
+                while (hatchX <= bounds.right) {
+                    canvas.drawLine(hatchX, bounds.bottom, hatchX + bounds.height(), bounds.top, hatchPaint)
+                    hatchX += spacing
+                }
+                canvas.restore()
+            }
+            repeat(pointCount) { index ->
+                val pointX = x(band.x[index])
+                val top = minOf(y(band.minY[index]), y(band.maxY[index]))
+                val bottom = maxOf(y(band.minY[index]), y(band.maxY[index]))
+                val halfWidth = context.dpToPx(4f)
+                val rect = android.graphics.RectF(pointX - halfWidth, top, pointX + halfWidth, bottom.coerceAtLeast(top + context.dpToPx(2f)))
+                canvas.drawRoundRect(rect, halfWidth, halfWidth, fillPaint)
+                canvas.save()
+                canvas.clipRect(rect)
+                val spacing = context.dpToPx(7f)
+                var hatchY = rect.top - rect.width()
+                while (hatchY <= rect.bottom) {
+                    canvas.drawLine(rect.left, hatchY + rect.width(), rect.right, hatchY, hatchPaint)
+                    hatchY += spacing
+                }
+                canvas.restore()
+            }
+        }
+    }
+
+    override fun drawOverLayers(context: CartesianDrawingContext) = Unit
+}
+
 private data class MarketActivityPoint(
     val date: LocalDate,
     val tradeCount: Int,
     val listingCount: Int?,
+)
+
+private data class MoveGapPoint(
+    val date: LocalDate,
+    val lowGap: Long,
+    val highGap: Long,
 )
 
 private data class SummaryRow(
@@ -2011,6 +2321,34 @@ private data class SummaryRow(
     val numericValue: Long?,
     val displayValue: String,
 )
+
+private fun buildMoveGapPoints(
+    currentSnapshots: List<PropertyAskingSnapshotEntity>,
+    targetSnapshots: List<PropertyAskingSnapshotEntity>,
+    period: MoveGapPeriod,
+    startDate: LocalDate,
+    today: LocalDate,
+): List<MoveGapPoint> {
+    fun latestByBucket(snapshots: List<PropertyAskingSnapshotEntity>): Map<LocalDate, PropertyAskingSnapshotEntity> = snapshots
+        .filter { snapshot ->
+            val date = LocalDate.ofEpochDay(snapshot.epochDay)
+            date in startDate..today && snapshot.minPriceKrw > 0 && snapshot.maxPriceKrw > 0
+        }
+        .groupBy { period.bucket(LocalDate.ofEpochDay(it.epochDay)) }
+        .mapValues { (_, entries) -> entries.maxBy(PropertyAskingSnapshotEntity::epochDay) }
+
+    val currentByDate = latestByBucket(currentSnapshots)
+    val targetByDate = latestByBucket(targetSnapshots)
+    return (currentByDate.keys intersect targetByDate.keys).sorted().map { date ->
+        val current = currentByDate.getValue(date)
+        val target = targetByDate.getValue(date)
+        MoveGapPoint(
+            date = date,
+            lowGap = target.minPriceKrw - current.minPriceKrw,
+            highGap = target.maxPriceKrw - current.maxPriceKrw,
+        )
+    }
+}
 
 private fun buildComparePricePoints(
     targets: List<PropertyWatchTargetEntity>,
@@ -2081,6 +2419,31 @@ private fun buildVicoPriceSeries(
                     primary = true,
                 ),
             )
+        }
+    }
+}
+
+private fun buildVicoRangeBands(
+    points: List<ComparePricePoint>,
+    period: ComparePeriod,
+    mode: ComparePriceMode,
+    colorsByTarget: Map<String, Color>,
+): List<VicoRangeBand> {
+    if (mode == ComparePriceMode.ASKING_GAP) return emptyList()
+    return buildList {
+        points.groupBy(ComparePricePoint::targetId).forEach { (targetId, targetPoints) ->
+            val color = colorsByTarget[targetId] ?: Color(0xFF5B67D6)
+            splitPriceSegments(targetPoints, period).forEach { segment ->
+                val sorted = segment.sortedBy(ComparePricePoint::date)
+                add(
+                    VicoRangeBand(
+                        x = sorted.map { it.date.toEpochDay() },
+                        minY = sorted.map(ComparePricePoint::minValue),
+                        maxY = sorted.map(ComparePricePoint::maxValue),
+                        color = color,
+                    ),
+                )
+            }
         }
     }
 }
@@ -2205,7 +2568,7 @@ private fun actualRange(state: PropertyTrackerUiState, id: String): PriceRange =
     }
 
 private fun hasActualTradeSyncFailure(target: PropertyWatchTargetEntity): Boolean =
-    target.lastSyncMessage.contains("실거래 조회 실패")
+    target.lastSyncMessage.contains("실거래 조회 실패") || target.lastSyncMessage.contains("실거래 일부 조회")
 
 private fun emptyActualText(target: PropertyWatchTargetEntity): String =
     if (hasActualTradeSyncFailure(target)) "실거래 조회 지연" else "최근 18개월 신고 거래 없음"
@@ -2227,6 +2590,12 @@ private fun formatSyncTime(value: Long): String = Instant.ofEpochMilli(value)
     .format(DateTimeFormatter.ofPattern("M월 d일 HH:mm"))
 
 private fun formatEokAxis(value: Long): String = "%.2f억".format(Locale.KOREA, value / 100_000_000.0)
+
+private fun formatSignedWon(value: Long): String = when {
+    value > 0 -> "+${formatWon(value)}"
+    value < 0 -> formatWon(value)
+    else -> "0원"
+}
 
 private fun formatAxisDate(date: LocalDate, period: PriceChartPeriod): String = date.format(
     DateTimeFormatter.ofPattern(if (period == PriceChartPeriod.YEAR) "yyyy.M" else "yyyy.M.d"),
@@ -2251,11 +2620,10 @@ private fun formatVicoAxisDate(date: LocalDate, period: ComparePeriod): String =
             ComparePeriod.WEEK,
             ComparePeriod.MONTH,
             ComparePeriod.THREE_MONTHS,
-            ComparePeriod.SIX_MONTHS,
-            ComparePeriod.YEAR,
             -> "yy.M.d"
 
-            ComparePeriod.THREE_YEARS, ComparePeriod.ALL -> "yy.M"
+            ComparePeriod.SIX_MONTHS, ComparePeriod.YEAR, ComparePeriod.THREE_YEARS -> "yy.M"
+            ComparePeriod.ALL -> "yyyy"
         },
     ),
 )

@@ -11,6 +11,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "property_watch_targets")
@@ -76,6 +78,7 @@ data class PropertyActualTradeEntity(
     val priceKrw: Long,
     val tradeDate: String,
     val floor: String,
+    val tradeType: String,
 )
 
 @Entity(tableName = "property_listing_events")
@@ -128,6 +131,9 @@ interface PropertyTrackerDao {
 
     @Query("SELECT * FROM property_listings WHERE watchTargetId = :targetId")
     suspend fun getListings(targetId: String): List<PropertyListingEntity>
+
+    @Query("SELECT * FROM property_actual_trades WHERE watchTargetId = :targetId")
+    suspend fun getTrades(targetId: String): List<PropertyActualTradeEntity>
 
     @Query("SELECT * FROM property_sync_runs WHERE epochDay = :epochDay")
     suspend fun getRun(epochDay: Long): PropertySyncRunEntity?
@@ -209,7 +215,7 @@ interface PropertyTrackerDao {
         PropertyListingEventEntity::class,
         PropertySyncRunEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class PropertyTrackerDatabase : RoomDatabase() {
@@ -223,7 +229,13 @@ abstract class PropertyTrackerDatabase : RoomDatabase() {
                 context.applicationContext,
                 PropertyTrackerDatabase::class.java,
                 "property_tracker.db",
-            ).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+        }
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE property_actual_trades ADD COLUMN tradeType TEXT NOT NULL DEFAULT '아파트 매매'")
+            }
         }
     }
 }

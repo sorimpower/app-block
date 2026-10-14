@@ -27,7 +27,7 @@ internal class PropertyAiAnalyzer(
             appendLine("중복 중개사 등록 수는 인기나 품질의 증거로 쓰지 말라. 미래 가격 상승을 단정하지 말라.")
             appendLine("[최근 실거래]")
             trades.sortedByDescending(PropertyActualTradeEntity::tradeDate).take(20).forEach {
-                appendLine("${it.tradeDate} | ${it.priceKrw}원 | ${it.floor}층 | 전용 ${it.exclusiveAreaSqm}㎡")
+                appendLine("${it.tradeDate} | ${it.tradeType} | ${it.priceKrw}원 | ${it.floor}층 | 전용 ${it.exclusiveAreaSqm}㎡")
             }
             if (trades.isEmpty()) appendLine("조회된 실거래 없음")
             appendLine("[현재 매물]")
